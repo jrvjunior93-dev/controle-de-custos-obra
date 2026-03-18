@@ -14,8 +14,6 @@ dist-ssr
 *.local
 .env
 .env.*
-!.env.example
-!.env.production.example
 tmp_*
 *.tmp
 
