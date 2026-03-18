@@ -9,6 +9,9 @@ export interface Attachment {
   name: string; 
   originalName?: string; 
   data: string;
+  storageProvider?: string;
+  storageBucket?: string;
+  storageKey?: string;
   type: string;
   size: number;
   uploadDate: string;

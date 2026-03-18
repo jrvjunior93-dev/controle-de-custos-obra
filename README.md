@@ -12,9 +12,26 @@ Base preparada para build e inicializacao de producao com:
 
 ## Variaveis obrigatorias
 
-Backend: use [backend/.env.production.example](C:\Users\Ricardo\Documents\controle-de-custos-csc---brape---ricardo\backend\.env.production.example)
+Backend:
 
-Frontend: use [frontend/.env.production.example](C:\Users\Ricardo\Documents\controle-de-custos-csc---brape---ricardo\frontend\.env.production.example)
+- `DATABASE_URL`
+- `NODE_ENV`
+- `JWT_SECRET`
+- `CORS_ALLOWED_ORIGINS`
+- `SUPERADMIN_EMAIL`
+- `SUPERADMIN_PASSWORD`
+- `SUPERADMIN_NAME`
+
+Frontend:
+
+- `VITE_API_URL`
+
+S3:
+
+- `AWS_REGION`
+- `AWS_S3_BUCKET`
+- `AWS_S3_PREFIX` (opcional, padrao `csc`)
+- `AWS_S3_SIGNED_URL_TTL_SECONDS` (opcional, padrao `3600`)
 
 ## Build de producao
 
@@ -55,8 +72,8 @@ npm.cmd run start
 
 ### Frontend na Vercel
 
-- Projeto raiz: [frontend](C:\Users\Ricardo\Documents\controle-de-custos-csc---brape---ricardo\frontend)
-- Configuracao: [frontend/vercel.json](C:\Users\Ricardo\Documents\controle-de-custos-csc---brape---ricardo\frontend\vercel.json)
+- Projeto raiz: `frontend`
+- Configuracao: `frontend/vercel.json`
 - Variavel obrigatoria: `VITE_API_URL`
 - Node suportado: `>=20 <23`
 
@@ -66,9 +83,9 @@ Subdominio sugerido:
 
 ### Backend na EC2
 
-- Backend: [backend](C:\Users\Ricardo\Documents\controle-de-custos-csc---brape---ricardo\backend)
-- PM2: [backend/ecosystem.config.cjs](C:\Users\Ricardo\Documents\controle-de-custos-csc---brape---ricardo\backend\ecosystem.config.cjs)
-- Exemplo `systemd`: [backend/deploy/csc-backend.service.example](C:\Users\Ricardo\Documents\controle-de-custos-csc---brape---ricardo\backend\deploy\csc-backend.service.example)
+- Backend: `backend`
+- PM2: `backend/ecosystem.config.cjs`
+- Exemplo `systemd`: `backend/deploy/csc-backend.service.example`
 
 Fluxo sugerido na EC2:
 
@@ -85,6 +102,12 @@ pm2 start ecosystem.config.cjs
 - Restrinja o acesso do RDS ao security group da EC2
 - Mantenha backup automatico habilitado
 - Aponte `DATABASE_URL` para o endpoint privado do RDS
+
+### Anexos no S3
+
+- O sistema agora salva anexos no S3 quando `AWS_REGION` e `AWS_S3_BUCKET` estiverem configurados
+- Sem essas variaveis, o backend faz fallback para o armazenamento atual em banco
+- Em producao, prefira IAM Role na EC2 em vez de chaves estaticas
 
 ### DNS sugerido
 

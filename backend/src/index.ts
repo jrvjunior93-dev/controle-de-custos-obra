@@ -5,6 +5,7 @@ import { PrismaClient, UserRole, OrderStatus, InstallmentStatus, AttachmentKind 
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { deleteStoredAttachments, persistAttachment, resolveAttachmentData } from "./storage.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -216,8 +217,8 @@ async function allocateOrderNumber(tx: any, projectId: number) {
   return Number(rows?.[0]?.value || 0);
 }
 
-function toAttachment(payload: any, kind: AttachmentKind) {
-  return {
+async function toAttachment(payload: any, kind: AttachmentKind) {
+  return persistAttachment({
     kind,
     name: String(payload.name || "arquivo"),
     originalName: payload.originalName ? String(payload.originalName) : null,
@@ -225,7 +226,14 @@ function toAttachment(payload: any, kind: AttachmentKind) {
     mimeType: String(payload.type || payload.mimeType || "application/octet-stream"),
     size: Number(payload.size || 0),
     uploadedAt: parseDateTime(payload.uploadDate || payload.uploadedAt),
-  };
+    storageProvider: payload.storageProvider ? String(payload.storageProvider) : null,
+    storageBucket: payload.storageBucket ? String(payload.storageBucket) : null,
+    storageKey: payload.storageKey ? String(payload.storageKey) : null,
+  });
+}
+
+async function toAttachments(payloads: any[] | undefined, kind: AttachmentKind) {
+  return Promise.all((payloads || []).map((payload: any) => toAttachment(payload, kind)));
 }
 
 function sanitizeUser(user: any) {
@@ -239,19 +247,73 @@ function sanitizeUser(user: any) {
   };
 }
 
-function mapAttachment(attachment: any) {
+async function mapAttachment(attachment: any) {
   return {
     id: String(attachment.id),
     name: attachment.name,
     originalName: attachment.originalName || undefined,
-    data: attachment.data,
+    data: await resolveAttachmentData(attachment),
     type: attachment.mimeType,
     size: attachment.size,
-    uploadDate: attachment.uploadedAt.toISOString()
+    uploadDate: attachment.uploadedAt.toISOString(),
+    storageProvider: attachment.storageProvider || undefined,
+    storageBucket: attachment.storageBucket || undefined,
+    storageKey: attachment.storageKey || undefined,
   };
 }
 
-function mapProjectFromDb(project: any) {
+function collectOrderAttachmentRefs(order: any) {
+  return [
+    ...(order.attachments || []),
+    ...((order.messages || []).flatMap((message: any) => message.attachments || [])),
+  ];
+}
+
+function collectProjectAttachmentRefs(project: any) {
+  return [
+    ...((project.costs || []).flatMap((cost: any) => cost.attachments || [])),
+    ...((project.installments || []).flatMap((installment: any) => installment.attachments || [])),
+    ...((project.orders || []).flatMap((order: any) => collectOrderAttachmentRefs(order))),
+  ];
+}
+
+async function mapOrderFromDb(order: any, projectName: string) {
+  return {
+    id: String(order.id),
+    orderCode: order.orderCode,
+    externalCode: order.externalCode || undefined,
+    projectId: String(order.projectId),
+    projectName,
+    title: order.title,
+    type: order.orderType?.name || "",
+    description: order.description,
+    macroItemId: order.macroItemId ? String(order.macroItemId) : undefined,
+    expectedDate: formatDateOnly(order.expectedDate),
+    status: order.status,
+    requesterId: String(order.requesterUserId),
+    requesterName: order.requester?.name || "",
+    responsibleId: order.assignedUserId ? String(order.assignedUserId) : undefined,
+    responsibleName: order.responsible?.name || undefined,
+    attachments: await Promise.all((order.attachments || []).filter((item: any) => item.kind === AttachmentKind.REQUEST).map(mapAttachment)),
+    completionAttachment: (order.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION)
+      ? await mapAttachment((order.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION))
+      : undefined,
+    completionNote: order.completionNote || undefined,
+    cancellationReason: order.cancellationReason || undefined,
+    messages: await Promise.all((order.messages || []).map(async (message: any) => ({
+      id: String(message.id),
+      userId: message.userId ? String(message.userId) : SYSTEM_USER_ID,
+      userName: message.isSystem ? "SISTEMA" : (message.user?.name || "SISTEMA"),
+      text: message.body,
+      date: message.createdAt.toISOString(),
+      attachments: await Promise.all((message.attachments || []).map(mapAttachment))
+    }))),
+    createdAt: order.createdAt.toISOString(),
+    value: order.requestedValue ? decimalToNumber(order.requestedValue) : undefined,
+  };
+}
+
+async function mapProjectFromDb(project: any) {
   return {
     id: String(project.id),
     code: project.code,
@@ -264,7 +326,7 @@ function mapProjectFromDb(project: any) {
       description: item.description,
       budgetedValue: decimalToNumber(item.budgetedValue),
     })),
-    costs: (project.costs || []).map((cost: any) => ({
+    costs: await Promise.all((project.costs || []).map(async (cost: any) => ({
       id: String(cost.id),
       macroItemId: String(cost.macroItemId),
       description: cost.description,
@@ -275,9 +337,9 @@ function mapProjectFromDb(project: any) {
       totalValue: decimalToNumber(cost.totalValue),
       date: formatDateOnly(cost.occurredAt),
       entryDate: formatDateOnly(cost.recordedAt),
-      attachments: (cost.attachments || []).map(mapAttachment),
-    })),
-    installments: (project.installments || []).map((installment: any) => {
+      attachments: await Promise.all((cost.attachments || []).map(mapAttachment)),
+    }))),
+    installments: await Promise.all((project.installments || []).map(async (installment: any) => {
       const attachment = (installment.attachments || []).find((item: any) => item.kind === AttachmentKind.ATTACHMENT);
       const paymentProof = (installment.attachments || []).find((item: any) => item.kind === AttachmentKind.PAYMENT_PROOF);
       return {
@@ -291,42 +353,12 @@ function mapProjectFromDb(project: any) {
         value: decimalToNumber(installment.value),
         digitalLine: installment.digitalLine || undefined,
         status: installment.status,
-        attachment: attachment ? mapAttachment(attachment) : undefined,
-        paymentProof: paymentProof ? mapAttachment(paymentProof) : undefined,
+        attachment: attachment ? await mapAttachment(attachment) : undefined,
+        paymentProof: paymentProof ? await mapAttachment(paymentProof) : undefined,
         macroItemId: String(installment.macroItemId),
       };
-    }),
-    orders: (project.orders || []).map((order: any) => ({
-      id: String(order.id),
-      orderCode: order.orderCode,
-      externalCode: order.externalCode || undefined,
-      projectId: String(order.projectId),
-      projectName: project.name,
-      title: order.title,
-      type: order.orderType?.name || "",
-      description: order.description,
-      macroItemId: order.macroItemId ? String(order.macroItemId) : undefined,
-      expectedDate: formatDateOnly(order.expectedDate),
-      status: order.status,
-      requesterId: String(order.requesterUserId),
-      requesterName: order.requester?.name || "",
-      responsibleId: order.assignedUserId ? String(order.assignedUserId) : undefined,
-      responsibleName: order.responsible?.name || undefined,
-      attachments: (order.attachments || []).filter((item: any) => item.kind === AttachmentKind.REQUEST).map(mapAttachment),
-      completionAttachment: (order.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION) ? mapAttachment((order.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION)) : undefined,
-      completionNote: order.completionNote || undefined,
-      cancellationReason: order.cancellationReason || undefined,
-      messages: (order.messages || []).map((message: any) => ({
-        id: String(message.id),
-        userId: message.userId ? String(message.userId) : SYSTEM_USER_ID,
-        userName: message.isSystem ? "SISTEMA" : (message.user?.name || "SISTEMA"),
-        text: message.body,
-        date: message.createdAt.toISOString(),
-        attachments: (message.attachments || []).map(mapAttachment)
-      })),
-      createdAt: order.createdAt.toISOString(),
-      value: order.requestedValue ? decimalToNumber(order.requestedValue) : undefined,
-    }))
+    })),
+    orders: await Promise.all((project.orders || []).map((order: any) => mapOrderFromDb(order, project.name)))
   };
 }
 
@@ -386,6 +418,9 @@ async function ensureOrderType(tx: any, name: string) {
 }
 
 async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectId?: number | null) {
+  const existingProject = existingProjectId
+    ? await tx.project.findUnique({ where: { id: existingProjectId }, include: projectInclude })
+    : null;
   const baseData = {
     code: normalizeProjectCode(projectPayload.code || projectPayload.name),
     name: String(projectPayload.name || "").trim(),
@@ -397,6 +432,10 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
   const project = existingProjectId
     ? await tx.project.update({ where: { id: existingProjectId }, data: baseData })
     : await tx.project.create({ data: baseData });
+
+  if (existingProject) {
+    await deleteStoredAttachments(collectProjectAttachmentRefs(existingProject));
+  }
 
   await tx.order.deleteMany({ where: { projectId: project.id } });
   await tx.installment.deleteMany({ where: { projectId: project.id } });
@@ -435,8 +474,8 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
         status: installment.status === InstallmentStatus.PAID ? InstallmentStatus.PAID : InstallmentStatus.PENDING,
         attachments: {
           create: [
-            ...(installment.attachment ? [toAttachment(installment.attachment, AttachmentKind.ATTACHMENT)] : []),
-            ...(installment.paymentProof ? [toAttachment(installment.paymentProof, AttachmentKind.PAYMENT_PROOF)] : [])
+            ...(installment.attachment ? [await toAttachment(installment.attachment, AttachmentKind.ATTACHMENT)] : []),
+            ...(installment.paymentProof ? [await toAttachment(installment.paymentProof, AttachmentKind.PAYMENT_PROOF)] : [])
           ]
         }
       }
@@ -486,12 +525,12 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
         createdAt: parseDateTime(order.createdAt),
         attachments: {
           create: [
-            ...((order.attachments || []).map((attachment: any) => toAttachment(attachment, AttachmentKind.REQUEST))),
-            ...(order.completionAttachment ? [toAttachment(order.completionAttachment, AttachmentKind.COMPLETION)] : [])
+            ...(await toAttachments(order.attachments, AttachmentKind.REQUEST)),
+            ...(order.completionAttachment ? [await toAttachment(order.completionAttachment, AttachmentKind.COMPLETION)] : [])
           ]
         },
         messages: {
-          create: (order.messages || []).map((message: any) => {
+          create: await Promise.all((order.messages || []).map(async (message: any) => {
             const messageUserId = message.userId && message.userId !== SYSTEM_USER_ID ? Number(message.userId) : null;
             return {
               userId: messageUserId || null,
@@ -499,10 +538,10 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
               isSystem: !messageUserId,
               createdAt: parseDateTime(message.date),
               attachments: {
-                create: (message.attachments || []).map((attachment: any) => toAttachment(attachment, AttachmentKind.MESSAGE))
+                create: await toAttachments(message.attachments, AttachmentKind.MESSAGE)
               }
             };
-          })
+          }))
         }
       }
     });
@@ -525,7 +564,7 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
         occurredAt: parseDateOnly(cost.date),
         recordedAt: parseDateOnly(cost.entryDate),
         attachments: {
-          create: (cost.attachments || []).map((attachment: any) => toAttachment(attachment, AttachmentKind.COST_DOCUMENT))
+          create: await toAttachments(cost.attachments, AttachmentKind.COST_DOCUMENT)
         }
       }
     });
@@ -544,7 +583,10 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
 
   const existingOrderId = Number(orderPayload?.id);
   const existingOrder = Number.isFinite(existingOrderId)
-    ? await tx.order.findFirst({ where: { id: existingOrderId, projectId } })
+    ? await tx.order.findFirst({
+        where: { id: existingOrderId, projectId },
+        include: { attachments: true, messages: { include: { attachments: true } } }
+      })
     : null;
 
   if (authUser.role === UserRole.MEMBRO) {
@@ -576,6 +618,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
   }
 
   if (existingOrder) {
+    await deleteStoredAttachments(collectOrderAttachmentRefs(existingOrder));
     await tx.order.delete({ where: { id: existingOrder.id } });
   }
 
@@ -599,12 +642,12 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       createdAt: parseDateTime(orderPayload.createdAt),
       attachments: {
         create: [
-          ...((orderPayload.attachments || []).map((attachment: any) => toAttachment(attachment, AttachmentKind.REQUEST))),
-          ...(orderPayload.completionAttachment ? [toAttachment(orderPayload.completionAttachment, AttachmentKind.COMPLETION)] : [])
+          ...(await toAttachments(orderPayload.attachments, AttachmentKind.REQUEST)),
+          ...(orderPayload.completionAttachment ? [await toAttachment(orderPayload.completionAttachment, AttachmentKind.COMPLETION)] : [])
         ]
       },
       messages: {
-        create: (orderPayload.messages || []).map((message: any) => {
+        create: await Promise.all((orderPayload.messages || []).map(async (message: any) => {
           const messageUserId = message.userId && message.userId !== SYSTEM_USER_ID ? Number(message.userId) : null;
           return {
             userId: messageUserId || null,
@@ -612,10 +655,10 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
             isSystem: !messageUserId,
             createdAt: parseDateTime(message.date),
             attachments: {
-              create: (message.attachments || []).map((attachment: any) => toAttachment(attachment, AttachmentKind.MESSAGE))
+              create: await toAttachments(message.attachments, AttachmentKind.MESSAGE)
             }
           };
-        })
+        }))
       }
     },
     include: {
@@ -627,37 +670,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
     }
   });
 
-  return {
-    id: String(created.id),
-    orderCode: created.orderCode,
-    externalCode: created.externalCode || undefined,
-    projectId: String(created.projectId),
-    projectName: project.name,
-    title: created.title,
-    type: created.orderType?.name || '',
-    description: created.description,
-    macroItemId: created.macroItemId ? String(created.macroItemId) : undefined,
-    expectedDate: formatDateOnly(created.expectedDate),
-    status: created.status,
-    requesterId: String(created.requesterUserId),
-    requesterName: created.requester?.name || '',
-    responsibleId: created.assignedUserId ? String(created.assignedUserId) : undefined,
-    responsibleName: created.responsible?.name || undefined,
-    attachments: (created.attachments || []).filter((item: any) => item.kind === AttachmentKind.REQUEST).map(mapAttachment),
-    completionAttachment: (created.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION) ? mapAttachment((created.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION)) : undefined,
-    completionNote: created.completionNote || undefined,
-    cancellationReason: created.cancellationReason || undefined,
-    messages: (created.messages || []).map((message: any) => ({
-      id: String(message.id),
-      userId: message.userId ? String(message.userId) : SYSTEM_USER_ID,
-      userName: message.isSystem ? 'SISTEMA' : (message.user?.name || 'SISTEMA'),
-      text: message.body,
-      date: message.createdAt.toISOString(),
-      attachments: (message.attachments || []).map(mapAttachment)
-    })),
-    createdAt: created.createdAt.toISOString(),
-    value: created.requestedValue ? decimalToNumber(created.requestedValue) : undefined,
-  };
+  return mapOrderFromDb(created, project.name);
 }
 
 async function upsertUserRecord(tx: any, userId: number | null, userPayload: any, actorRole: UserRole | undefined) {
@@ -782,7 +795,7 @@ app.get("/projects", requireAuth, async (req: AuthRequest, res) => {
     : { id: { in: await getUserProjectScope(Number(authUser.id)) } };
 
   const projects = await prisma.project.findMany({ where, include: projectInclude, orderBy: { updatedAt: "desc" } });
-  res.json(projects.map(mapProjectFromDb));
+  res.json(await Promise.all(projects.map(mapProjectFromDb)));
 });
 
 app.put("/projects/:id", requireAuth, async (req: AuthRequest, res) => {
@@ -800,12 +813,16 @@ app.put("/projects/:id", requireAuth, async (req: AuthRequest, res) => {
   }
 
   const saved = await prisma.$transaction((tx: any) => upsertProjectGraph(tx, parsed.data.project, isCreate ? null : projectId));
-  res.json(mapProjectFromDb(saved));
+  res.json(await mapProjectFromDb(saved));
 });
 
 app.delete("/projects/:id", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req, res) => {
   const projectId = Number(req.params.id);
   if (!Number.isFinite(projectId)) return res.status(400).json({ error: "Invalid project id" });
+  const existingProject = await prisma.project.findUnique({ where: { id: projectId }, include: projectInclude });
+  if (existingProject) {
+    await deleteStoredAttachments(collectProjectAttachmentRefs(existingProject));
+  }
   await prisma.project.delete({ where: { id: projectId } });
   res.json({ ok: true });
 });
@@ -836,12 +853,16 @@ app.delete("/projects/:projectId/orders/:orderId", requireAuth, async (req: Auth
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  const order = await prisma.order.findFirst({ where: { id: orderId, projectId } });
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, projectId },
+    include: { attachments: true, messages: { include: { attachments: true } } }
+  });
   if (!order) return res.status(404).json({ error: "Order not found" });
   if (req.authUser.role === UserRole.MEMBRO && order.requesterUserId !== Number(req.authUser.id)) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
+  await deleteStoredAttachments(collectOrderAttachmentRefs(order));
   await prisma.order.delete({ where: { id: orderId } });
   res.json({ ok: true });
 });

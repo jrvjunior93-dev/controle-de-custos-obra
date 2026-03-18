@@ -71,6 +71,8 @@ export const AttachmentsModule: React.FC<AttachmentsModuleProps> = ({ project, o
     )
     .sort((a, b) => b.date.localeCompare(a.date));
 
+  const isDataUrl = (value: string) => /^data:/i.test(value || '');
+
   const base64ToBlob = (base64Data: string, contentType: string) => {
     const sliceSize = 512;
     const byteCharacters = atob(base64Data.split(',')[1]);
@@ -89,13 +91,26 @@ export const AttachmentsModule: React.FC<AttachmentsModuleProps> = ({ project, o
     return new Blob(byteArrays, { type: contentType });
   };
 
-  const downloadFile = (att: Attachment) => {
+  const resolveAttachmentBlob = async (att: Attachment) => {
+    if (isDataUrl(att.data)) {
+      return base64ToBlob(att.data, att.type);
+    }
+
+    const response = await fetch(att.data);
+    if (!response.ok) {
+      throw new Error('Falha ao baixar arquivo remoto');
+    }
+
+    return response.blob();
+  };
+
+  const downloadFile = async (att: Attachment) => {
     try {
-      const blob = base64ToBlob(att.data, att.type);
+      const blob = await resolveAttachmentBlob(att);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = att.name;
+      link.download = att.originalName || att.name;
       document.body.appendChild(link);
       link.click();
       setTimeout(() => {
@@ -135,8 +150,8 @@ export const AttachmentsModule: React.FC<AttachmentsModuleProps> = ({ project, o
       const zip = new JSZip();
 
       for (const item of filtered) {
-        const base64Content = item.att.data.split(',')[1];
-        zip.file(`${item.provider}_${item.att.name}`, base64Content, { base64: true });
+        const blob = await resolveAttachmentBlob(item.att);
+        zip.file(`${item.provider}_${item.att.originalName || item.att.name}`, blob);
       }
 
       const content = await zip.generateAsync({ type: 'blob' });
