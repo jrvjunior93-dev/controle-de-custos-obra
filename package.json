@@ -1,0 +1,19 @@
+{
+  "name": "controle-de-custos-csc-brape-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=20 <23"
+  },
+  "scripts": {
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "build:backend": "npm --prefix backend run build",
+    "build:prod": "npm --prefix frontend run build && npm --prefix backend run build:prod",
+    "start:prod": "npm --prefix backend run start:prod",
+    "install:all": "npm --prefix frontend install && npm --prefix backend install",
+    "prisma:migrate": "npm --prefix backend run prisma:migrate",
+    "prisma:seed": "npm --prefix backend run prisma:seed"
+  }
+}

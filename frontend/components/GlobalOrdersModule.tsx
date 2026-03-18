@@ -1,0 +1,1111 @@
+﻿import React, { useMemo, useState } from 'react';
+import { Attachment, ExecutedCost, Order, OrderStatus, Project, User, isProjectAdmin } from '../types';
+import { AttachmentViewerModal } from './AttachmentViewerModal';
+import { dbService } from '../apiClient';
+
+interface GlobalOrdersModuleProps {
+  projects: Project[];
+  user: User;
+  onUpdateProjects: (all: Project[]) => void;
+  onPersistProject: (project: Project) => Promise<void>;
+  onPersistMemberOrder: (projectId: string, order: Order) => Promise<void>;
+  onDeleteMemberOrder: (projectId: string, orderId: string) => Promise<void>;
+  orderTypes: string[];
+}
+
+const formatMoneyInput = (value?: number) => value == null ? '' : value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const parseMoneyInput = (value: string) => {
+  const digits = value.replace(/\D/g, '');
+  return digits ? Number(digits) / 100 : undefined;
+};
+const normalizeDateKey = (value?: string) => {
+  if (!value) return '';
+  const trimmed = value.trim();
+  const isoMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) return isoMatch[1];
+  const brMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (brMatch) return `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatOrderDate = (value?: string) => {
+  const key = normalizeDateKey(value);
+  if (!key) return '-';
+  const [year, month, day] = key.split('-');
+  return `${day}/${month}/${year}`;
+};
+
+const matchesDesiredDateRange = (expectedDate?: string, startDate?: string, endDate?: string) => {
+  const targetDateKey = normalizeDateKey(expectedDate);
+  const startDateKey = normalizeDateKey(startDate);
+  const endDateKey = normalizeDateKey(endDate);
+
+  if (startDateKey && (!targetDateKey || targetDateKey < startDateKey)) return false;
+  if (endDateKey && (!targetDateKey || targetDateKey > endDateKey)) return false;
+  return true;
+};
+
+const renderAttachmentList = (attachments: Attachment[], onRemove: (attachmentId: string) => void, emptyLabel: string) => (
+  attachments.length === 0 ? (
+    <p className="text-[10px] font-bold text-slate-400 uppercase">{emptyLabel}</p>
+  ) : (
+    <div className="space-y-2 max-h-40 overflow-y-auto border border-slate-100 p-3 bg-slate-50">
+      {attachments.map((attachment) => (
+        <div key={attachment.id} className="flex items-center justify-between bg-white border border-slate-100 px-3 py-2">
+          <span className="text-[10px] font-black text-slate-700 uppercase truncate pr-3">{attachment.originalName || attachment.name}</span>
+          <button type="button" onClick={() => onRemove(attachment.id)} className="text-rose-500 hover:text-rose-700 text-xs font-black uppercase">Excluir</button>
+        </div>
+      ))}
+    </div>
+  )
+);
+
+const downloadAttachment = (attachment: Attachment) => {
+  const link = document.createElement('a');
+  link.href = attachment.data;
+  link.download = attachment.originalName || attachment.name;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+const normalizeCsvHeader = (value: string) => value
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim()
+  .toLowerCase();
+
+const parseCsvRows = (text: string) => {
+  const sourceLines = text.split(/\r?\n/);
+  const lines: string[] = [];
+  let currentRecord = '';
+  let quoteCount = 0;
+
+  sourceLines.forEach((line) => {
+    if (!currentRecord) {
+      currentRecord = line;
+    } else {
+      currentRecord += `\n${line}`;
+    }
+
+    quoteCount += (line.match(/"/g) || []).length;
+    if (quoteCount % 2 === 0) {
+      if (currentRecord.trim()) lines.push(currentRecord);
+      currentRecord = '';
+      quoteCount = 0;
+    }
+  });
+
+  if (currentRecord.trim()) lines.push(currentRecord);
+  if (lines.length < 2) return [];
+
+  const splitLine = (line: string) => {
+    const values: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i += 1) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+        continue;
+      }
+      if (char === ';' && !inQuotes) {
+        values.push(current.trim());
+        current = '';
+        continue;
+      }
+      current += char;
+    }
+    values.push(current.trim());
+    return values;
+  };
+
+  const headers = splitLine(lines[0]).map(normalizeCsvHeader);
+  return lines.slice(1).map((line) => {
+    const values = splitLine(line);
+    const row: Record<string, string> = {};
+    headers.forEach((header, index) => {
+      row[header] = values[index] || '';
+    });
+    return {
+      externalCode: row['codigo'],
+      projectCode: row['codigo obra'] || row['codigo_obra'],
+      projectName: row['obra'],
+      title: row['titulo'],
+      description: row['descricao'],
+      type: row['tipo de solicitacao'] || row['tipo_solicitacao'],
+      value: row['valor'] || row['valor geral'] || row['valor_geral'] || row['valor total'] || row['valor_total'] || row['geral'],
+      status: row['status'],
+      createdAt: row['data registro'] || row['data_registro'],
+      expectedDate: row['data vencimento'] || row['data_vencimento'],
+      macroItem: row['item macro'] || row['item_macro'],
+    };
+  }).filter((row) => row.projectCode || row.projectName || row.description);
+};
+
+const downloadImportTemplate = () => {
+  const template = [
+    'Código;Código Obra;Obra;Título;Descrição;Tipo de Solicitação;Valor;Status;Data Registro;Data Vencimento;Item Macro',
+    'LEG-001;OBRA1;OBRA MODELO;COMPRA DE MATERIAL ELETRICO;Compra de material para alimentação do quadro;COMPRA DE MATERIAL;1500,50;PENDENTE;18/03/2026;20/03/2026;',
+  ].join('\n');
+  const blob = new Blob(['\uFEFF', template], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'modelo_importacao_pedidos.csv';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+const buildImportSummary = (result: { imported?: any[]; skipped?: any[] }) => {
+  const importedCount = result.imported?.length || 0;
+  const skipped = result.skipped || [];
+  const lines = [`Importação concluída. ${importedCount} pedido(s) importado(s) e ${skipped.length} ignorado(s).`];
+
+  if (skipped.length > 0) {
+    lines.push('', 'Linhas ignoradas:');
+    skipped.slice(0, 15).forEach((item, index) => {
+      const code = item?.row?.externalCode || item?.row?.codigo || item?.row?.projectCode || item?.row?.obra || `linha ${index + 1}`;
+      lines.push(`- ${code}: ${item?.reason || 'Motivo não informado'}`);
+    });
+    if (skipped.length > 15) {
+      lines.push(`- ... e mais ${skipped.length - 15} linha(s) ignorada(s).`);
+    }
+  }
+
+  return lines.join('\n');
+};
+
+export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects, user, onUpdateProjects, onPersistProject, onPersistMemberOrder, onDeleteMemberOrder, orderTypes }) => {
+  const canManageAllOrders = isProjectAdmin(user.role);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isActionModalOpen, setIsActionModalOpen] = useState<Order | null>(null);
+  const [actionType, setActionType] = useState<'COMPLETE' | 'REQUEST_INFO' | 'CANCEL' | 'NONE'>('NONE');
+  const [actionText, setActionText] = useState('');
+  const [actionAttachments, setActionAttachments] = useState<Attachment[]>([]);
+  const [messageText, setMessageText] = useState('');
+  const [messageAttachments, setMessageAttachments] = useState<Attachment[]>([]);
+  const [filterSearch, setFilterSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('ALL');
+  const [filterProject, setFilterProject] = useState<string>('ALL');
+  const [filterType, setFilterType] = useState<string>('ALL');
+  const [filterMinValue, setFilterMinValue] = useState('');
+  const [filterMaxValue, setFilterMaxValue] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+  const [incorporateCost, setIncorporateCost] = useState(false);
+  const [editableOrderValue, setEditableOrderValue] = useState<number>(0);
+  const [finalValue, setFinalValue] = useState<number>(0);
+  const [finalDate, setFinalDate] = useState(new Date().toISOString().split('T')[0]);
+  const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [selectedMacroItemId, setSelectedMacroItemId] = useState('');
+  const [newOrder, setNewOrder] = useState<Partial<Order>>({
+    projectId: '',
+    title: '',
+    type: orderTypes[0] || 'MATERIAL',
+    description: '',
+    macroItemId: '',
+    expectedDate: '',
+    value: undefined,
+    attachments: []
+  });
+
+  const rawOrders = useMemo(() => {
+    const list: Order[] = [];
+    projects.forEach((project) => {
+      (project.orders || []).forEach((order) => {
+        if (canManageAllOrders || order.requesterId === user.id) list.push(order);
+      });
+    });
+    return list;
+  }, [projects, canManageAllOrders, user.id]);
+
+  const filteredOrders = useMemo(() => rawOrders.filter((order) => {
+    const searchTerm = filterSearch.toLowerCase();
+    const normalizedValue = Number(order.value || 0);
+    const minValue = filterMinValue ? Number(filterMinValue) : null;
+    const maxValue = filterMaxValue ? Number(filterMaxValue) : null;
+
+    const matchSearch = !searchTerm || order.title.toLowerCase().includes(searchTerm) || (order.description || '').toLowerCase().includes(searchTerm);
+    const matchStatus = filterStatus === 'ALL' || order.status === filterStatus;
+    const matchProject = filterProject === 'ALL' || order.projectId === filterProject;
+    const matchType = filterType === 'ALL' || order.type === filterType;
+    const matchMinValue = minValue == null || normalizedValue >= minValue;
+    const matchMaxValue = maxValue == null || normalizedValue <= maxValue;
+    const matchDesiredDateRange = matchesDesiredDateRange(order.expectedDate, filterStartDate, filterEndDate);
+
+    return matchSearch && matchStatus && matchProject && matchType && matchMinValue && matchMaxValue && matchDesiredDateRange;
+  }).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [rawOrders, filterSearch, filterStatus, filterProject, filterType, filterMinValue, filterMaxValue, filterStartDate, filterEndDate]);
+
+  const assignedProjects = canManageAllOrders ? projects : projects.filter((project) => user.assignedProjectIds?.includes(project.id));
+  const isOrderActive = (order: Order) => order.status !== 'CONCLUIDO' && order.status !== 'CANCELADO';
+  const canTreatOrder = (order: Order) => canManageAllOrders && isOrderActive(order) && order.responsibleId === user.id;
+  const activeProjectForModal = isActionModalOpen ? projects.find((project) => project.id === isActionModalOpen.projectId) : null;
+  const canEditMacroItem = (order: Order) => canManageAllOrders && isOrderActive(order);
+  const canEditOrderValueDirectly = (order: Order) => user.role === 'SUPERADMIN' && !!order;
+  const getMessageMeta = (order: Order, message: Order['messages'][number]) => {
+    if (message.userId === 'system') {
+      return { label: 'Sistema', classes: 'bg-slate-50 border-slate-200 text-slate-500' };
+    }
+    if (message.text.startsWith('Pedido cancelado:')) {
+      return { label: 'Cancelamento', classes: 'bg-rose-50 border-rose-200 text-rose-700' };
+    }
+    if (message.userId === order.requesterId) {
+      return { label: 'Resposta do membro', classes: 'bg-emerald-50 border-emerald-200 text-emerald-700' };
+    }
+    return { label: 'Solicitação da central', classes: 'bg-blue-50 border-blue-200 text-blue-700' };
+  };
+
+  const resetActionState = () => {
+    setActionType('NONE');
+    setActionText('');
+    setActionAttachments([]);
+    setMessageText('');
+    setMessageAttachments([]);
+    setIncorporateCost(false);
+    setEditableOrderValue(0);
+    setFinalValue(0);
+    setFinalDate(new Date().toISOString().split('T')[0]);
+  };
+
+  const clearFilters = () => {
+    setFilterSearch('');
+    setFilterStatus('ALL');
+    setFilterProject('ALL');
+    setFilterType('ALL');
+    setFilterMinValue('');
+    setFilterMaxValue('');
+    setFilterStartDate('');
+    setFilterEndDate('');
+  };
+
+  const openOrderModal = (order: Order) => {
+    setIsActionModalOpen(order);
+    resetActionState();
+    const currentValue = Number(order.value || 0);
+    setEditableOrderValue(currentValue);
+    setFinalValue(currentValue);
+    setSelectedMacroItemId(order.macroItemId || '');
+  };
+
+  const persistMemberOrder = (projectId: string, order: Order) => {
+    if (!canManageAllOrders) {
+      void onPersistMemberOrder(projectId, order);
+    }
+  };
+
+  const persistProjectState = (project: Project) => {
+    if (canManageAllOrders) {
+      void onPersistProject(project);
+    }
+  };
+
+  const handleCreateOrder = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!newOrder.projectId || !newOrder.macroItemId) {
+      return alert('Por favor, selecione a Obra e a Apropriação.');
+    }
+
+    const targetProject = projects.find((project) => project.id === newOrder.projectId);
+    if (!targetProject) return;
+    if (!confirm(`Confirmar abertura do pedido "${newOrder.title}" para a obra "${targetProject.name}"?`)) return;
+
+    const order: Order = {
+      id: crypto.randomUUID(),
+      projectId: targetProject.id,
+      projectName: targetProject.name,
+      title: (newOrder.title || 'SEM TITULO').toUpperCase(),
+      type: newOrder.type || orderTypes[0],
+      description: newOrder.description || '',
+      macroItemId: newOrder.macroItemId || '',
+      expectedDate: newOrder.expectedDate || '',
+      value: Number(newOrder.value || 0),
+      status: 'PENDENTE',
+      requesterId: user.id,
+      requesterName: user.name,
+      attachments: newOrder.attachments || [],
+      messages: [{ id: crypto.randomUUID(), userId: 'system', userName: 'SISTEMA', text: `Pedido protocolado por ${user.name}.`, date: new Date().toISOString() }],
+      createdAt: new Date().toISOString()
+    };
+
+    const updatedProject = { ...targetProject, orders: [...(targetProject.orders || []), order] };
+    onUpdateProjects(projects.map((project) => project.id === targetProject.id ? updatedProject : project));
+    if (canManageAllOrders) {
+      persistProjectState(updatedProject);
+    } else {
+      void onPersistMemberOrder(targetProject.id, order);
+    }
+    setIsModalOpen(false);
+    setNewOrder({ projectId: '', title: '', type: orderTypes[0], description: '', macroItemId: '', expectedDate: '', value: undefined, attachments: [] });
+  };
+
+  const handleImportOrders = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsImporting(true);
+      const text = await file.text();
+      const rows = parseCsvRows(text);
+      if (rows.length === 0) {
+        alert('Nenhum pedido vÃ¡lido foi encontrado no arquivo.');
+        return;
+      }
+
+      const result = await dbService.importOrders(rows);
+      const importedByProject = new Map<string, Order[]>();
+      (result.imported || []).forEach((order) => {
+        const current = importedByProject.get(order.projectId) || [];
+        current.push(order);
+        importedByProject.set(order.projectId, current);
+      });
+
+      const nextProjects = projects.map((project) => {
+        const importedOrders = importedByProject.get(project.id);
+        if (!importedOrders || importedOrders.length === 0) return project;
+        return { ...project, orders: [...(project.orders || []), ...importedOrders] };
+      });
+
+      onUpdateProjects(nextProjects);
+      alert(buildImportSummary(result));
+    } catch (error: any) {
+      alert(error?.message || 'Erro ao importar pedidos.');
+    } finally {
+      setIsImporting(false);
+      event.target.value = '';
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, target: 'NEW' | 'ACTION' | 'MESSAGE') => {
+    const files = event.target.files;
+    if (!files) return;
+    const uploaded: Attachment[] = [];
+
+    for (const file of Array.from(files)) {
+      const reader = new FileReader();
+      const data: string = await new Promise((resolve) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      uploaded.push({
+        id: crypto.randomUUID(),
+        name: file.name,
+        originalName: file.name,
+        data,
+        type: file.type,
+        size: file.size,
+        uploadDate: new Date().toISOString()
+      });
+    }
+
+    if (target === 'NEW') {
+      setNewOrder((current) => ({ ...current, attachments: [...(current.attachments || []), ...uploaded] }));
+    } else if (target === 'MESSAGE') {
+      setMessageAttachments((current) => [...current, ...uploaded]);
+    } else {
+      setActionAttachments((current) => [...current, ...uploaded]);
+    }
+
+    event.target.value = '';
+  };
+
+  const handleAssumeOrder = (order: Order) => {
+    if (!confirm(`Assumir o tratamento do pedido "${order.title}"?`)) return;
+    const updatedProject = projects.find((project) => project.id === order.projectId);
+    if (!updatedProject) return;
+
+    let updatedOrder: Order | null = null;
+    const nextProject = {
+      ...updatedProject,
+      orders: (updatedProject.orders || []).map((item) => item.id === order.id ? {
+        ...item,
+        status: 'EM_ANALISE' as OrderStatus,
+        responsibleId: user.id,
+        responsibleName: user.name,
+        messages: [...(item.messages || []), { id: crypto.randomUUID(), userId: 'system', userName: 'SISTEMA', text: `${user.name} assumiu o tratamento do pedido.`, date: new Date().toISOString() }]
+      } : item).map((item) => {
+        if (item.id === order.id) updatedOrder = item;
+        return item;
+      })
+    };
+
+    onUpdateProjects(projects.map((project) => {
+      if (project.id !== order.projectId) return project;
+      return nextProject;
+    }));
+
+    if (canManageAllOrders) {
+      persistProjectState(nextProject);
+    }
+
+    if (updatedOrder) {
+      setIsActionModalOpen(updatedOrder);
+    }
+  };
+
+  const removeNewOrderAttachment = (attachmentId: string) => {
+    setNewOrder((current) => ({ ...current, attachments: (current.attachments || []).filter((attachment) => attachment.id !== attachmentId) }));
+  };
+
+  const removeActionAttachment = (attachmentId: string) => {
+    setActionAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
+  };
+
+  const removeMessageAttachment = (attachmentId: string) => {
+    setMessageAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
+  };
+
+  const handleDeleteOrder = (order: Order) => {
+    if (!confirm('Excluir pedido permanentemente?')) return;
+
+    const targetProject = projects.find((project) => project.id === order.projectId);
+    if (!targetProject) return;
+
+    const nextProject = {
+      ...targetProject,
+      orders: (targetProject.orders || []).filter((item) => item.id !== order.id)
+    };
+
+    onUpdateProjects(projects.map((project) => project.id === order.projectId ? nextProject : project));
+
+    if (canManageAllOrders) {
+      persistProjectState(nextProject);
+    } else {
+      void onDeleteMemberOrder(order.projectId, order.id);
+    }
+
+    if (isActionModalOpen?.id === order.id) {
+      setIsActionModalOpen(null);
+    }
+  };
+
+  const handleSaveOrderValue = () => {
+    if (!isActionModalOpen) return;
+    if (!canEditOrderValueDirectly(isActionModalOpen)) return;
+    if (!confirm(`Salvar o novo valor do pedido "${isActionModalOpen.title}"?`)) return;
+
+    let updatedOrder: Order | null = null;
+    const updatedProject = handleProjectMutation(isActionModalOpen.projectId, (project) => ({
+      ...project,
+      orders: (project.orders || []).map((item) => {
+        if (item.id !== isActionModalOpen.id) return item;
+        updatedOrder = { ...item, value: Number(editableOrderValue || 0) };
+        return updatedOrder;
+      })
+    }));
+
+    if (updatedProject) {
+      persistProjectState(updatedProject);
+    }
+
+    if (updatedOrder) {
+      setIsActionModalOpen(updatedOrder);
+      if (incorporateCost) setFinalValue(Number(updatedOrder.value || 0));
+    }
+  };
+
+  const handleProjectMutation = (projectId: string, mutate: (project: Project) => Project) => {
+    const targetProject = projects.find((project) => project.id === projectId);
+    if (!targetProject) return null;
+
+    const nextProject = mutate(targetProject);
+    onUpdateProjects(projects.map((project) => project.id === projectId ? nextProject : project));
+    return nextProject;
+  };
+
+  const handleSendMessage = () => {
+    if (!isActionModalOpen || !messageText.trim()) return alert('Escreva a interação que deseja registrar.');
+    if (!confirm(`Adicionar interação ao pedido "${isActionModalOpen.title}"?`)) return;
+
+    let updatedOrder: Order | null = null;
+    const updatedProject = handleProjectMutation(isActionModalOpen.projectId, (project) => ({
+      ...project,
+      orders: (project.orders || []).map((item) => {
+        if (item.id !== isActionModalOpen.id) return item;
+        updatedOrder = {
+          ...item,
+          status: item.status === 'AGUARDANDO_INFORMACAO' && !canManageAllOrders
+            ? ((item.responsibleId || item.responsibleName) ? 'EM_ANALISE' : 'PENDENTE')
+            : item.status,
+          messages: [...(item.messages || []), {
+            id: crypto.randomUUID(),
+            userId: user.id,
+            userName: user.name,
+            text: messageText.trim(),
+            date: new Date().toISOString(),
+            attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
+          }]
+        };
+        return updatedOrder;
+      })
+    }));
+
+    if (updatedProject) {
+      if (canManageAllOrders) {
+        persistProjectState(updatedProject);
+      } else if (updatedOrder) {
+        persistMemberOrder(isActionModalOpen.projectId, updatedOrder);
+      }
+    }
+
+    if (updatedOrder) {
+      setIsActionModalOpen(updatedOrder);
+    }
+
+    setMessageText('');
+    setMessageAttachments([]);
+  };
+
+  const handleDecision = () => {
+    if (!isActionModalOpen || actionType === 'NONE') return;
+    if (!canTreatOrder(isActionModalOpen)) return alert('Assuma o pedido antes de tratar.');
+    if ((actionType === 'REQUEST_INFO' || actionType === 'CANCEL') && !actionText.trim()) return alert('Preencha a mensagem do despacho antes de continuar.');
+    const actionLabel = actionType === 'COMPLETE' ? 'finalizar' : actionType === 'REQUEST_INFO' ? 'solicitar informação' : 'cancelar';
+    if (!confirm(`Confirmar a ação de ${actionLabel} para o pedido "${isActionModalOpen.title}"?`)) return;
+
+    const updated: Order = {
+      ...isActionModalOpen,
+      value: Number(editableOrderValue || 0),
+      macroItemId: selectedMacroItemId || undefined,
+    };
+    let newCost: ExecutedCost | null = null;
+
+    if (actionType === 'COMPLETE') {
+      updated.status = 'CONCLUIDO';
+      updated.completionNote = actionText;
+      updated.completionAttachment = actionAttachments[0] || undefined;
+      if (incorporateCost) {
+        if (!updated.macroItemId) {
+          return alert('Selecione um item macro antes de incorporar o pedido como custo.');
+        }
+        const costValue = Number(finalValue || editableOrderValue || 0);
+        newCost = {
+          id: crypto.randomUUID(),
+          macroItemId: updated.macroItemId!,
+          description: `[PEDIDO] ${updated.title}`,
+          itemDetail: updated.description,
+          unit: 'un',
+          quantity: 1,
+          unitValue: costValue,
+          totalValue: costValue,
+          date: finalDate,
+          entryDate: new Date().toISOString().split('T')[0],
+          attachments: [...updated.attachments, ...actionAttachments],
+          originOrderId: updated.id
+        };
+      }
+    } else if (actionType === 'CANCEL') {
+      updated.status = 'CANCELADO';
+      updated.cancellationReason = actionText.trim();
+      updated.messages = [...(updated.messages || []), {
+        id: crypto.randomUUID(),
+        userId: user.id,
+        userName: user.name,
+        text: `Pedido cancelado: ${actionText.trim()}`,
+        date: new Date().toISOString(),
+        attachments: actionAttachments.length > 0 ? actionAttachments : undefined
+      }];
+    } else if (actionType === 'REQUEST_INFO') {
+      updated.status = 'AGUARDANDO_INFORMACAO';
+      updated.messages = [...(updated.messages || []), {
+        id: crypto.randomUUID(),
+        userId: user.id,
+        userName: user.name,
+        text: actionText.trim(),
+        date: new Date().toISOString(),
+        attachments: actionAttachments.length > 0 ? actionAttachments : undefined
+      }];
+    }
+
+    const updatedProject = handleProjectMutation(updated.projectId, (project) => ({
+      ...project,
+      orders: (project.orders || []).map((order) => order.id === updated.id ? updated : order),
+      costs: newCost ? [...(project.costs || []), newCost] : (project.costs || [])
+    }));
+
+    if (updatedProject) {
+      if (canManageAllOrders) {
+        persistProjectState(updatedProject);
+      } else {
+        persistMemberOrder(updated.projectId, updated);
+      }
+    }
+
+    setIsActionModalOpen(updated);
+    setActionType('NONE');
+    setActionText('');
+    setActionAttachments([]);
+  };
+
+  const handleUpdateMacroItem = () => {
+    if (!isActionModalOpen || !activeProjectForModal) return;
+    if (!selectedMacroItemId) return alert('Selecione um item macro para vincular ao pedido.');
+    if (!confirm(`Vincular o item macro ao pedido "${isActionModalOpen.title}"?`)) return;
+
+    let updatedOrder: Order | null = null;
+    const updatedProject = handleProjectMutation(isActionModalOpen.projectId, (project) => ({
+      ...project,
+      orders: (project.orders || []).map((item) => {
+        if (item.id !== isActionModalOpen.id) return item;
+        updatedOrder = { ...item, macroItemId: selectedMacroItemId };
+        return updatedOrder;
+      })
+    }));
+
+    if (updatedProject) {
+      persistProjectState(updatedProject);
+    }
+
+    if (updatedOrder) {
+      setIsActionModalOpen(updatedOrder);
+    }
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto p-8 space-y-6 relative">
+      <div className="bg-white p-8 border border-slate-200 shadow-xl flex flex-wrap justify-between items-end gap-4">
+        <div>
+          <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Central de Pedidos</h3>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-2">Gestão consolidada de suprimentos e aprovações de campo.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          {canManageAllOrders && (
+            <>
+              <button type="button" onClick={downloadImportTemplate} className="bg-white border border-slate-300 text-slate-700 px-6 py-4 font-black uppercase text-xs tracking-widest shadow-sm hover:bg-slate-50">
+                Baixar Modelo
+              </button>
+              <label className={`px-6 py-4 font-black uppercase text-xs tracking-widest shadow-sm border ${isImporting ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-emerald-600 text-white border-emerald-600 cursor-pointer hover:bg-emerald-700'}`}>
+                {isImporting ? 'Importando...' : 'Importar Pedidos'}
+                <input type="file" accept=".csv" className="hidden" disabled={isImporting} onChange={(event) => void handleImportOrders(event)} />
+              </label>
+            </>
+          )}
+          <button onClick={() => setIsModalOpen(true)} className="bg-slate-900 hover:bg-black text-white px-10 py-4 font-black uppercase text-xs tracking-widest shadow-xl transition-all active:scale-95 z-10">
+            Novo Pedido
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 bg-white p-6 border border-slate-200">
+        <input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Filtrar por título..." className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
+        <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} className="bg-slate-50 border border-slate-200 px-3 py-3 text-[10px] font-black uppercase">
+          <option value="ALL">Todas as Obras</option>
+          {assignedProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+        </select>
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="bg-slate-50 border border-slate-200 px-3 py-3 text-[10px] font-black uppercase">
+          <option value="ALL">Status (Todos)</option>
+          <option value="PENDENTE">Pendente</option>
+          <option value="EM_ANALISE">Em Análise</option>
+          <option value="AGUARDANDO_INFORMACAO">Info Solicitada</option>
+          <option value="CONCLUIDO">Concluído</option>
+          <option value="CANCELADO">Cancelado</option>
+        </select>
+        <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="bg-slate-50 border border-slate-200 px-3 py-3 text-[10px] font-black uppercase">
+          <option value="ALL">Tipo do Pedido (Todos)</option>
+          {orderTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+        </select>
+        <input type="number" min="0" step="0.01" value={filterMinValue} onChange={(e) => setFilterMinValue(e.target.value)} placeholder="Valor mínimo" className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
+        <input type="number" min="0" step="0.01" value={filterMaxValue} onChange={(e) => setFilterMaxValue(e.target.value)} placeholder="Valor máximo" className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
+        <input type="date" value={filterStartDate} onChange={(e) => setFilterStartDate(e.target.value)} title="Data desejada inicial" className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
+        <input type="date" value={filterEndDate} onChange={(e) => setFilterEndDate(e.target.value)} title="Data desejada final" className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
+        <button type="button" onClick={clearFilters} className="bg-white border border-slate-300 text-slate-700 px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-slate-50">
+          Limpar Filtros
+        </button>
+      </div>
+
+      <div className="hidden lg:block bg-white border border-slate-200 overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1180px] text-left table-fixed">
+            <thead className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200">
+              <tr>
+                <th className="px-4 py-5 w-[8%]">Data do Pedido</th>
+                <th className="px-4 py-5 w-[8%]">Data Desejada</th>
+                <th className="px-4 py-5 w-[12%]">Código do Pedido</th>
+                <th className="px-5 py-5 w-[11%]">Obra / Origem</th>
+                <th className="px-5 py-5 w-[12%]">Título do Pedido</th>
+                <th className="px-5 py-5 w-[15%]">Descrição</th>
+                <th className="px-4 py-5 w-[13%]">Tipo do Pedido</th>
+                <th className="px-4 py-5 w-[10%]">Valor do Pedido</th>
+                <th className="px-4 py-5 w-[11%]">Status Atual</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredOrders.map((order) => (
+                <tr key={order.id} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => openOrderModal(order)}>
+                  <td className="px-4 py-6 text-[10px] font-bold text-slate-500 font-mono whitespace-nowrap">{formatOrderDate(order.createdAt)}</td>
+                  <td className="px-4 py-6 text-[10px] font-bold text-slate-500 font-mono whitespace-nowrap">{formatOrderDate(order.expectedDate)}</td>
+                  <td className="px-4 py-6">
+                    <div className="font-black text-slate-900 uppercase text-xs whitespace-nowrap" title={order.orderCode || 'Código pendente'}>{order.orderCode || 'Código pendente'}</div>
+                    {order.externalCode && <div className="text-[9px] text-amber-600 font-bold uppercase whitespace-nowrap truncate" title={`Legado: ${order.externalCode}`}>Legado: {order.externalCode}</div>}
+                  </td>
+                  <td className="px-5 py-6">
+                    <div className="font-black text-slate-900 uppercase text-xs truncate" title={order.projectName}>{order.projectName}</div>
+                    <div className="text-[9px] text-slate-400 font-bold uppercase truncate" title={order.requesterName}>{order.requesterName}</div>
+                  </td>
+                  <td className="px-5 py-6">
+                    <div className="font-black text-slate-900 uppercase text-xs truncate" title={order.title}>{order.title}</div>
+                    <div className="text-[9px] text-slate-500 font-bold uppercase mt-1 truncate" title={(projects.find((project) => project.id === order.projectId)?.budget || []).find((macro) => macro.id === order.macroItemId)?.description || 'Item macro não vinculado'}>
+                      {(projects.find((project) => project.id === order.projectId)?.budget || []).find((macro) => macro.id === order.macroItemId)?.description || 'Item macro não vinculado'}
+                    </div>
+                  </td>
+                  <td className="px-5 py-6">
+                    <div className="text-[10px] text-slate-600 font-bold leading-relaxed line-clamp-3" title={order.description || '-'}>{order.description || '-'}</div>
+                  </td>
+                  <td className="px-4 py-6">
+                    <div className="text-[10px] text-blue-600 font-black uppercase tracking-tight truncate" title={order.type}>{order.type}</div>
+                  </td>
+                  <td className="px-4 py-6">
+                    <div className="text-[10px] text-slate-700 font-black whitespace-nowrap">R$ {(order.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  </td>
+                  <td className="px-4 py-6">
+                    <span title={order.status.replace('_', ' ')} className={`inline-flex text-[8px] font-black uppercase px-2 py-1 border whitespace-nowrap ${
+                      order.status === 'CONCLUIDO' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                      order.status === 'PENDENTE' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                      'bg-slate-50 text-slate-600 border-slate-100'}`}
+                    >
+                      {order.status.replace('_', ' ')}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {filteredOrders.length === 0 && <tr><td colSpan={9} className="p-20 text-center text-slate-300 font-black uppercase text-xs tracking-[0.4em]">Nenhum pedido encontrado.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="lg:hidden space-y-4">
+        {filteredOrders.map((order) => (
+          <div key={order.id} className="bg-white border border-slate-200 shadow-sm p-4 space-y-4 cursor-pointer" onClick={() => openOrderModal(order)}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="font-black text-slate-900 uppercase text-sm">{order.title}</div>
+                <div className="text-[10px] text-slate-500 font-black uppercase">{order.projectName}</div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase">{order.requesterName}</div>
+              </div>
+              <span className={`text-[8px] font-black uppercase px-2 py-1 border ${
+                order.status === 'CONCLUIDO' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                order.status === 'PENDENTE' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                'bg-slate-50 text-slate-600 border-slate-100'}`}
+              >
+                {order.status.replace('_', ' ')}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-[10px] font-bold uppercase">
+              <div className="bg-slate-50 border border-slate-100 p-3">
+                <div className="text-slate-400">Data do Pedido</div>
+                <div className="text-slate-700 mt-1">{formatOrderDate(order.createdAt)}</div>
+              </div>
+              <div className="bg-slate-50 border border-slate-100 p-3">
+                <div className="text-slate-400">Data Desejada</div>
+                <div className="text-slate-700 mt-1">{formatOrderDate(order.expectedDate)}</div>
+              </div>
+              <div className="bg-slate-50 border border-slate-100 p-3 col-span-2">
+                <div className="text-slate-400">Código do Pedido</div>
+                <div className="text-slate-900 mt-1">{order.orderCode || 'Código pendente'}</div>
+                {order.externalCode && <div className="text-amber-600 mt-1">Legado: {order.externalCode}</div>}
+              </div>
+              <div className="bg-slate-50 border border-slate-100 p-3">
+                <div className="text-slate-400">Tipo do Pedido</div>
+                <div className="text-blue-600 mt-1">{order.type}</div>
+              </div>
+              <div className="bg-slate-50 border border-slate-100 p-3">
+                <div className="text-slate-400">Valor do Pedido</div>
+                <div className="text-slate-900 mt-1">R$ {(order.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              </div>
+              <div className="bg-slate-50 border border-slate-100 p-3 col-span-2">
+                <div className="text-slate-400">Título do Pedido</div>
+                <div className="text-slate-900 mt-1">{order.title}</div>
+                <div className="text-slate-500 mt-1">
+                  {(projects.find((project) => project.id === order.projectId)?.budget || []).find((macro) => macro.id === order.macroItemId)?.description || 'Item macro não vinculado'}
+                </div>
+              </div>
+              <div className="bg-slate-50 border border-slate-100 p-3 col-span-2">
+                <div className="text-slate-400">Descrição</div>
+                <div className="text-slate-900 mt-1 normal-case leading-relaxed">{order.description || '-'}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+        {filteredOrders.length === 0 && <div className="bg-white border border-slate-200 p-12 text-center text-slate-300 font-black uppercase text-xs tracking-[0.4em]">Nenhum pedido encontrado.</div>}
+      </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md flex items-center justify-center z-[110] p-4 sm:p-6">
+          <div className="bg-white w-full max-w-2xl max-h-[95vh] shadow-2xl overflow-y-auto border border-slate-800 animate-in zoom-in duration-200">
+            <div className="bg-slate-900 p-5 sm:p-8 text-white flex justify-between items-center">
+              <h3 className="text-xl font-black uppercase tracking-tighter">Protocolar Novo Pedido</h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white"><i className="fas fa-times text-2xl"></i></button>
+            </div>
+            <form onSubmit={handleCreateOrder} className="p-5 sm:p-8 md:p-10 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Obra Destino</label>
+                  <select required className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500" value={newOrder.projectId} onChange={(e) => setNewOrder({ ...newOrder, projectId: e.target.value, macroItemId: '' })}>
+                    <option value="">Selecione...</option>
+                    {assignedProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Apropriação de Custo</label>
+                  <select required className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500" value={newOrder.macroItemId} onChange={(e) => setNewOrder({ ...newOrder, macroItemId: e.target.value })}>
+                    <option value="">Selecione...</option>
+                    {projects.find((project) => project.id === newOrder.projectId)?.budget.map((macro) => <option key={macro.id} value={macro.id}>{macro.description}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Título do Pedido</label>
+                <input required className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500" value={newOrder.title} onChange={(e) => setNewOrder({ ...newOrder, title: e.target.value })} placeholder="EX: COMPRA DE FIOS 10MM" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Pedido</label>
+                <select className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500" value={newOrder.type} onChange={(e) => setNewOrder({ ...newOrder, type: e.target.value })}>
+                  {orderTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Descrição Técnica / Detalhes</label>
+                <textarea rows={3} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs outline-none focus:border-blue-500" value={newOrder.description} onChange={(e) => setNewOrder({ ...newOrder, description: e.target.value })} placeholder="Descreva quantidades, marcas ou detalhes importantes..." />
+              </div>
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Desejada</label>
+                  <input type="date" className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs outline-none focus:border-blue-500" value={newOrder.expectedDate || ''} onChange={(e) => setNewOrder({ ...newOrder, expectedDate: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Valor Previsto (R$)</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
+                    <input type="text" inputMode="decimal" className="w-full bg-slate-50 border border-slate-200 px-12 py-3 font-black text-xs outline-none focus:border-blue-500" value={formatMoneyInput(newOrder.value)} onChange={(e) => setNewOrder({ ...newOrder, value: parseMoneyInput(e.target.value) })} placeholder="0,00" />
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Anexos do Pedido</label>
+                <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'NEW')} />
+                {renderAttachmentList(newOrder.attachments || [], removeNewOrderAttachment, 'Nenhum anexo selecionado.')}
+              </div>
+              <button type="submit" className="w-full bg-slate-900 text-white py-5 font-black uppercase text-xs tracking-widest shadow-2xl transition-all active:scale-95">Protocolar na Central</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isActionModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md flex items-center justify-center z-[120] p-4 sm:p-6">
+          <div className="bg-white w-full max-w-6xl shadow-2xl overflow-hidden border border-slate-800 flex flex-col max-h-[95vh]">
+            <div className="p-5 sm:p-8 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-4">
+              <div>
+                <span className="text-[9px] font-black uppercase px-2 py-1 bg-slate-900 text-white mb-2 block w-fit">{isActionModalOpen.status}</span>
+                <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{isActionModalOpen.title}</h3>
+                <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Obra: {isActionModalOpen.projectName}</p>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {canManageAllOrders && !isActionModalOpen.responsibleId && isActionModalOpen.status === 'PENDENTE' && (
+                  <button type="button" onClick={() => handleAssumeOrder(isActionModalOpen)} className="bg-slate-900 text-white px-4 py-3 text-[9px] font-black uppercase shadow-lg">
+                    Assumir
+                  </button>
+                )}
+                {canManageAllOrders && (
+                  <button type="button" onClick={() => handleDeleteOrder(isActionModalOpen)} className="bg-rose-50 text-rose-600 border border-rose-200 px-4 py-3 text-[9px] font-black uppercase shadow-sm">
+                    Excluir
+                  </button>
+                )}
+                <button onClick={() => setIsActionModalOpen(null)} className="text-slate-400 hover:text-slate-900 px-2"><i className="fas fa-times text-2xl"></i></button>
+              </div>
+            </div>
+            <div className="flex-1 p-4 sm:p-6 lg:p-10 overflow-y-auto space-y-8">
+              <div className="bg-slate-50 p-6 border-l-4 border-slate-900">
+                <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Descrição da Solicitação</p>
+                <p className="text-sm font-bold text-slate-700 italic">"{isActionModalOpen.description}"</p>
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-[10px] font-black text-slate-500 uppercase">Código do Pedido</p>
+                    <p className="text-sm font-black text-slate-900">{isActionModalOpen.orderCode || 'Será gerado pelo backend'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-500 uppercase">Código Externo</p>
+                    <p className="text-sm font-black text-slate-900">{isActionModalOpen.externalCode || 'Não informado'}</p>
+                  </div>
+                </div>
+                <p className="text-[10px] font-black text-slate-500 uppercase mt-4">Valor Atual do Pedido</p>
+                <p className="text-lg font-black text-slate-900">R$ {(isActionModalOpen.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                {canEditOrderValueDirectly(isActionModalOpen) && (
+                  <div className="mt-4 space-y-3">
+                    <label className="text-[10px] font-black text-slate-500 uppercase">Editar Valor do Pedido</label>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <div className="relative flex-1">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className="w-full bg-white border border-slate-200 pl-12 pr-4 py-3 font-black text-sm"
+                          value={formatMoneyInput(editableOrderValue)}
+                          onChange={(e) => setEditableOrderValue(parseMoneyInput(e.target.value) || 0)}
+                          placeholder="0,00"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSaveOrderValue}
+                        className="bg-slate-900 text-white px-5 py-3 text-[10px] font-black uppercase tracking-widest shadow-sm"
+                      >
+                        Salvar Valor
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-white border border-slate-200 p-6 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Macro do Pedido</p>
+                    <p className="text-xs font-bold text-slate-500">Use este campo para complementar pedidos importados sem apropriação.</p>
+                  </div>
+                  {canEditMacroItem(isActionModalOpen) && (
+                    <button type="button" onClick={handleUpdateMacroItem} className="px-4 py-3 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest shadow-sm">
+                      Salvar Item Macro
+                    </button>
+                  )}
+                </div>
+                <select
+                  className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500"
+                  value={selectedMacroItemId}
+                  onChange={(event) => setSelectedMacroItemId(event.target.value)}
+                  disabled={!canEditMacroItem(isActionModalOpen)}
+                >
+                  <option value="">Selecione...</option>
+                  {(activeProjectForModal?.budget || []).map((macro) => (
+                    <option key={macro.id} value={macro.id}>{macro.description}</option>
+                  ))}
+                </select>
+              </div>
+
+              {canManageAllOrders && (isActionModalOpen.status === 'PENDENTE' || isActionModalOpen.status === 'EM_ANALISE' || isActionModalOpen.status === 'AGUARDANDO_INFORMACAO') && (
+                <div className="space-y-6 pt-6 border-t border-slate-100">
+                  <h4 className="text-lg font-black uppercase tracking-tighter">Despacho da Central</h4>
+                  {!canTreatOrder(isActionModalOpen) ? (
+                    <div className="bg-amber-50 border border-amber-200 p-4 text-[10px] font-black uppercase text-amber-700">
+                      Assuma este pedido para liberar o tratamento.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex gap-2">
+                        {['COMPLETE', 'REQUEST_INFO', 'CANCEL'].map((type) => (
+                          <button key={type} onClick={() => setActionType(type as 'COMPLETE' | 'REQUEST_INFO' | 'CANCEL')} className={`flex-1 py-4 text-[10px] font-black uppercase border-2 transition-all ${actionType === type ? 'bg-slate-900 text-white border-slate-900' : 'text-slate-400 border-slate-100'}`}>
+                            {type === 'COMPLETE' ? 'Finalizar' : type === 'REQUEST_INFO' ? 'Info' : 'Cancelar'}
+                          </button>
+                        ))}
+                      </div>
+                      {actionType !== 'NONE' && (
+                        <div className="space-y-4 animate-in slide-in-from-top-4 duration-300">
+                          <div>
+                            <label className="text-[9px] font-black text-slate-400 uppercase">Valor do Pedido (R$)</label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
+                              <input type="text" inputMode="decimal" className="w-full bg-white border border-slate-200 pl-11 pr-3 py-3 font-black text-sm" value={formatMoneyInput(editableOrderValue)} onChange={(e) => { const nextValue = parseMoneyInput(e.target.value) || 0; setEditableOrderValue(nextValue); if (incorporateCost && actionType === 'COMPLETE') setFinalValue(nextValue); }} placeholder="0,00" />
+                            </div>
+                          </div>
+                          {actionType === 'COMPLETE' && (
+                            <div className="bg-blue-50 p-6 space-y-4 border border-blue-100 mb-4">
+                              <label className="flex items-center gap-3 cursor-pointer">
+                                <input type="checkbox" checked={incorporateCost} onChange={(e) => { const checked = e.target.checked; setIncorporateCost(checked); if (checked) setFinalValue(Number(editableOrderValue || 0)); }} className="w-4 h-4 text-blue-600 rounded-none" />
+                                <span className="text-[10px] font-black uppercase text-blue-900">Incorporar custo automaticamente na obra</span>
+                              </label>
+                              {incorporateCost && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="text-[9px] font-black text-slate-400 uppercase">Valor Final (R$)</label>
+                                    <div className="relative">
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
+                                      <input type="text" inputMode="decimal" className="w-full bg-white border border-slate-200 pl-11 pr-3 py-2 font-black text-sm" value={formatMoneyInput(finalValue)} onChange={(e) => setFinalValue(parseMoneyInput(e.target.value) || 0)} placeholder="0,00" />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] font-black text-slate-400 uppercase">Data do Custo</label>
+                                    <input type="date" className="w-full bg-white border border-slate-200 px-3 py-2 font-black text-xs" value={finalDate} onChange={(e) => setFinalDate(e.target.value)} />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <textarea value={actionText} onChange={(e) => setActionText(e.target.value)} placeholder="Justificativa ou parecer técnico..." className="w-full bg-slate-50 border border-slate-200 p-4 font-bold text-xs" rows={4} />
+                          <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-400 uppercase">Anexos da ação</label>
+                            <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'ACTION')} />
+                            {renderAttachmentList(actionAttachments, removeActionAttachment, 'Nenhum anexo selecionado para esta ação.')}
+                          </div>
+                          <button onClick={handleDecision} className="w-full bg-blue-600 text-white py-5 font-black uppercase text-xs tracking-widest shadow-xl">Confirmar Despacho</button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {isActionModalOpen.status !== 'CONCLUIDO' && isActionModalOpen.status !== 'CANCELADO' && (
+                <div className="space-y-4 pt-6 border-t border-slate-100">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Interações Livres</h4>
+                  <textarea value={messageText} onChange={(e) => setMessageText(e.target.value)} className="w-full bg-slate-50 border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder="Registre uma orientação, alinhamento ou resposta livre do pedido..." />
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase">Anexos da mensagem</label>
+                    <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'MESSAGE')} />
+                    {renderAttachmentList(messageAttachments, removeMessageAttachment, 'Nenhum anexo selecionado para esta mensagem.')}
+                  </div>
+                  <button onClick={handleSendMessage} className="w-full bg-slate-900 text-white py-4 font-black uppercase text-[10px] shadow-xl">Adicionar Interação</button>
+                </div>
+              )}
+
+              {isActionModalOpen.messages && isActionModalOpen.messages.length > 0 && (
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Histórico de Mensagens</h4>
+                  <div className="space-y-4">
+                    {isActionModalOpen.messages.map((message) => {
+                      const meta = getMessageMeta(isActionModalOpen, message);
+                      return (
+                      <div key={message.id} className={`p-4 border-l-4 ${meta.classes}`}>
+                        <div className="flex justify-between text-[8px] font-black uppercase text-slate-400 mb-1">
+                          <span>{message.userName}</span>
+                          <span>{new Date(message.date).toLocaleString('pt-BR')}</span>
+                        </div>
+                        <div className="mb-2 text-[8px] font-black uppercase tracking-widest">{meta.label}</div>
+                        <p className="text-xs font-bold text-slate-600 italic">"{message.text}"</p>
+                        {message.attachments && message.attachments.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {message.attachments.map((attachment) => (
+                              <div key={attachment.id} className="flex items-center gap-2">
+                                <button type="button" onClick={() => setPreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
+                                  Visualizar
+                                </button>
+                                <button type="button" onClick={() => downloadAttachment(attachment)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">
+                                  Download
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )})}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <AttachmentViewerModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} onDownload={downloadAttachment} />
+    </div>
+  );
+};

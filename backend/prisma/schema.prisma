@@ -1,0 +1,304 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPERADMIN
+  ADMIN
+  ADMIN_OBRA
+  MEMBRO
+}
+
+enum InstallmentStatus {
+  PENDING
+  PAID
+}
+
+enum OrderStatus {
+  PENDENTE
+  EM_ANALISE
+  AGUARDANDO_INFORMACAO
+  CONCLUIDO
+  CANCELADO
+}
+
+enum AttachmentKind {
+  REQUEST
+  COMPLETION
+  ATTACHMENT
+  PAYMENT_PROOF
+  MESSAGE
+  COST_DOCUMENT
+}
+
+model User {
+  id                Int            @id @default(autoincrement())
+  email             String         @unique @map("email")
+  passwordHash      String         @map("senha_hash")
+  name              String         @map("nome")
+  role              UserRole       @map("perfil")
+  managerId         Int?           @map("gestor_id")
+  isActive          Boolean        @default(true) @map("ativo")
+  createdAt         DateTime       @default(now()) @map("criado_em")
+  updatedAt         DateTime       @updatedAt @map("atualizado_em")
+  manager           User?          @relation("UserHierarchy", fields: [managerId], references: [id], onDelete: SetNull)
+  subordinates      User[]         @relation("UserHierarchy")
+  assignedProjects  UserProject[]
+  ordersRequested   Order[]        @relation("RequesterOrders")
+  ordersResponsible Order[]        @relation("ResponsibleOrders")
+  orderMessages     OrderMessage[]
+
+  @@index([role, isActive])
+  @@index([managerId])
+
+  @@map("usuarios")
+}
+
+model UserProject {
+  userId     Int      @map("usuario_id")
+  projectId  Int      @map("obra_id")
+  createdAt  DateTime @default(now()) @map("criado_em")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([userId, projectId])
+  @@index([projectId])
+
+  @@map("usuarios_obras")
+}
+
+model Project {
+  id            Int           @id @default(autoincrement())
+  code          String        @unique @map("codigo")
+  name          String     @map("nome")
+  location      String     @map("localizacao")
+  startDate     DateTime   @map("data_inicio")
+  notes         String?    @db.Text @map("observacoes")
+  lastOrderNumber Int       @default(0) @map("ultimo_numero_pedido")
+  createdAt     DateTime   @default(now()) @map("criado_em")
+  updatedAt     DateTime   @updatedAt @map("atualizado_em")
+  budget        MacroItem[]
+  costs         Cost[]
+  installments  Installment[]
+  orders        Order[]
+  assignedUsers UserProject[]
+
+  @@index([name])
+  @@index([code])
+  @@index([startDate])
+
+  @@map("obras")
+}
+
+model MacroItem {
+  id            Int       @id @default(autoincrement())
+  projectId     Int              @map("obra_id")
+  description   String     @map("descricao")
+  budgetedValue Decimal    @db.Decimal(15, 2) @map("valor_orcado")
+  createdAt     DateTime   @default(now()) @map("criado_em")
+  updatedAt     DateTime   @updatedAt @map("atualizado_em")
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  costs         Cost[]
+  installments  Installment[]
+  orders        Order[]
+
+  @@index([projectId])
+  @@index([description])
+
+  @@map("itens_macro")
+}
+
+model Cost {
+  id            Int              @id @default(autoincrement())
+  projectId     Int              @map("obra_id")
+  macroItemId   Int              @map("item_macro_id")
+  description   String     @map("descricao")
+  itemDetail    String?          @db.Text @map("detalhe_item")
+  unit          String           @map("unidade")
+  quantity      Decimal          @db.Decimal(15, 3) @map("quantidade")
+  unitValue     Decimal          @db.Decimal(15, 2) @map("valor_unitario")
+  totalValue    Decimal          @db.Decimal(15, 2) @map("valor_total")
+  occurredAt    DateTime         @map("data_ocorrencia")
+  recordedAt    DateTime         @map("data_lancamento")
+  createdAt     DateTime         @default(now()) @map("criado_em")
+  updatedAt     DateTime         @updatedAt @map("atualizado_em")
+  project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  macroItem     MacroItem        @relation(fields: [macroItemId], references: [id])
+  attachments   CostAttachment[]
+
+  @@index([projectId])
+  @@index([macroItemId])
+  @@index([occurredAt])
+
+  @@map("custos")
+}
+
+model CostAttachment {
+  id           Int            @id @default(autoincrement())
+  costId       Int            @map("custo_id")
+  kind         AttachmentKind @default(COST_DOCUMENT) @map("tipo")
+  name         String         @map("nome")
+  originalName String?        @map("nome_original")
+  data         String         @db.LongText @map("dados")
+  mimeType     String         @map("tipo_mime")
+  size         Int            @map("tamanho")
+  uploadedAt   DateTime       @map("enviado_em")
+  cost         Cost           @relation(fields: [costId], references: [id], onDelete: Cascade)
+
+  @@index([costId])
+
+  @@map("custos_anexos")
+}
+
+model Installment {
+  id                Int                @id @default(autoincrement())
+  projectId         Int                @map("obra_id")
+  macroItemId       Int                @map("item_macro_id")
+  provider          String             @map("fornecedor")
+  description       String             @db.Text @map("descricao")
+  totalValue        Decimal            @db.Decimal(15, 2) @map("valor_total")
+  installmentNumber Int                @map("numero_parcela")
+  totalInstallments Int                @map("total_parcelas")
+  dueDate           DateTime           @map("data_vencimento")
+  value             Decimal            @db.Decimal(15, 2) @map("valor")
+  digitalLine       String?            @map("linha_digitavel")
+  status            InstallmentStatus  @default(PENDING) @map("status")
+  createdAt         DateTime           @default(now()) @map("criado_em")
+  updatedAt         DateTime           @updatedAt @map("atualizado_em")
+  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  macroItem         MacroItem          @relation(fields: [macroItemId], references: [id])
+  attachments       InstallmentAttachment[]
+
+  @@index([projectId])
+  @@index([macroItemId])
+  @@index([dueDate])
+  @@index([status])
+
+  @@map("parcelas")
+}
+
+model InstallmentAttachment {
+  id            Int            @id @default(autoincrement())
+  installmentId Int            @map("parcela_id")
+  kind          AttachmentKind @map("tipo")
+  name          String     @map("nome")
+  originalName  String?        @map("nome_original")
+  data          String         @db.LongText @map("dados")
+  mimeType      String         @map("tipo_mime")
+  size          Int            @map("tamanho")
+  uploadedAt    DateTime       @map("enviado_em")
+  installment   Installment    @relation(fields: [installmentId], references: [id], onDelete: Cascade)
+
+  @@index([installmentId])
+
+  @@map("parcelas_anexos")
+}
+
+model OrderType {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique @map("nome")
+  sortOrder Int       @default(0) @map("ordem")
+  isActive  Boolean   @default(true) @map("ativo")
+  createdAt DateTime  @default(now()) @map("criado_em")
+  updatedAt DateTime  @updatedAt @map("atualizado_em")
+  orders    Order[]
+
+  @@index([sortOrder, isActive])
+
+  @@map("tipos_pedido")
+}
+
+model Order {
+  id                 Int           @id @default(autoincrement())
+  projectId          Int           @map("obra_id")
+  orderTypeId        Int           @map("tipo_pedido_id")
+  macroItemId        Int?          @map("item_macro_id")
+  requesterUserId    Int           @map("solicitante_usuario_id")
+  assignedUserId     Int?          @map("responsavel_usuario_id")
+  orderCode          String        @unique @map("codigo_pedido")
+  externalCode       String?       @map("codigo_externo")
+  title              String        @map("titulo")
+  description        String        @db.Text @map("descricao")
+  expectedDate       DateTime      @map("data_prevista")
+  status             OrderStatus   @default(PENDENTE) @map("status")
+  completionNote     String?       @db.Text @map("observacao_conclusao")
+  cancellationReason String?       @db.Text @map("motivo_cancelamento")
+  requestedValue     Decimal?      @db.Decimal(15, 2) @map("valor_solicitado")
+  createdAt          DateTime      @default(now()) @map("criado_em")
+  updatedAt          DateTime      @updatedAt @map("atualizado_em")
+  project            Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  orderType          OrderType     @relation(fields: [orderTypeId], references: [id])
+  macroItem          MacroItem?    @relation(fields: [macroItemId], references: [id])
+  requester          User          @relation("RequesterOrders", fields: [requesterUserId], references: [id])
+  responsible        User?         @relation("ResponsibleOrders", fields: [assignedUserId], references: [id])
+  attachments        OrderAttachment[]
+  messages           OrderMessage[]
+
+  @@index([projectId])
+  @@index([orderCode])
+  @@index([externalCode])
+  @@index([orderTypeId])
+  @@index([macroItemId])
+  @@index([requesterUserId])
+  @@index([assignedUserId])
+  @@index([status])
+  @@index([expectedDate])
+
+  @@map("pedidos")
+}
+
+model OrderAttachment {
+  id           Int            @id @default(autoincrement())
+  orderId       Int            @map("pedido_id")
+  kind          AttachmentKind @map("tipo")
+  name          String     @map("nome")
+  originalName  String?        @map("nome_original")
+  data          String         @db.LongText @map("dados")
+  mimeType      String         @map("tipo_mime")
+  size          Int            @map("tamanho")
+  uploadedAt    DateTime       @map("enviado_em")
+  order         Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+
+  @@map("pedidos_anexos")
+}
+
+model OrderMessage {
+  id          Int                    @id @default(autoincrement())
+  orderId     Int                    @map("pedido_id")
+  userId      Int?                   @map("usuario_id")
+  body        String                 @db.LongText @map("conteudo")
+  isSystem    Boolean                @default(false) @map("sistema")
+  createdAt   DateTime               @default(now()) @map("criado_em")
+  order       Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user        User?                  @relation(fields: [userId], references: [id])
+  attachments OrderMessageAttachment[]
+
+  @@index([orderId])
+  @@index([userId])
+
+  @@map("pedidos_mensagens")
+}
+
+model OrderMessageAttachment {
+  id             Int            @id @default(autoincrement())
+  orderMessageId Int            @map("mensagem_pedido_id")
+  kind           AttachmentKind @default(MESSAGE) @map("tipo")
+  name           String         @map("nome")
+  originalName   String?        @map("nome_original")
+  data           String         @db.LongText @map("dados")
+  mimeType       String         @map("tipo_mime")
+  size           Int            @map("tamanho")
+  uploadedAt     DateTime       @map("enviado_em")
+  message        OrderMessage   @relation(fields: [orderMessageId], references: [id], onDelete: Cascade)
+
+  @@index([orderMessageId])
+
+  @@map("pedidos_mensagens_anexos")
+}

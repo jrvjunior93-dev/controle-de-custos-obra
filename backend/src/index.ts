@@ -1,0 +1,1137 @@
+import express from "express";
+import cors from "cors";
+import "dotenv/config";
+import { PrismaClient, UserRole, OrderStatus, InstallmentStatus, AttachmentKind } from "@prisma/client";
+import { z } from "zod";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+
+const prisma = new PrismaClient();
+const app = express();
+app.disable("x-powered-by");
+
+const port = Number(process.env.PORT || 4000);
+const jwtSecret = process.env.JWT_SECRET || "dev-secret-change-me";
+const nodeEnv = process.env.NODE_ENV || "development";
+const corsAllowedOrigins = String(
+  process.env.CORS_ALLOWED_ORIGINS || process.env.FRONTEND_URL || "http://localhost:5173"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const SYSTEM_USER_ID = "system";
+const GLOBAL_ADMIN_ROLES: UserRole[] = [UserRole.SUPERADMIN, UserRole.ADMIN];
+const ORDER_TITLE_MAX_LENGTH = 190;
+
+const bulkProjectsSchema = z.object({ projects: z.array(z.any()) });
+const bulkUsersSchema = z.object({ users: z.array(z.any()) });
+const projectPayloadSchema = z.object({ project: z.any() });
+const userPayloadSchema = z.object({ user: z.any() });
+const orderTypesSchema = z.object({ orderTypes: z.array(z.string()) });
+const importOrdersSchema = z.object({ rows: z.array(z.any()) });
+
+type AuthUser = { id: string; role: UserRole };
+type AuthRequest = express.Request & { authUser?: AuthUser };
+
+const projectInclude = {
+  budget: true,
+  costs: { include: { attachments: true } },
+  installments: { include: { attachments: true } },
+  orders: {
+    include: {
+      orderType: true,
+      requester: true,
+      responsible: true,
+      attachments: true,
+      messages: {
+        include: {
+          user: true,
+          attachments: true,
+        }
+      }
+    }
+  }
+} as const;
+
+if (nodeEnv === "production" && jwtSecret === "dev-secret-change-me") {
+  throw new Error("JWT_SECRET must be set in production.");
+}
+
+if (!Number.isFinite(port) || port <= 0) {
+  throw new Error("PORT must be a valid positive number.");
+}
+
+if (nodeEnv === "production" && corsAllowedOrigins.length === 0) {
+  throw new Error("CORS_ALLOWED_ORIGINS or FRONTEND_URL must be set in production.");
+}
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (nodeEnv !== "production") return callback(null, true);
+    if (corsAllowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error("Origin not allowed by CORS"));
+  },
+  credentials: true
+}));
+app.use(express.json({ limit: "50mb" }));
+
+function normalizeRole(role: unknown): UserRole {
+  return Object.values(UserRole).includes(role as UserRole) ? (role as UserRole) : UserRole.MEMBRO;
+}
+
+function getRoleRank(role: UserRole) {
+  switch (role) {
+    case UserRole.SUPERADMIN:
+      return 4;
+    case UserRole.ADMIN:
+      return 3;
+    case UserRole.ADMIN_OBRA:
+      return 2;
+    default:
+      return 1;
+  }
+}
+
+function buildToken(user: AuthUser) {
+  return jwt.sign(user, jwtSecret, { expiresIn: "8h" });
+}
+
+function decimalToNumber(value: any) {
+  return value === null || value === undefined ? 0 : Number(value);
+}
+
+function truncateText(value: unknown, maxLength: number) {
+  const normalized = String(value || "").trim();
+  return normalized.length > maxLength ? normalized.slice(0, maxLength) : normalized;
+}
+
+function parseImportedMoney(value: unknown) {
+  const source = String(value ?? "").trim();
+  if (!source) return { value: 0, valid: false };
+
+  const normalized = source.replace(/\s/g, "").replace(/[Rr]\$/g, "");
+  if (normalized === "-" || normalized === "--") {
+    return { value: 0, valid: true };
+  }
+  const commaCount = (normalized.match(/,/g) || []).length;
+  const dotCount = (normalized.match(/\./g) || []).length;
+
+  if (commaCount > 0 && dotCount > 0) {
+    if (normalized.lastIndexOf(",") > normalized.lastIndexOf(".")) {
+      const parsed = Number(normalized.replace(/\./g, "").replace(",", "."));
+      return { value: Number.isFinite(parsed) ? parsed : 0, valid: Number.isFinite(parsed) };
+    }
+    const parsed = Number(normalized.replace(/,/g, ""));
+    return { value: Number.isFinite(parsed) ? parsed : 0, valid: Number.isFinite(parsed) };
+  }
+
+  if (commaCount > 0) {
+    const parts = normalized.split(",");
+    if (parts.length === 2 && parts[1].length <= 2) {
+      const parsed = Number(`${parts[0].replace(/\./g, "")}.${parts[1]}`);
+      return { value: Number.isFinite(parsed) ? parsed : 0, valid: Number.isFinite(parsed) };
+    }
+    const parsed = Number(normalized.replace(/,/g, ""));
+    return { value: Number.isFinite(parsed) ? parsed : 0, valid: Number.isFinite(parsed) };
+  }
+
+  if (dotCount > 0) {
+    const parts = normalized.split(".");
+    if (parts.length === 2 && parts[1].length <= 2) {
+      const parsed = Number(normalized);
+      return { value: Number.isFinite(parsed) ? parsed : 0, valid: Number.isFinite(parsed) };
+    }
+    const parsed = Number(normalized.replace(/\./g, ""));
+    return { value: Number.isFinite(parsed) ? parsed : 0, valid: Number.isFinite(parsed) };
+  }
+
+  const parsed = Number(normalized);
+  return { value: Number.isFinite(parsed) ? parsed : 0, valid: Number.isFinite(parsed) };
+}
+
+function parseDateOnly(value: unknown) {
+  const source = String(value || "").trim();
+  const brMatch = source.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (brMatch) {
+    const [, day, month, year] = brMatch;
+    return new Date(`${year}-${month}-${day}T12:00:00`);
+  }
+  const candidate = source ? `${source}T12:00:00` : new Date().toISOString();
+  const parsed = new Date(candidate);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+function parseDateTime(value: unknown) {
+  const source = String(value || "").trim();
+  const brMatch = source.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (brMatch) {
+    const [, day, month, year, hours = "12", minutes = "00", seconds = "00"] = brMatch;
+    return new Date(`${year}-${month}-${day}T${hours}:${minutes}:${seconds}`);
+  }
+  const parsed = new Date(source || new Date().toISOString());
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+function formatDateOnly(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function toOptionalText(value: unknown) {
+  const normalized = String(value || "").trim();
+  return normalized || null;
+}
+
+function normalizeProjectCode(value: unknown) {
+  return String(value || "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toUpperCase();
+}
+
+function normalizeLegacyStatus(value: unknown): OrderStatus {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "PAGA" || normalized === "PAGO" || normalized === "CONCLUIDO" || normalized === "CONCLUÍDO") {
+    return OrderStatus.CONCLUIDO;
+  }
+  if (normalized === "CANCELADO" || normalized === "CANCELADA") {
+    return OrderStatus.CANCELADO;
+  }
+  if (normalized === "EM ANALISE" || normalized === "EM_ANALISE") {
+    return OrderStatus.EM_ANALISE;
+  }
+  if (normalized === "AGUARDANDO INFORMACAO" || normalized === "AGUARDANDO_INFORMACAO") {
+    return OrderStatus.AGUARDANDO_INFORMACAO;
+  }
+  return OrderStatus.PENDENTE;
+}
+
+async function allocateOrderNumber(tx: any, projectId: number) {
+  await tx.$executeRaw`UPDATE obras SET ultimo_numero_pedido = LAST_INSERT_ID(ultimo_numero_pedido + 1) WHERE id = ${projectId}`;
+  const rows = await tx.$queryRaw<any[]>`SELECT LAST_INSERT_ID() AS value`;
+  return Number(rows?.[0]?.value || 0);
+}
+
+function toAttachment(payload: any, kind: AttachmentKind) {
+  return {
+    kind,
+    name: String(payload.name || "arquivo"),
+    originalName: payload.originalName ? String(payload.originalName) : null,
+    data: String(payload.data || ""),
+    mimeType: String(payload.type || payload.mimeType || "application/octet-stream"),
+    size: Number(payload.size || 0),
+    uploadedAt: parseDateTime(payload.uploadDate || payload.uploadedAt),
+  };
+}
+
+function sanitizeUser(user: any) {
+  return {
+    id: String(user.id),
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    managerId: user.managerId ? String(user.managerId) : undefined,
+    assignedProjectIds: (user.assignedProjects || []).map((item: any) => String(item.projectId))
+  };
+}
+
+function mapAttachment(attachment: any) {
+  return {
+    id: String(attachment.id),
+    name: attachment.name,
+    originalName: attachment.originalName || undefined,
+    data: attachment.data,
+    type: attachment.mimeType,
+    size: attachment.size,
+    uploadDate: attachment.uploadedAt.toISOString()
+  };
+}
+
+function mapProjectFromDb(project: any) {
+  return {
+    id: String(project.id),
+    code: project.code,
+    name: project.name,
+    location: project.location,
+    startDate: formatDateOnly(project.startDate),
+    notes: project.notes || "",
+    budget: (project.budget || []).map((item: any) => ({
+      id: String(item.id),
+      description: item.description,
+      budgetedValue: decimalToNumber(item.budgetedValue),
+    })),
+    costs: (project.costs || []).map((cost: any) => ({
+      id: String(cost.id),
+      macroItemId: String(cost.macroItemId),
+      description: cost.description,
+      itemDetail: cost.itemDetail || undefined,
+      unit: cost.unit,
+      quantity: decimalToNumber(cost.quantity),
+      unitValue: decimalToNumber(cost.unitValue),
+      totalValue: decimalToNumber(cost.totalValue),
+      date: formatDateOnly(cost.occurredAt),
+      entryDate: formatDateOnly(cost.recordedAt),
+      attachments: (cost.attachments || []).map(mapAttachment),
+    })),
+    installments: (project.installments || []).map((installment: any) => {
+      const attachment = (installment.attachments || []).find((item: any) => item.kind === AttachmentKind.ATTACHMENT);
+      const paymentProof = (installment.attachments || []).find((item: any) => item.kind === AttachmentKind.PAYMENT_PROOF);
+      return {
+        id: String(installment.id),
+        provider: installment.provider,
+        description: installment.description,
+        totalValue: decimalToNumber(installment.totalValue),
+        installmentNumber: installment.installmentNumber,
+        totalInstallments: installment.totalInstallments,
+        dueDate: formatDateOnly(installment.dueDate),
+        value: decimalToNumber(installment.value),
+        digitalLine: installment.digitalLine || undefined,
+        status: installment.status,
+        attachment: attachment ? mapAttachment(attachment) : undefined,
+        paymentProof: paymentProof ? mapAttachment(paymentProof) : undefined,
+        macroItemId: String(installment.macroItemId),
+      };
+    }),
+    orders: (project.orders || []).map((order: any) => ({
+      id: String(order.id),
+      orderCode: order.orderCode,
+      externalCode: order.externalCode || undefined,
+      projectId: String(order.projectId),
+      projectName: project.name,
+      title: order.title,
+      type: order.orderType?.name || "",
+      description: order.description,
+      macroItemId: order.macroItemId ? String(order.macroItemId) : undefined,
+      expectedDate: formatDateOnly(order.expectedDate),
+      status: order.status,
+      requesterId: String(order.requesterUserId),
+      requesterName: order.requester?.name || "",
+      responsibleId: order.assignedUserId ? String(order.assignedUserId) : undefined,
+      responsibleName: order.responsible?.name || undefined,
+      attachments: (order.attachments || []).filter((item: any) => item.kind === AttachmentKind.REQUEST).map(mapAttachment),
+      completionAttachment: (order.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION) ? mapAttachment((order.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION)) : undefined,
+      completionNote: order.completionNote || undefined,
+      cancellationReason: order.cancellationReason || undefined,
+      messages: (order.messages || []).map((message: any) => ({
+        id: String(message.id),
+        userId: message.userId ? String(message.userId) : SYSTEM_USER_ID,
+        userName: message.isSystem ? "SISTEMA" : (message.user?.name || "SISTEMA"),
+        text: message.body,
+        date: message.createdAt.toISOString(),
+        attachments: (message.attachments || []).map(mapAttachment)
+      })),
+      createdAt: order.createdAt.toISOString(),
+      value: order.requestedValue ? decimalToNumber(order.requestedValue) : undefined,
+    }))
+  };
+}
+
+function requireAuth(req: AuthRequest, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    req.authUser = jwt.verify(token, jwtSecret) as AuthUser;
+    return next();
+  } catch {
+    return res.status(401).json({ error: "Invalid token" });
+  }
+}
+
+function requireRole(roles: UserRole[]) {
+  return (req: AuthRequest, res: express.Response, next: express.NextFunction) => {
+    if (!req.authUser || !roles.includes(req.authUser.role)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    return next();
+  };
+}
+
+async function getUserProjectScope(userId: number) {
+  const rows = await prisma.userProject.findMany({ where: { userId }, select: { projectId: true } });
+  return rows.map((row) => row.projectId);
+}
+
+async function canAccessProject(user: AuthUser | undefined, projectId: number) {
+  if (!user || !Number.isFinite(projectId)) return false;
+  if (GLOBAL_ADMIN_ROLES.includes(user.role)) return true;
+  const projectIds = await getUserProjectScope(Number(user.id));
+  return projectIds.includes(projectId);
+}
+
+async function resolveOrderTypesByName(tx: any) {
+  const orderTypes = await tx.orderType.findMany({ where: { isActive: true } });
+  return new Map<string, any>(orderTypes.map((type: any) => [type.name.toUpperCase(), type]));
+}
+
+async function ensureOrderType(tx: any, name: string) {
+  const normalizedName = String(name || "").trim().toUpperCase();
+  if (!normalizedName) return null;
+  const existing = await tx.orderType.findFirst({ where: { name: normalizedName } });
+  if (existing) return existing;
+  const last = await tx.orderType.findFirst({ orderBy: { sortOrder: "desc" } });
+  return tx.orderType.create({
+    data: {
+      name: normalizedName,
+      sortOrder: (last?.sortOrder || 0) + 1,
+      isActive: true,
+    }
+  });
+}
+
+async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectId?: number | null) {
+  const baseData = {
+    code: normalizeProjectCode(projectPayload.code || projectPayload.name),
+    name: String(projectPayload.name || "").trim(),
+    location: String(projectPayload.location || "").trim(),
+    startDate: parseDateOnly(projectPayload.startDate),
+    notes: toOptionalText(projectPayload.notes),
+  };
+
+  const project = existingProjectId
+    ? await tx.project.update({ where: { id: existingProjectId }, data: baseData })
+    : await tx.project.create({ data: baseData });
+
+  await tx.order.deleteMany({ where: { projectId: project.id } });
+  await tx.installment.deleteMany({ where: { projectId: project.id } });
+  await tx.cost.deleteMany({ where: { projectId: project.id } });
+  await tx.macroItem.deleteMany({ where: { projectId: project.id } });
+
+  const macroMap = new Map<string, any>();
+  for (const item of projectPayload.budget || []) {
+    const created = await tx.macroItem.create({
+      data: {
+        projectId: project.id,
+        description: String(item.description || "").trim(),
+        budgetedValue: Number(item.budgetedValue || 0),
+      }
+    });
+    macroMap.set(String(item.id || created.id), created);
+    macroMap.set(String(created.id), created);
+  }
+
+  for (const installment of projectPayload.installments || []) {
+    const macro = macroMap.get(String(installment.macroItemId || ""));
+    if (!macro) continue;
+
+    await tx.installment.create({
+      data: {
+        projectId: project.id,
+        macroItemId: macro.id,
+        provider: String(installment.provider || "").trim(),
+        description: String(installment.description || "").trim(),
+        totalValue: Number(installment.totalValue || 0),
+        installmentNumber: Number(installment.installmentNumber || 1),
+        totalInstallments: Number(installment.totalInstallments || 1),
+        dueDate: parseDateOnly(installment.dueDate),
+        value: Number(installment.value || 0),
+        digitalLine: toOptionalText(installment.digitalLine),
+        status: installment.status === InstallmentStatus.PAID ? InstallmentStatus.PAID : InstallmentStatus.PENDING,
+        attachments: {
+          create: [
+            ...(installment.attachment ? [toAttachment(installment.attachment, AttachmentKind.ATTACHMENT)] : []),
+            ...(installment.paymentProof ? [toAttachment(installment.paymentProof, AttachmentKind.PAYMENT_PROOF)] : [])
+          ]
+        }
+      }
+    });
+  }
+
+  const userIds = Array.from(new Set(
+    (projectPayload.orders || []).flatMap((order: any) => [
+      order.requesterId,
+      order.responsibleId,
+      ...((order.messages || []).map((message: any) => message.userId))
+    ]).filter((value: any) => value && value !== SYSTEM_USER_ID).map((value: any) => Number(value))
+  ));
+  const users = userIds.length > 0 ? await tx.user.findMany({ where: { id: { in: userIds } } }) : [];
+  const userMap = new Map<number, any>(users.map((user: any) => [user.id, user]));
+  const orderTypeMap = await resolveOrderTypesByName(tx);
+
+  for (const order of projectPayload.orders || []) {
+    const macro = order.macroItemId ? macroMap.get(String(order.macroItemId || "")) : null;
+    const requester = userMap.get(Number(order.requesterId));
+    const responsible = order.responsibleId ? userMap.get(Number(order.responsibleId)) : null;
+    let orderType = orderTypeMap.get(String(order.type || "").toUpperCase()) || [...orderTypeMap.values()][0];
+    if (!orderType && order.type) {
+      orderType = await ensureOrderType(tx, order.type);
+      if (orderType) orderTypeMap.set(orderType.name.toUpperCase(), orderType);
+    }
+    if (!requester || !orderType) continue;
+
+    const orderCode = String(order.orderCode || "").trim() || `${project.code}-${await allocateOrderNumber(tx, project.id)}`;
+
+    await tx.order.create({
+      data: {
+        projectId: project.id,
+        orderTypeId: orderType.id,
+        macroItemId: macro?.id || null,
+        requesterUserId: requester.id,
+        assignedUserId: responsible?.id || null,
+        orderCode,
+        externalCode: toOptionalText(order.externalCode),
+        title: String(order.title || "").trim(),
+        description: String(order.description || "").trim(),
+        expectedDate: parseDateOnly(order.expectedDate),
+        status: Object.values(OrderStatus).includes(order.status) ? order.status : OrderStatus.PENDENTE,
+        completionNote: toOptionalText(order.completionNote),
+        cancellationReason: toOptionalText(order.cancellationReason),
+        requestedValue: order.value ?? null,
+        createdAt: parseDateTime(order.createdAt),
+        attachments: {
+          create: [
+            ...((order.attachments || []).map((attachment: any) => toAttachment(attachment, AttachmentKind.REQUEST))),
+            ...(order.completionAttachment ? [toAttachment(order.completionAttachment, AttachmentKind.COMPLETION)] : [])
+          ]
+        },
+        messages: {
+          create: (order.messages || []).map((message: any) => {
+            const messageUserId = message.userId && message.userId !== SYSTEM_USER_ID ? Number(message.userId) : null;
+            return {
+              userId: messageUserId || null,
+              body: String(message.text || "").trim(),
+              isSystem: !messageUserId,
+              createdAt: parseDateTime(message.date),
+              attachments: {
+                create: (message.attachments || []).map((attachment: any) => toAttachment(attachment, AttachmentKind.MESSAGE))
+              }
+            };
+          })
+        }
+      }
+    });
+  }
+
+  for (const cost of projectPayload.costs || []) {
+    const macro = macroMap.get(String(cost.macroItemId || ""));
+    if (!macro) continue;
+
+    await tx.cost.create({
+      data: {
+        projectId: project.id,
+        macroItemId: macro.id,
+        description: String(cost.description || "").trim(),
+        itemDetail: toOptionalText(cost.itemDetail),
+        unit: String(cost.unit || "un"),
+        quantity: Number(cost.quantity || 0),
+        unitValue: Number(cost.unitValue || 0),
+        totalValue: Number(cost.totalValue || 0),
+        occurredAt: parseDateOnly(cost.date),
+        recordedAt: parseDateOnly(cost.entryDate),
+        attachments: {
+          create: (cost.attachments || []).map((attachment: any) => toAttachment(attachment, AttachmentKind.COST_DOCUMENT))
+        }
+      }
+    });
+  }
+
+  return tx.project.findUnique({ where: { id: project.id }, include: projectInclude });
+}
+
+async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, authUser: AuthUser) {
+  const project = await tx.project.findUnique({ where: { id: projectId }, include: { budget: true } });
+  if (!project) {
+    const error = new Error("Project not found") as Error & { status?: number };
+    error.status = 404;
+    throw error;
+  }
+
+  const existingOrderId = Number(orderPayload?.id);
+  const existingOrder = Number.isFinite(existingOrderId)
+    ? await tx.order.findFirst({ where: { id: existingOrderId, projectId } })
+    : null;
+
+  if (authUser.role === UserRole.MEMBRO) {
+    const requesterId = Number(orderPayload?.requesterId || authUser.id);
+    if (existingOrder && existingOrder.requesterUserId !== Number(authUser.id)) {
+      const error = new Error("Forbidden") as Error & { status?: number };
+      error.status = 403;
+      throw error;
+    }
+    if (!existingOrder && requesterId !== Number(authUser.id)) {
+      const error = new Error("Forbidden") as Error & { status?: number };
+      error.status = 403;
+      throw error;
+    }
+  }
+
+  const macro = orderPayload.macroItemId ? project.budget.find((item: any) => String(item.id) === String(orderPayload.macroItemId)) : null;
+  const orderTypeMap = await resolveOrderTypesByName(tx);
+  let orderType = orderTypeMap.get(String(orderPayload.type || '').toUpperCase()) || [...orderTypeMap.values()][0];
+  if (!orderType && orderPayload.type) {
+    orderType = await ensureOrderType(tx, orderPayload.type);
+  }
+  const requesterId = existingOrder?.requesterUserId || Number(orderPayload.requesterId || authUser.id);
+  const requester = await tx.user.findUnique({ where: { id: requesterId } });
+  if ((orderPayload.macroItemId && !macro) || !orderType || !requester) {
+    const error = new Error("Invalid order payload") as Error & { status?: number };
+    error.status = 400;
+    throw error;
+  }
+
+  if (existingOrder) {
+    await tx.order.delete({ where: { id: existingOrder.id } });
+  }
+
+  const responsibleId = orderPayload.responsibleId ? Number(orderPayload.responsibleId) : null;
+  const created = await tx.order.create({
+    data: {
+      projectId,
+      orderTypeId: orderType.id,
+      macroItemId: macro?.id || null,
+      requesterUserId: requester.id,
+      assignedUserId: responsibleId || null,
+      orderCode: existingOrder?.orderCode || `${project.code}-${await allocateOrderNumber(tx, projectId)}`,
+      externalCode: toOptionalText(orderPayload.externalCode),
+      title: String(orderPayload.title || '').trim(),
+      description: String(orderPayload.description || '').trim(),
+      expectedDate: parseDateOnly(orderPayload.expectedDate),
+      status: Object.values(OrderStatus).includes(orderPayload.status) ? orderPayload.status : OrderStatus.PENDENTE,
+      completionNote: toOptionalText(orderPayload.completionNote),
+      cancellationReason: toOptionalText(orderPayload.cancellationReason),
+      requestedValue: orderPayload.value ?? null,
+      createdAt: parseDateTime(orderPayload.createdAt),
+      attachments: {
+        create: [
+          ...((orderPayload.attachments || []).map((attachment: any) => toAttachment(attachment, AttachmentKind.REQUEST))),
+          ...(orderPayload.completionAttachment ? [toAttachment(orderPayload.completionAttachment, AttachmentKind.COMPLETION)] : [])
+        ]
+      },
+      messages: {
+        create: (orderPayload.messages || []).map((message: any) => {
+          const messageUserId = message.userId && message.userId !== SYSTEM_USER_ID ? Number(message.userId) : null;
+          return {
+            userId: messageUserId || null,
+            body: String(message.text || '').trim(),
+            isSystem: !messageUserId,
+            createdAt: parseDateTime(message.date),
+            attachments: {
+              create: (message.attachments || []).map((attachment: any) => toAttachment(attachment, AttachmentKind.MESSAGE))
+            }
+          };
+        })
+      }
+    },
+    include: {
+      orderType: true,
+      requester: true,
+      responsible: true,
+      attachments: true,
+      messages: { include: { user: true, attachments: true } }
+    }
+  });
+
+  return {
+    id: String(created.id),
+    orderCode: created.orderCode,
+    externalCode: created.externalCode || undefined,
+    projectId: String(created.projectId),
+    projectName: project.name,
+    title: created.title,
+    type: created.orderType?.name || '',
+    description: created.description,
+    macroItemId: created.macroItemId ? String(created.macroItemId) : undefined,
+    expectedDate: formatDateOnly(created.expectedDate),
+    status: created.status,
+    requesterId: String(created.requesterUserId),
+    requesterName: created.requester?.name || '',
+    responsibleId: created.assignedUserId ? String(created.assignedUserId) : undefined,
+    responsibleName: created.responsible?.name || undefined,
+    attachments: (created.attachments || []).filter((item: any) => item.kind === AttachmentKind.REQUEST).map(mapAttachment),
+    completionAttachment: (created.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION) ? mapAttachment((created.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION)) : undefined,
+    completionNote: created.completionNote || undefined,
+    cancellationReason: created.cancellationReason || undefined,
+    messages: (created.messages || []).map((message: any) => ({
+      id: String(message.id),
+      userId: message.userId ? String(message.userId) : SYSTEM_USER_ID,
+      userName: message.isSystem ? 'SISTEMA' : (message.user?.name || 'SISTEMA'),
+      text: message.body,
+      date: message.createdAt.toISOString(),
+      attachments: (message.attachments || []).map(mapAttachment)
+    })),
+    createdAt: created.createdAt.toISOString(),
+    value: created.requestedValue ? decimalToNumber(created.requestedValue) : undefined,
+  };
+}
+
+async function upsertUserRecord(tx: any, userId: number | null, userPayload: any, actorRole: UserRole | undefined) {
+  const existingUser = userId ? await tx.user.findUnique({ where: { id: userId } }) : null;
+  const requestedRole = normalizeRole(userPayload.role);
+  const managerId = userPayload.managerId ? Number(userPayload.managerId) : null;
+
+  if ((requestedRole === UserRole.SUPERADMIN || existingUser?.role === UserRole.SUPERADMIN) && actorRole !== UserRole.SUPERADMIN) {
+    const error = new Error("Only SUPERADMIN can manage SUPERADMIN users") as Error & { status?: number };
+    error.status = 403;
+    throw error;
+  }
+
+  const email = String(userPayload.email || "").trim().toLowerCase();
+  const name = String(userPayload.name || "").trim();
+  const password = String(userPayload.password || "").trim();
+
+  if (!email || !name) {
+    const error = new Error("Name and email are required") as Error & { status?: number };
+    error.status = 400;
+    throw error;
+  }
+
+  if (!existingUser && !password) {
+    const error = new Error("Password is required for new users") as Error & { status?: number };
+    error.status = 400;
+    throw error;
+  }
+
+  const passwordHash = password
+    ? (/^\$2[aby]\$/.test(password) ? password : await bcrypt.hash(password, 10))
+    : existingUser?.passwordHash;
+
+  if (managerId && (!Number.isFinite(managerId) || managerId === existingUser?.id || GLOBAL_ADMIN_ROLES.includes(requestedRole))) {
+    const error = new Error("Invalid manager assignment") as Error & { status?: number };
+    error.status = 400;
+    throw error;
+  }
+
+  if (managerId) {
+    const manager = await tx.user.findUnique({ where: { id: managerId } });
+    if (!manager || !manager.isActive) {
+      const error = new Error("Manager not found") as Error & { status?: number };
+      error.status = 400;
+      throw error;
+    }
+
+    if (manager.role === UserRole.MEMBRO || getRoleRank(manager.role) <= getRoleRank(requestedRole)) {
+      const error = new Error("Manager must have a higher hierarchy level") as Error & { status?: number };
+      error.status = 400;
+      throw error;
+    }
+  }
+
+  const projectIds: number[] = Array.from(new Set((userPayload.assignedProjectIds || []).map((value: any) => Number(value)).filter(Boolean))) as number[];
+
+  if (!GLOBAL_ADMIN_ROLES.includes(requestedRole) && projectIds.length === 0) {
+    const error = new Error("At least one project must be assigned") as Error & { status?: number };
+    error.status = 400;
+    throw error;
+  }
+
+  const savedUser = existingUser
+    ? await tx.user.update({
+        where: { id: existingUser.id },
+        data: {
+          email,
+          name,
+          role: requestedRole,
+          managerId: GLOBAL_ADMIN_ROLES.includes(requestedRole) ? null : managerId,
+          isActive: true,
+          passwordHash,
+        }
+      })
+    : await tx.user.create({
+        data: {
+          email,
+          name,
+          role: requestedRole,
+          managerId: GLOBAL_ADMIN_ROLES.includes(requestedRole) ? null : managerId,
+          isActive: true,
+          passwordHash,
+        }
+      });
+
+  await tx.userProject.deleteMany({ where: { userId: savedUser.id } });
+
+  if (!GLOBAL_ADMIN_ROLES.includes(requestedRole)) {
+    await tx.userProject.createMany({
+      data: projectIds.map((projectId: number) => ({ userId: savedUser.id, projectId })),
+      skipDuplicates: true,
+    });
+  }
+
+  const fullUser = await tx.user.findUnique({ where: { id: savedUser.id }, include: { assignedProjects: true } });
+  return sanitizeUser(fullUser);
+}
+
+app.get("/health", async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({
+      ok: true,
+      environment: nodeEnv,
+      database: "up"
+    });
+  } catch {
+    res.status(500).json({
+      ok: false,
+      environment: nodeEnv,
+      database: "down"
+    });
+  }
+});
+
+app.get("/projects", requireAuth, async (req: AuthRequest, res) => {
+  const authUser = req.authUser;
+  if (!authUser) return res.status(401).json({ error: "Unauthorized" });
+
+  const where = GLOBAL_ADMIN_ROLES.includes(authUser.role)
+    ? undefined
+    : { id: { in: await getUserProjectScope(Number(authUser.id)) } };
+
+  const projects = await prisma.project.findMany({ where, include: projectInclude, orderBy: { updatedAt: "desc" } });
+  res.json(projects.map(mapProjectFromDb));
+});
+
+app.put("/projects/:id", requireAuth, async (req: AuthRequest, res) => {
+  const parsed = projectPayloadSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  const projectId = Number(req.params.id);
+  const isCreate = !Number.isFinite(projectId);
+  if (isCreate && (!req.authUser || !GLOBAL_ADMIN_ROLES.includes(req.authUser.role))) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  if (!isCreate && !(await canAccessProject(req.authUser, projectId))) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const saved = await prisma.$transaction((tx: any) => upsertProjectGraph(tx, parsed.data.project, isCreate ? null : projectId));
+  res.json(mapProjectFromDb(saved));
+});
+
+app.delete("/projects/:id", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req, res) => {
+  const projectId = Number(req.params.id);
+  if (!Number.isFinite(projectId)) return res.status(400).json({ error: "Invalid project id" });
+  await prisma.project.delete({ where: { id: projectId } });
+  res.json({ ok: true });
+});
+
+app.put("/projects/:projectId/orders/:orderId", requireAuth, async (req: AuthRequest, res) => {
+  if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
+  const projectId = Number(req.params.projectId);
+  if (!Number.isFinite(projectId) || !(await canAccessProject(req.authUser, projectId))) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const parsed = z.object({ order: z.any() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  try {
+    const savedOrder = await prisma.$transaction((tx: any) => upsertScopedOrder(tx, projectId, { ...parsed.data.order, id: req.params.orderId }, req.authUser!));
+    res.json(savedOrder);
+  } catch (error: any) {
+    res.status(error?.status || 500).json({ error: error?.message || "Unable to save order" });
+  }
+});
+
+app.delete("/projects/:projectId/orders/:orderId", requireAuth, async (req: AuthRequest, res) => {
+  if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
+  const projectId = Number(req.params.projectId);
+  const orderId = Number(req.params.orderId);
+  if (!Number.isFinite(projectId) || !Number.isFinite(orderId) || !(await canAccessProject(req.authUser, projectId))) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const order = await prisma.order.findFirst({ where: { id: orderId, projectId } });
+  if (!order) return res.status(404).json({ error: "Order not found" });
+  if (req.authUser.role === UserRole.MEMBRO && order.requesterUserId !== Number(req.authUser.id)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  await prisma.order.delete({ where: { id: orderId } });
+  res.json({ ok: true });
+});
+
+app.post("/projects/bulk", requireAuth, async (req: AuthRequest, res) => {
+  const parsed = bulkProjectsSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+  if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
+
+  for (const project of parsed.data.projects) {
+    const projectId = Number(project?.id);
+    if (!Number.isFinite(projectId)) {
+      if (!GLOBAL_ADMIN_ROLES.includes(req.authUser.role)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+    } else if (!(await canAccessProject(req.authUser, projectId))) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    await prisma.$transaction((tx: any) => upsertProjectGraph(tx, project, Number.isFinite(projectId) ? projectId : null));
+  }
+
+  res.json({ ok: true });
+});
+
+app.get("/users", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (_req, res) => {
+  const users = await prisma.user.findMany({ include: { assignedProjects: true }, orderBy: { name: "asc" } });
+  res.json(users.map(sanitizeUser));
+});
+
+app.put("/users/:id", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req: AuthRequest, res) => {
+  const parsed = userPayloadSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  try {
+    const userId = Number(req.params.id);
+    const savedUser = await prisma.$transaction((tx: any) => upsertUserRecord(tx, Number.isFinite(userId) ? userId : null, parsed.data.user, req.authUser?.role));
+    res.json(savedUser);
+  } catch (error: any) {
+    res.status(error?.status || 500).json({ error: error?.message || "Unable to save user" });
+  }
+});
+
+app.delete("/users/:id", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req: AuthRequest, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isFinite(userId)) return res.status(400).json({ error: "Invalid user id" });
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return res.status(404).json({ error: "User not found" });
+  if (user.role === UserRole.SUPERADMIN && req.authUser?.role !== UserRole.SUPERADMIN) {
+    return res.status(403).json({ error: "Only SUPERADMIN can delete SUPERADMIN users" });
+  }
+  await prisma.user.delete({ where: { id: userId } });
+  res.json({ ok: true });
+});
+
+app.post("/users/bulk", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req: AuthRequest, res) => {
+  const parsed = bulkUsersSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  try {
+    for (const user of parsed.data.users) {
+      const userId = Number(user?.id);
+      await prisma.$transaction((tx: any) => upsertUserRecord(tx, Number.isFinite(userId) ? userId : null, user, req.authUser?.role));
+    }
+    res.json({ ok: true });
+  } catch (error: any) {
+    res.status(error?.status || 500).json({ error: error?.message || "Unable to save users" });
+  }
+});
+
+app.get("/order-types", requireAuth, async (_req, res) => {
+  const rows = await prisma.orderType.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
+  res.json(rows.map((row) => row.name));
+});
+
+app.put("/order-types", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req, res) => {
+  const parsed = orderTypesSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  const names = Array.from(new Set(parsed.data.orderTypes.map((name) => name.trim().toUpperCase()).filter(Boolean)));
+  await prisma.$transaction(async (tx) => {
+    await tx.orderType.deleteMany({});
+    await tx.orderType.createMany({ data: names.map((name, sortOrder) => ({ name, sortOrder, isActive: true })) });
+  });
+
+  res.json({ ok: true });
+});
+
+app.post("/orders/import", requireAuth, async (req: AuthRequest, res) => {
+  const parsed = importOrdersSchema.safeParse(req.body);
+  if (!parsed.success || !req.authUser) return res.status(400).json({ error: "Invalid payload" });
+  const canImportOrders =
+    req.authUser.role === UserRole.SUPERADMIN ||
+    req.authUser.role === UserRole.ADMIN ||
+    req.authUser.role === UserRole.ADMIN_OBRA;
+  if (!canImportOrders) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  try {
+    const summary = await prisma.$transaction(async (tx: any) => {
+      const imported: any[] = [];
+      const skipped: any[] = [];
+      const orderTypeMap = await resolveOrderTypesByName(tx);
+      const projects = await tx.project.findMany({ include: { budget: true } });
+      const requester = await tx.user.findUnique({
+        where: { id: Number(req.authUser!.id) },
+        include: { assignedProjects: true }
+      });
+      if (!requester) throw new Error("Requester not found");
+      const canImportAllProjects = GLOBAL_ADMIN_ROLES.includes(req.authUser!.role);
+      const assignedProjectIds = new Set((requester.assignedProjects || []).map((item: any) => item.projectId));
+
+      for (const row of parsed.data.rows) {
+        const projectCode = normalizeProjectCode(row.projectCode || row.codigoObra || row.codigo_obra);
+        const projectName = String(row.projectName || row.obra || row.project || "").trim().toUpperCase();
+        const project = projects.find((item: any) =>
+          (projectCode && item.code === projectCode) ||
+          (!projectCode && item.name.trim().toUpperCase() === projectName)
+        );
+
+        if (!project) {
+          skipped.push({ row, reason: "Projeto não encontrado" });
+          continue;
+        }
+
+        if (!canImportAllProjects && !assignedProjectIds.has(project.id)) {
+          skipped.push({ row, reason: "Sem permissao para importar nesta obra" });
+          continue;
+        }
+
+        const externalCode = toOptionalText(row.externalCode || row.codigo || row.codigoExterno);
+        if (externalCode) {
+          const duplicate = await tx.order.findFirst({ where: { projectId: project.id, externalCode } });
+          if (duplicate) {
+            skipped.push({ row, reason: "Pedido já importado para esta obra" });
+            continue;
+          }
+        }
+
+        const typeName = String(row.type || row.tipo || row.tipoSolicitacao || row.tipo_solicitacao || "OUTROS").trim().toUpperCase();
+        let orderType = orderTypeMap.get(typeName);
+        if (!orderType) {
+          orderType = await ensureOrderType(tx, typeName);
+          if (orderType) orderTypeMap.set(orderType.name.toUpperCase(), orderType);
+        }
+        if (!orderType) {
+          skipped.push({ row, reason: "Tipo de pedido inválido" });
+          continue;
+        }
+
+        const macroName = String(row.macroItem || row.itemMacro || row.item_macro || "").trim().toUpperCase();
+        const macro = macroName ? (project.budget || []).find((item: any) => item.description.trim().toUpperCase() === macroName) : null;
+        const rawTitle = String(row.title || row.titulo || "").trim();
+        const rawDescription = String(row.description || row.descricao || row.title || row.titulo || "Pedido importado do sistema legado").trim();
+        const safeTitle = truncateText(rawTitle || rawDescription || "PEDIDO IMPORTADO", ORDER_TITLE_MAX_LENGTH);
+        const parsedValue = parseImportedMoney(
+          row.value ??
+          row.valor ??
+          row.valorGeral ??
+          row.valor_geral ??
+          row.valorTotal ??
+          row.valor_total ??
+          row.geral
+        );
+        if (!parsedValue.valid) {
+          skipped.push({ row, reason: "Valor ausente ou inválido" });
+          continue;
+        }
+        const orderCode = `${project.code}-${await allocateOrderNumber(tx, project.id)}`;
+        const created = await tx.order.create({
+          data: {
+            projectId: project.id,
+            orderTypeId: orderType.id,
+            macroItemId: macro?.id || null,
+            requesterUserId: requester.id,
+            assignedUserId: null,
+            orderCode,
+            externalCode,
+            title: safeTitle,
+            description: rawDescription,
+            expectedDate: parseDateOnly(row.expectedDate || row.dataVencimento || row.data_vencimento),
+            status: normalizeLegacyStatus(row.status || row.situacao),
+            completionNote: null,
+            cancellationReason: null,
+            requestedValue: parsedValue.value,
+            createdAt: parseDateTime(row.createdAt || row.dataRegistro || row.data_registro || new Date().toISOString()),
+            messages: {
+              create: [{
+                userId: null,
+                body: `Pedido importado do sistema legado${externalCode ? ` com código ${externalCode}` : ""}.`,
+                isSystem: true,
+                createdAt: new Date(),
+              }]
+            }
+          },
+          include: {
+            orderType: true,
+            requester: true,
+            responsible: true,
+            attachments: true,
+            messages: { include: { user: true, attachments: true } }
+          }
+        });
+
+        imported.push({
+          id: String(created.id),
+          orderCode: created.orderCode,
+          externalCode: created.externalCode || undefined,
+          projectId: String(created.projectId),
+          projectName: project.name,
+          title: created.title,
+          type: created.orderType?.name || '',
+          description: created.description,
+          macroItemId: created.macroItemId ? String(created.macroItemId) : undefined,
+          expectedDate: formatDateOnly(created.expectedDate),
+          status: created.status,
+          requesterId: String(created.requesterUserId),
+          requesterName: created.requester?.name || '',
+          responsibleId: undefined,
+          responsibleName: undefined,
+          attachments: [],
+          messages: (created.messages || []).map((message: any) => ({
+            id: String(message.id),
+            userId: message.userId ? String(message.userId) : SYSTEM_USER_ID,
+            userName: message.isSystem ? "SISTEMA" : (message.user?.name || "SISTEMA"),
+            text: message.body,
+            date: message.createdAt.toISOString(),
+            attachments: [],
+          })),
+          createdAt: created.createdAt.toISOString(),
+          value: created.requestedValue ? decimalToNumber(created.requestedValue) : undefined,
+        });
+      }
+
+      return { imported, skipped };
+    });
+
+    res.json(summary);
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Unable to import orders" });
+  }
+});
+
+app.post("/auth/login", async (req, res) => {
+  const schema = z.object({ email: z.string().email(), password: z.string().min(1) });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  const user = await prisma.user.findFirst({
+    where: { email: parsed.data.email.toLowerCase(), isActive: true },
+    include: { assignedProjects: true }
+  });
+
+  if (!user) return res.status(401).json({ error: "Invalid credentials" });
+  const validPassword = await bcrypt.compare(parsed.data.password, user.passwordHash);
+  if (!validPassword) return res.status(401).json({ error: "Invalid credentials" });
+
+  const token = buildToken({ id: String(user.id), role: user.role });
+  res.json({ token, user: sanitizeUser(user) });
+});
+
+app.get("/auth/me", requireAuth, async (req: AuthRequest, res) => {
+  if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
+  const userId = Number(req.authUser.id);
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { assignedProjects: true } });
+  if (!user || !user.isActive) return res.status(401).json({ error: "Unauthorized" });
+  res.json(sanitizeUser(user));
+});
+
+app.use((_req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
+
+const server = app.listen(port, () => {
+  console.log(`API running on http://localhost:${port}`);
+});
+
+async function shutdown(signal: string) {
+  console.log(`${signal} received. Closing API...`);
+  await prisma.$disconnect();
+  server.close(() => {
+    process.exit(0);
+  });
+}
+
+process.on("SIGINT", () => {
+  void shutdown("SIGINT");
+});
+
+process.on("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});

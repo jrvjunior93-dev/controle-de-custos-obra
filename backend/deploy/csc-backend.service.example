@@ -1,0 +1,18 @@
+[Unit]
+Description=CSC Backend API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/csc-backend/backend
+Environment=NODE_ENV=production
+Environment=PORT=4000
+EnvironmentFile=/var/www/csc-backend/backend/.env
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target

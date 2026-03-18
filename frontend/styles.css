@@ -1,0 +1,57 @@
+@import "@fortawesome/fontawesome-free/css/all.min.css";
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: "Inter", sans-serif;
+}
+
+.pdf-render-container {
+  width: 1000px !important;
+  background: white !important;
+  margin: 0 auto !important;
+  padding: 40px !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  border-radius: 0 !important;
+}
+
+.break-inside-avoid {
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+}
+
+.pdf-table {
+  width: 100% !important;
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+}
+
+.pdf-table td,
+.pdf-table th {
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  white-space: normal !important;
+  padding: 8px !important;
+  vertical-align: middle !important;
+  border-radius: 0 !important;
+}
+
+.pdf-table-compact td,
+.pdf-table-compact th {
+  font-size: 9px !important;
+  padding: 6px 4px !important;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
+
+* {
+  border-radius: 0 !important;
+}
