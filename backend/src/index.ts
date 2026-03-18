@@ -34,20 +34,33 @@ const importOrdersSchema = z.object({ rows: z.array(z.any()) });
 type AuthUser = { id: string; role: UserRole };
 type AuthRequest = express.Request & { authUser?: AuthUser };
 
+const attachmentSummarySelect = {
+  id: true,
+  kind: true,
+  name: true,
+  originalName: true,
+  storageProvider: true,
+  storageBucket: true,
+  storageKey: true,
+  mimeType: true,
+  size: true,
+  uploadedAt: true,
+} as const;
+
 const projectInclude = {
   budget: true,
-  costs: { include: { attachments: true } },
-  installments: { include: { attachments: true } },
+  costs: { include: { attachments: { select: attachmentSummarySelect } } },
+  installments: { include: { attachments: { select: attachmentSummarySelect } } },
   orders: {
     include: {
       orderType: true,
       requester: true,
       responsible: true,
-      attachments: true,
+      attachments: { select: attachmentSummarySelect },
       messages: {
         include: {
           user: true,
-          attachments: true,
+          attachments: { select: attachmentSummarySelect },
         }
       }
     }
