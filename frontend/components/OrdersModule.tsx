@@ -1,5 +1,5 @@
 ﻿import React, { useState } from 'react';
-import { Attachment, ExecutedCost, Order, OrderMessage, OrderStatus, Project, User, isGlobalAdmin, isProjectAdmin } from '../types';
+import { Attachment, ExecutedCost, Order, OrderMessage, OrderStatus, Project, User, canManageAssignedOrders } from '../types';
 import { AttachmentViewerModal } from './AttachmentViewerModal';
 
 interface OrdersModuleProps {
@@ -17,7 +17,7 @@ const parseMoneyInput = (value: string) => {
 const formatOrderDate = (value?: string) => value ? new Date(value).toLocaleDateString('pt-BR') : '-';
 
 export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpdate }) => {
-  const canManageProjectOrders = isGlobalAdmin(user.role) || (isProjectAdmin(user.role) && user.assignedProjectIds?.includes(project.id));
+  const canManageProjectOrders = user.role === 'SUPERADMIN' || (canManageAssignedOrders(user.role) && user.assignedProjectIds?.includes(project.id));
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isActionModalOpen, setIsActionModalOpen] = useState<Order | null>(null);
   const [actionType, setActionType] = useState<'COMPLETE' | 'REQUEST_INFO' | 'CANCEL' | 'NONE'>('NONE');

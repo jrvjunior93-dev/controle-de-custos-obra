@@ -42,7 +42,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
   const managerOptions = useMemo(
     () => users.filter((candidate) => {
       if (candidate.id === editingUserId) return false;
-      if (selectedRole === 'SUPERADMIN' || isGlobalAdmin(selectedRole)) return false;
+      if (selectedRole === 'SUPERADMIN') return false;
       return roleRank[candidate.role] > roleRank[selectedRole];
     }),
     [editingUserId, selectedRole, users]
@@ -82,7 +82,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
       return alert('Somente o SUPERADMIN pode cadastrar ou promover outro SUPERADMIN.');
     }
 
-    if (!isGlobalAdmin(selectedRole) && formUser.managerId) {
+    if (selectedRole !== 'SUPERADMIN' && formUser.managerId) {
       const manager = users.find((candidate) => candidate.id === formUser.managerId);
       if (!manager || roleRank[manager.role] <= roleRank[selectedRole]) {
         return alert('Selecione um gestor com nivel hierarquico superior ao usuario.');
@@ -93,11 +93,11 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
       ...formUser,
       role: selectedRole,
       email: (formUser.email || '').trim().toLowerCase(),
-      managerId: isGlobalAdmin(selectedRole) ? undefined : formUser.managerId,
-      assignedProjectIds: isGlobalAdmin(selectedRole) ? [] : (formUser.assignedProjectIds || []),
+      managerId: selectedRole === 'SUPERADMIN' ? undefined : formUser.managerId,
+      assignedProjectIds: selectedRole === 'SUPERADMIN' ? [] : (formUser.assignedProjectIds || []),
     };
 
-    if (!isGlobalAdmin(selectedRole) && payload.assignedProjectIds.length === 0) {
+    if (selectedRole !== 'SUPERADMIN' && payload.assignedProjectIds.length === 0) {
       return alert('Selecione ao menos uma obra para usuarios de obra ou membros.');
     }
 
@@ -185,10 +185,10 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
                     </span>
                   </td>
                   <td className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase">
-                    {isGlobalAdmin(u.role) ? 'GESTAO GLOBAL' : getManagerName(u.managerId)}
+                    {u.role === 'SUPERADMIN' ? 'GESTAO GLOBAL' : getManagerName(u.managerId)}
                   </td>
                   <td className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase">
-                    {isGlobalAdmin(u.role) ? 'Acesso global' : `${u.assignedProjectIds?.length || 0} obra(s)`}
+                    {u.role === 'SUPERADMIN' ? 'Acesso global' : `${u.assignedProjectIds?.length || 0} obra(s)`}
                   </td>
                   <td className="px-6 py-5 text-right">
                     <div className="flex justify-end gap-2">
@@ -237,7 +237,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Perfil</label>
-                  <select className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-slate-800 text-xs uppercase outline-none focus:border-blue-500" value={selectedRole} onChange={(e) => setFormUser({ ...formUser, role: e.target.value as UserRole, managerId: undefined, assignedProjectIds: isGlobalAdmin(e.target.value as UserRole) ? [] : formUser.assignedProjectIds })}>
+                  <select className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-slate-800 text-xs uppercase outline-none focus:border-blue-500" value={selectedRole} onChange={(e) => setFormUser({ ...formUser, role: e.target.value as UserRole, managerId: undefined, assignedProjectIds: e.target.value === 'SUPERADMIN' ? [] : formUser.assignedProjectIds })}>
                     <option value="MEMBRO">Membro</option>
                     <option value="ADMIN_OBRA">Admin de obra</option>
                     <option value="ADMIN">Admin central</option>
@@ -246,7 +246,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
                 </div>
               </div>
 
-              {!isGlobalAdmin(selectedRole) && (
+              {selectedRole !== 'SUPERADMIN' && (
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gestor direto</label>
@@ -263,7 +263,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
                 </div>
               )}
 
-              {!isGlobalAdmin(selectedRole) && (
+              {selectedRole !== 'SUPERADMIN' && (
                 <div className="space-y-4">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Obras autorizadas</label>
                   <div className="rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-[10px] font-bold uppercase text-amber-700">

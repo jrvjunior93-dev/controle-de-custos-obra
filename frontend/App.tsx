@@ -234,7 +234,7 @@ const App: React.FC = () => {
         setUser(normalizeUserRecord(refreshedUser));
         sessionStorage.setItem('csc_brape_session', JSON.stringify({ user: normalizeUserRecord(refreshedUser) }));
 
-        if (refreshedUser.role === 'MEMBRO') setView('ORDERS_GLOBAL');
+        if (!isProjectAdmin(refreshedUser.role)) setView('ORDERS_GLOBAL');
 
         await initData(refreshedUser);
       } catch {
@@ -293,7 +293,7 @@ const App: React.FC = () => {
 
 
 
-    if (authenticatedUser.role === 'MEMBRO') {
+    if (!isProjectAdmin(authenticatedUser.role)) {
 
       setView('ORDERS_GLOBAL');
 

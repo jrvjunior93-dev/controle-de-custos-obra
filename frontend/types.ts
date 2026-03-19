@@ -87,8 +87,9 @@ export interface Order {
 
 export type UserRole = 'SUPERADMIN' | 'ADMIN' | 'ADMIN_OBRA' | 'MEMBRO';
 
-export const isGlobalAdmin = (role: UserRole) => role === 'SUPERADMIN' || role === 'ADMIN';
-export const isProjectAdmin = (role: UserRole) => isGlobalAdmin(role) || role === 'ADMIN_OBRA';
+export const isGlobalAdmin = (role: UserRole) => role === 'SUPERADMIN';
+export const isProjectAdmin = (role: UserRole) => role === 'SUPERADMIN' || role === 'ADMIN';
+export const canManageAssignedOrders = (role: UserRole) => role === 'SUPERADMIN' || role === 'ADMIN' || role === 'ADMIN_OBRA';
 
 export interface User {
   id: string;

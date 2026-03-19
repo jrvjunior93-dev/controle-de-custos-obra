@@ -22,7 +22,8 @@ const corsAllowedOrigins = String(
   .map((origin) => origin.trim())
   .filter(Boolean);
 const SYSTEM_USER_ID = "system";
-const GLOBAL_ADMIN_ROLES: UserRole[] = [UserRole.SUPERADMIN, UserRole.ADMIN];
+const GLOBAL_ADMIN_ROLES: UserRole[] = [UserRole.SUPERADMIN];
+const PROJECT_MANAGER_ROLES: UserRole[] = [UserRole.SUPERADMIN, UserRole.ADMIN];
 const ORDER_TITLE_MAX_LENGTH = 190;
 
 const bulkProjectsSchema = z.object({ projects: z.array(z.any()) });
@@ -728,7 +729,7 @@ async function upsertUserRecord(tx: any, userId: number | null, userPayload: any
     ? (/^\$2[aby]\$/.test(password) ? password : await bcrypt.hash(password, 10))
     : existingUser?.passwordHash;
 
-  if (managerId && (!Number.isFinite(managerId) || managerId === existingUser?.id || GLOBAL_ADMIN_ROLES.includes(requestedRole))) {
+  if (managerId && (!Number.isFinite(managerId) || managerId === existingUser?.id || requestedRole === UserRole.SUPERADMIN)) {
     const error = new Error("Invalid manager assignment") as Error & { status?: number };
     error.status = 400;
     throw error;
@@ -751,7 +752,7 @@ async function upsertUserRecord(tx: any, userId: number | null, userPayload: any
 
   const projectIds: number[] = Array.from(new Set((userPayload.assignedProjectIds || []).map((value: any) => Number(value)).filter(Boolean))) as number[];
 
-  if (!GLOBAL_ADMIN_ROLES.includes(requestedRole) && projectIds.length === 0) {
+  if (requestedRole !== UserRole.SUPERADMIN && projectIds.length === 0) {
     const error = new Error("At least one project must be assigned") as Error & { status?: number };
     error.status = 400;
     throw error;
@@ -764,7 +765,7 @@ async function upsertUserRecord(tx: any, userId: number | null, userPayload: any
           email,
           name,
           role: requestedRole,
-          managerId: GLOBAL_ADMIN_ROLES.includes(requestedRole) ? null : managerId,
+          managerId: requestedRole === UserRole.SUPERADMIN ? null : managerId,
           isActive: true,
           passwordHash,
         }
@@ -774,7 +775,7 @@ async function upsertUserRecord(tx: any, userId: number | null, userPayload: any
           email,
           name,
           role: requestedRole,
-          managerId: GLOBAL_ADMIN_ROLES.includes(requestedRole) ? null : managerId,
+          managerId: requestedRole === UserRole.SUPERADMIN ? null : managerId,
           isActive: true,
           passwordHash,
         }
@@ -782,7 +783,7 @@ async function upsertUserRecord(tx: any, userId: number | null, userPayload: any
 
   await tx.userProject.deleteMany({ where: { userId: savedUser.id } });
 
-  if (!GLOBAL_ADMIN_ROLES.includes(requestedRole)) {
+  if (requestedRole !== UserRole.SUPERADMIN) {
     await tx.userProject.createMany({
       data: projectIds.map((projectId: number) => ({ userId: savedUser.id, projectId })),
       skipDuplicates: true,
@@ -832,7 +833,7 @@ app.put("/projects/:id", requireAuth, async (req: AuthRequest, res) => {
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  if (!isCreate && !(await canAccessProject(req.authUser, projectId))) {
+  if (!isCreate && (!req.authUser || !PROJECT_MANAGER_ROLES.includes(req.authUser.role) || !(await canAccessProject(req.authUser, projectId)))) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
@@ -891,7 +892,7 @@ app.delete("/projects/:projectId/orders/:orderId", requireAuth, async (req: Auth
   res.json({ ok: true });
 });
 
-app.post("/projects/bulk", requireAuth, async (req: AuthRequest, res) => {
+app.post("/projects/bulk", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req: AuthRequest, res) => {
   const parsed = bulkProjectsSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
   if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
@@ -997,7 +998,7 @@ app.post("/orders/import", requireAuth, async (req: AuthRequest, res) => {
         include: { assignedProjects: true }
       });
       if (!requester) throw new Error("Requester not found");
-      const canImportAllProjects = GLOBAL_ADMIN_ROLES.includes(req.authUser!.role);
+      const canImportAllProjects = req.authUser!.role === UserRole.SUPERADMIN;
       const assignedProjectIds = new Set((requester.assignedProjects || []).map((item: any) => item.projectId));
 
       for (const row of parsed.data.rows) {

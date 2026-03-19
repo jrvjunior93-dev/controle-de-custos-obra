@@ -1,5 +1,5 @@
 ﻿import React, { useMemo, useState } from 'react';
-import { Attachment, ExecutedCost, Order, OrderStatus, Project, User, isProjectAdmin } from '../types';
+import { Attachment, ExecutedCost, Order, OrderStatus, Project, User, canManageAssignedOrders } from '../types';
 import { AttachmentViewerModal } from './AttachmentViewerModal';
 import { dbService } from '../apiClient';
 
@@ -184,7 +184,7 @@ const buildImportSummary = (result: { imported?: any[]; skipped?: any[] }) => {
 };
 
 export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects, user, onUpdateProjects, onPersistProject, onPersistMemberOrder, onDeleteMemberOrder, orderTypes }) => {
-  const canManageAllOrders = isProjectAdmin(user.role);
+  const canManageAllOrders = canManageAssignedOrders(user.role);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isActionModalOpen, setIsActionModalOpen] = useState<Order | null>(null);
   const [actionType, setActionType] = useState<'COMPLETE' | 'REQUEST_INFO' | 'CANCEL' | 'NONE'>('NONE');
