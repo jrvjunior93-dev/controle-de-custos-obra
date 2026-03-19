@@ -201,6 +201,9 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const [filterMaxValue, setFilterMaxValue] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
+  const [isProjectFilterOpen, setIsProjectFilterOpen] = useState(false);
+  const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
+  const [isTypeFilterOpen, setIsTypeFilterOpen] = useState(false);
   const [incorporateCost, setIncorporateCost] = useState(false);
   const [editableOrderValue, setEditableOrderValue] = useState<number>(0);
   const [finalValue, setFinalValue] = useState<number>(0);
@@ -286,6 +289,16 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setFilterMaxValue('');
     setFilterStartDate('');
     setFilterEndDate('');
+  };
+
+  const toggleFilterValue = (current: string[], value: string, setter: React.Dispatch<React.SetStateAction<string[]>>) => {
+    setter(current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
+  };
+
+  const formatFilterLabel = (selectedValues: string[], allLabel: string, items: { value: string; label: string }[]) => {
+    if (selectedValues.length === 0) return allLabel;
+    if (selectedValues.length === 1) return items.find((item) => item.value === selectedValues[0])?.label || allLabel;
+    return `${selectedValues.length} selecionados`;
   };
 
   const openOrderModal = (order: Order) => {
@@ -469,8 +482,15 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setMessageAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
   };
 
-  const readMultiSelectValues = (event: React.ChangeEvent<HTMLSelectElement>) =>
-    Array.from(event.target.selectedOptions).map((option) => option.value);
+  const projectFilterItems = assignedProjects.map((project) => ({ value: project.id, label: project.name }));
+  const statusFilterItems = [
+    { value: 'PENDENTE', label: 'Pendente' },
+    { value: 'EM_ANALISE', label: 'Em Análise' },
+    { value: 'AGUARDANDO_INFORMACAO', label: 'Info Solicitada' },
+    { value: 'CONCLUIDO', label: 'Concluído' },
+    { value: 'CANCELADO', label: 'Cancelado' },
+  ];
+  const typeFilterItems = orderTypes.map((type) => ({ value: type, label: type }));
 
   const handleDeleteOrder = (order: Order) => {
     if (!confirm('Excluir pedido permanentemente?')) return;
@@ -705,27 +725,53 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 bg-white p-6 border border-slate-200">
         <input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Filtrar por título..." className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
-        <div className="space-y-2">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Obras (multi)</p>
-        <select multiple value={filterProject} onChange={(e) => setFilterProject(readMultiSelectValues(e))} className="bg-slate-50 border border-slate-200 px-3 py-3 text-[10px] font-black uppercase min-h-32">
-          {assignedProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-        </select>
+        <div className="relative">
+          <button type="button" onClick={() => { setIsProjectFilterOpen((current) => !current); setIsStatusFilterOpen(false); setIsTypeFilterOpen(false); }} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 text-left text-[10px] font-black uppercase flex items-center justify-between">
+            <span>{formatFilterLabel(filterProject, 'Todas as Obras', projectFilterItems)}</span>
+            <i className={`fas fa-chevron-${isProjectFilterOpen ? 'up' : 'down'} text-slate-400`}></i>
+          </button>
+          {isProjectFilterOpen && (
+            <div className="absolute z-20 mt-2 w-full bg-white border border-slate-200 shadow-xl p-2 max-h-64 overflow-y-auto">
+              {projectFilterItems.map((item) => (
+                <label key={item.value} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                  <input type="checkbox" checked={filterProject.includes(item.value)} onChange={() => toggleFilterValue(filterProject, item.value, setFilterProject)} />
+                  <span className="text-[10px] font-black uppercase text-slate-700">{item.label}</span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
-        <div className="space-y-2">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Status (multi)</p>
-        <select multiple value={filterStatus} onChange={(e) => setFilterStatus(readMultiSelectValues(e))} className="bg-slate-50 border border-slate-200 px-3 py-3 text-[10px] font-black uppercase min-h-32">
-          <option value="PENDENTE">Pendente</option>
-          <option value="EM_ANALISE">Em Análise</option>
-          <option value="AGUARDANDO_INFORMACAO">Info Solicitada</option>
-          <option value="CONCLUIDO">Concluído</option>
-          <option value="CANCELADO">Cancelado</option>
-        </select>
+        <div className="relative">
+          <button type="button" onClick={() => { setIsStatusFilterOpen((current) => !current); setIsProjectFilterOpen(false); setIsTypeFilterOpen(false); }} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 text-left text-[10px] font-black uppercase flex items-center justify-between">
+            <span>{formatFilterLabel(filterStatus, 'Status (Todos)', statusFilterItems)}</span>
+            <i className={`fas fa-chevron-${isStatusFilterOpen ? 'up' : 'down'} text-slate-400`}></i>
+          </button>
+          {isStatusFilterOpen && (
+            <div className="absolute z-20 mt-2 w-full bg-white border border-slate-200 shadow-xl p-2 max-h-64 overflow-y-auto">
+              {statusFilterItems.map((item) => (
+                <label key={item.value} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                  <input type="checkbox" checked={filterStatus.includes(item.value)} onChange={() => toggleFilterValue(filterStatus, item.value, setFilterStatus)} />
+                  <span className="text-[10px] font-black uppercase text-slate-700">{item.label}</span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
-        <div className="space-y-2">
-          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tipos (multi)</p>
-        <select multiple value={filterType} onChange={(e) => setFilterType(readMultiSelectValues(e))} className="bg-slate-50 border border-slate-200 px-3 py-3 text-[10px] font-black uppercase min-h-32">
-          {orderTypes.map((type) => <option key={type} value={type}>{type}</option>)}
-        </select>
+        <div className="relative">
+          <button type="button" onClick={() => { setIsTypeFilterOpen((current) => !current); setIsProjectFilterOpen(false); setIsStatusFilterOpen(false); }} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 text-left text-[10px] font-black uppercase flex items-center justify-between">
+            <span>{formatFilterLabel(filterType, 'Tipo do Pedido (Todos)', typeFilterItems)}</span>
+            <i className={`fas fa-chevron-${isTypeFilterOpen ? 'up' : 'down'} text-slate-400`}></i>
+          </button>
+          {isTypeFilterOpen && (
+            <div className="absolute z-20 mt-2 w-full bg-white border border-slate-200 shadow-xl p-2 max-h-64 overflow-y-auto">
+              {typeFilterItems.map((item) => (
+                <label key={item.value} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                  <input type="checkbox" checked={filterType.includes(item.value)} onChange={() => toggleFilterValue(filterType, item.value, setFilterType)} />
+                  <span className="text-[10px] font-black uppercase text-slate-700">{item.label}</span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
         <input type="number" min="0" step="0.01" value={filterMinValue} onChange={(e) => setFilterMinValue(e.target.value)} placeholder="Valor mínimo" className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
         <input type="number" min="0" step="0.01" value={filterMaxValue} onChange={(e) => setFilterMaxValue(e.target.value)} placeholder="Valor máximo" className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
