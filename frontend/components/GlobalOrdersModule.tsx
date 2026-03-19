@@ -332,7 +332,6 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     if (!newOrder.projectId) return alert('Por favor, selecione a Obra.');
     if (!newOrder.title?.trim()) return alert('Preencha o título do pedido.');
     if (!normalizedType) return alert('Preencha o tipo do pedido.');
-    if (!newOrder.description?.trim()) return alert('Preencha a descrição técnica / detalhes.');
     if (!newOrder.expectedDate) return alert('Preencha a data desejada.');
     if (!isOtherType && !newOrder.macroItemId) return alert('Por favor, selecione a Apropriação de Custo.');
     if (!isOtherType && (newOrder.value === undefined || newOrder.value === null || Number(newOrder.value) <= 0)) {
@@ -349,7 +348,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       projectName: targetProject.name,
       title: newOrder.title.trim().toUpperCase(),
       type: normalizedType,
-      description: newOrder.description.trim(),
+      description: newOrder.description?.trim() || '',
       macroItemId: newOrder.macroItemId || '',
       expectedDate: newOrder.expectedDate || '',
       value: Number(newOrder.value || 0),
@@ -948,7 +947,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Descrição Técnica / Detalhes</label>
-                <textarea required rows={3} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs outline-none focus:border-blue-500" value={newOrder.description} onChange={(e) => setNewOrder({ ...newOrder, description: e.target.value })} placeholder="Descreva quantidades, marcas ou detalhes importantes..." />
+                <textarea rows={3} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs outline-none focus:border-blue-500" value={newOrder.description} onChange={(e) => setNewOrder({ ...newOrder, description: e.target.value })} placeholder="Descreva quantidades, marcas ou detalhes importantes..." />
               </div>
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-1">

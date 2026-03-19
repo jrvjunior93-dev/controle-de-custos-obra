@@ -157,7 +157,6 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
 
     if (!newOrder.title?.trim()) return alert('Preencha o título do pedido.');
     if (!normalizedType) return alert('Preencha o tipo do pedido.');
-    if (!newOrder.description?.trim()) return alert('Preencha a descrição / justificativa.');
     if (!newOrder.expectedDate) return alert('Preencha a data desejada.');
     if (!isOtherType && !newOrder.macroItemId) return alert('Selecione um item macro para apropriação.');
     if (!isOtherType && (newOrder.value === undefined || newOrder.value === null || Number(newOrder.value) <= 0)) {
@@ -171,7 +170,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
       projectName: project.name,
       title: newOrder.title.trim(),
       type: normalizedType,
-      description: newOrder.description.trim(),
+      description: newOrder.description?.trim() || '',
       macroItemId: newOrder.macroItemId || '',
       expectedDate: newOrder.expectedDate || '',
       value: Number(newOrder.value || 0),
@@ -445,7 +444,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Descrição / Justificativa</label>
-                <textarea required rows={4} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-slate-800 text-xs" value={newOrder.description} onChange={(e) => setNewOrder({ ...newOrder, description: e.target.value })} />
+                <textarea rows={4} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-slate-800 text-xs" value={newOrder.description} onChange={(e) => setNewOrder({ ...newOrder, description: e.target.value })} />
               </div>
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
