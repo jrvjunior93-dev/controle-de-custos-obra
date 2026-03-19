@@ -6,6 +6,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { deleteStoredAttachments, persistAttachment, resolveAttachmentData } from "./storage.js";
+import { extractBudgetData, extractCostData, extractInstallmentData, getGeminiErrorMessage } from "./gemini.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -34,6 +35,11 @@ const updateOwnProfileSchema = z.object({
   name: z.string().trim().min(2),
   currentPassword: z.string().trim().min(1).optional(),
   newPassword: z.string().trim().min(6).optional(),
+});
+const geminiExtractionSchema = z.object({
+  fileBase64: z.string().optional(),
+  mimeType: z.string().optional(),
+  extractedText: z.string().optional(),
 });
 
 type AuthUser = { id: string; role: UserRole };
@@ -1189,6 +1195,42 @@ app.put("/auth/profile", requireAuth, async (req: AuthRequest, res) => {
   });
 
   res.json(sanitizeUser(savedUser));
+});
+
+app.post("/ai/extract/budget", requireAuth, async (req: AuthRequest, res) => {
+  const parsed = geminiExtractionSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  try {
+    const result = await extractBudgetData(parsed.data);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: getGeminiErrorMessage(error) });
+  }
+});
+
+app.post("/ai/extract/cost", requireAuth, async (req: AuthRequest, res) => {
+  const parsed = geminiExtractionSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  try {
+    const result = await extractCostData(parsed.data);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: getGeminiErrorMessage(error) });
+  }
+});
+
+app.post("/ai/extract/installment", requireAuth, async (req: AuthRequest, res) => {
+  const parsed = geminiExtractionSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  try {
+    const result = await extractInstallmentData(parsed.data);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: getGeminiErrorMessage(error) });
+  }
 });
 
 app.use((_req, res) => {
