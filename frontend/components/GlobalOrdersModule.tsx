@@ -214,7 +214,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const [newOrder, setNewOrder] = useState<Partial<Order>>({
     projectId: '',
     title: '',
-    type: orderTypes[0] || 'MATERIAL',
+    type: '',
     description: '',
     macroItemId: '',
     expectedDate: '',
@@ -250,6 +250,8 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   }).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [rawOrders, filterSearch, filterStatus, filterProject, filterType, filterMinValue, filterMaxValue, filterStartDate, filterEndDate]);
 
   const assignedProjects = canManageAllOrders ? projects : projects.filter((project) => user.assignedProjectIds?.includes(project.id));
+  const isOtherOrderType = (value?: string) => String(value || '').trim().toUpperCase() === 'OUTROS';
+  const isNewOrderOtherType = isOtherOrderType(newOrder.type);
   const isOrderActive = (order: Order) => order.status !== 'CONCLUIDO' && order.status !== 'CANCELADO';
   const canTreatOrder = (order: Order) => canManageAllOrders && isOrderActive(order) && order.responsibleId === user.id;
   const activeProjectForModal = isActionModalOpen ? projects.find((project) => project.id === isActionModalOpen.projectId) : null;
@@ -324,8 +326,17 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
   const handleCreateOrder = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!newOrder.projectId || !newOrder.macroItemId) {
-      return alert('Por favor, selecione a Obra e a Apropriação.');
+    const normalizedType = String(newOrder.type || '').trim().toUpperCase();
+    const isOtherType = isOtherOrderType(normalizedType);
+
+    if (!newOrder.projectId) return alert('Por favor, selecione a Obra.');
+    if (!newOrder.title?.trim()) return alert('Preencha o título do pedido.');
+    if (!normalizedType) return alert('Preencha o tipo do pedido.');
+    if (!newOrder.description?.trim()) return alert('Preencha a descrição técnica / detalhes.');
+    if (!newOrder.expectedDate) return alert('Preencha a data desejada.');
+    if (!isOtherType && !newOrder.macroItemId) return alert('Por favor, selecione a Apropriação de Custo.');
+    if (!isOtherType && (newOrder.value === undefined || newOrder.value === null || Number(newOrder.value) <= 0)) {
+      return alert('Preencha o valor previsto do pedido.');
     }
 
     const targetProject = projects.find((project) => project.id === newOrder.projectId);
@@ -336,9 +347,9 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       id: crypto.randomUUID(),
       projectId: targetProject.id,
       projectName: targetProject.name,
-      title: (newOrder.title || 'SEM TITULO').toUpperCase(),
-      type: newOrder.type || orderTypes[0],
-      description: newOrder.description || '',
+      title: newOrder.title.trim().toUpperCase(),
+      type: normalizedType,
+      description: newOrder.description.trim(),
       macroItemId: newOrder.macroItemId || '',
       expectedDate: newOrder.expectedDate || '',
       value: Number(newOrder.value || 0),
@@ -358,7 +369,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       void onPersistMemberOrder(targetProject.id, order);
     }
     setIsModalOpen(false);
-    setNewOrder({ projectId: '', title: '', type: orderTypes[0], description: '', macroItemId: '', expectedDate: '', value: undefined, attachments: [] });
+    setNewOrder({ projectId: '', title: '', type: '', description: '', macroItemId: '', expectedDate: '', value: undefined, attachments: [] });
   };
 
   const handleImportOrders = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -918,7 +929,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Apropriação de Custo</label>
-                  <select required className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500" value={newOrder.macroItemId} onChange={(e) => setNewOrder({ ...newOrder, macroItemId: e.target.value })}>
+                  <select required={!isNewOrderOtherType} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500" value={newOrder.macroItemId} onChange={(e) => setNewOrder({ ...newOrder, macroItemId: e.target.value })}>
                     <option value="">Selecione...</option>
                     {projects.find((project) => project.id === newOrder.projectId)?.budget.map((macro) => <option key={macro.id} value={macro.id}>{macro.description}</option>)}
                   </select>
@@ -930,24 +941,25 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Pedido</label>
-                <select className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500" value={newOrder.type} onChange={(e) => setNewOrder({ ...newOrder, type: e.target.value })}>
+                <select required className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500" value={newOrder.type} onChange={(e) => setNewOrder({ ...newOrder, type: e.target.value })}>
+                  <option value="">Selecione...</option>
                   {orderTypes.map((type) => <option key={type} value={type}>{type}</option>)}
                 </select>
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Descrição Técnica / Detalhes</label>
-                <textarea rows={3} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs outline-none focus:border-blue-500" value={newOrder.description} onChange={(e) => setNewOrder({ ...newOrder, description: e.target.value })} placeholder="Descreva quantidades, marcas ou detalhes importantes..." />
+                <textarea required rows={3} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs outline-none focus:border-blue-500" value={newOrder.description} onChange={(e) => setNewOrder({ ...newOrder, description: e.target.value })} placeholder="Descreva quantidades, marcas ou detalhes importantes..." />
               </div>
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Desejada</label>
-                  <input type="date" className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs outline-none focus:border-blue-500" value={newOrder.expectedDate || ''} onChange={(e) => setNewOrder({ ...newOrder, expectedDate: e.target.value })} />
+                  <input required type="date" className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs outline-none focus:border-blue-500" value={newOrder.expectedDate || ''} onChange={(e) => setNewOrder({ ...newOrder, expectedDate: e.target.value })} />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Valor Previsto (R$)</label>
                   <div className="relative">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
-                    <input type="text" inputMode="decimal" className="w-full bg-slate-50 border border-slate-200 px-12 py-3 font-black text-xs outline-none focus:border-blue-500" value={formatMoneyInput(newOrder.value)} onChange={(e) => setNewOrder({ ...newOrder, value: parseMoneyInput(e.target.value) })} placeholder="0,00" />
+                    <input required={!isNewOrderOtherType} type="text" inputMode="decimal" className="w-full bg-slate-50 border border-slate-200 px-12 py-3 font-black text-xs outline-none focus:border-blue-500" value={formatMoneyInput(newOrder.value)} onChange={(e) => setNewOrder({ ...newOrder, value: parseMoneyInput(e.target.value) })} placeholder={isNewOrderOtherType ? 'Opcional para OUTROS' : '0,00'} />
                   </div>
                 </div>
               </div>

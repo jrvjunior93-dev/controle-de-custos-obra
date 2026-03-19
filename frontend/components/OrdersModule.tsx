@@ -33,7 +33,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
   const [selectedMacroItemId, setSelectedMacroItemId] = useState('');
   const [newOrder, setNewOrder] = useState<Partial<Order>>({
     title: '',
-    type: 'COMPRA DE MATERIAL',
+    type: '',
     description: '',
     macroItemId: '',
     expectedDate: '',
@@ -42,6 +42,8 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
   });
 
   const orders = project.orders || [];
+  const isOtherOrderType = (value?: string) => String(value || '').trim().toUpperCase() === 'OUTROS';
+  const isNewOrderOtherType = isOtherOrderType(newOrder.type);
   const isOrderActive = (order: Order) => order.status !== 'CONCLUIDO' && order.status !== 'CANCELADO';
   const canTreatOrder = (order: Order) => canManageProjectOrders && isOrderActive(order) && order.responsibleId === user.id;
   const getMessageMeta = (order: Order, message: OrderMessage) => {
@@ -150,16 +152,26 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
 
   const handleCreateOrder = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!newOrder.macroItemId) return alert('Selecione um item macro para apropriação.');
+    const normalizedType = String(newOrder.type || '').trim().toUpperCase();
+    const isOtherType = isOtherOrderType(normalizedType);
+
+    if (!newOrder.title?.trim()) return alert('Preencha o título do pedido.');
+    if (!normalizedType) return alert('Preencha o tipo do pedido.');
+    if (!newOrder.description?.trim()) return alert('Preencha a descrição / justificativa.');
+    if (!newOrder.expectedDate) return alert('Preencha a data desejada.');
+    if (!isOtherType && !newOrder.macroItemId) return alert('Selecione um item macro para apropriação.');
+    if (!isOtherType && (newOrder.value === undefined || newOrder.value === null || Number(newOrder.value) <= 0)) {
+      return alert('Preencha o valor previsto do pedido.');
+    }
     if (!confirm(`Confirmar envio do pedido "${newOrder.title}"?`)) return;
 
     const order: Order = {
       id: crypto.randomUUID(),
       projectId: project.id,
       projectName: project.name,
-      title: newOrder.title || 'SEM TITULO',
-      type: newOrder.type || 'COMPRA DE MATERIAL',
-      description: newOrder.description || '',
+      title: newOrder.title.trim(),
+      type: normalizedType,
+      description: newOrder.description.trim(),
       macroItemId: newOrder.macroItemId || '',
       expectedDate: newOrder.expectedDate || '',
       value: Number(newOrder.value || 0),
@@ -173,7 +185,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
 
     onUpdate({ ...project, orders: [...orders, order] });
     setIsModalOpen(false);
-    setNewOrder({ title: '', type: 'COMPRA DE MATERIAL', description: '', macroItemId: '', expectedDate: '', value: undefined, attachments: [] });
+    setNewOrder({ title: '', type: '', description: '', macroItemId: '', expectedDate: '', value: undefined, attachments: [] });
   };
 
   const handleDeleteOrder = (order: Order) => {
@@ -412,7 +424,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Apropriação (Item Macro)</label>
-                  <select required className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-slate-800 text-xs uppercase" value={newOrder.macroItemId} onChange={(e) => setNewOrder({ ...newOrder, macroItemId: e.target.value })}>
+                  <select required={!isNewOrderOtherType} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-slate-800 text-xs uppercase" value={newOrder.macroItemId} onChange={(e) => setNewOrder({ ...newOrder, macroItemId: e.target.value })}>
                     <option value="">Selecione...</option>
                     {project.budget.map((macro) => <option key={macro.id} value={macro.id}>{macro.description}</option>)}
                   </select>
@@ -421,13 +433,13 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Pedido</label>
-                  <input required className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-slate-800 text-xs uppercase" value={newOrder.type} onChange={(e) => setNewOrder({ ...newOrder, type: e.target.value.toUpperCase() })} />
+                  <input required className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-slate-800 text-xs uppercase" value={newOrder.type} onChange={(e) => setNewOrder({ ...newOrder, type: e.target.value.toUpperCase() })} placeholder="EX: COMPRA DE MATERIAL / OUTROS" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Valor Previsto (R$)</label>
                   <div className="relative">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
-                    <input type="text" inputMode="decimal" className="w-full bg-slate-50 border border-slate-200 px-12 py-3 font-black text-slate-800 text-xs" value={formatMoneyInput(newOrder.value)} onChange={(e) => setNewOrder({ ...newOrder, value: parseMoneyInput(e.target.value) })} placeholder="0,00" />
+                    <input required={!isNewOrderOtherType} type="text" inputMode="decimal" className="w-full bg-slate-50 border border-slate-200 px-12 py-3 font-black text-slate-800 text-xs" value={formatMoneyInput(newOrder.value)} onChange={(e) => setNewOrder({ ...newOrder, value: parseMoneyInput(e.target.value) })} placeholder={isNewOrderOtherType ? 'Opcional para OUTROS' : '0,00'} />
                   </div>
                 </div>
               </div>
