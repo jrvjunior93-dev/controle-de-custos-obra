@@ -185,6 +185,7 @@ const buildImportSummary = (result: { imported?: any[]; skipped?: any[] }) => {
 
 export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects, user, onUpdateProjects, onPersistProject, onPersistMemberOrder, onDeleteMemberOrder, orderTypes }) => {
   const canManageAllOrders = canManageAssignedOrders(user.role);
+  const canImportOrders = user.role === 'SUPERADMIN';
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isActionModalOpen, setIsActionModalOpen] = useState<Order | null>(null);
   const [actionType, setActionType] = useState<'COMPLETE' | 'REQUEST_INFO' | 'CANCEL' | 'NONE'>('NONE');
@@ -193,9 +194,9 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const [messageText, setMessageText] = useState('');
   const [messageAttachments, setMessageAttachments] = useState<Attachment[]>([]);
   const [filterSearch, setFilterSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState<string>('ALL');
-  const [filterProject, setFilterProject] = useState<string>('ALL');
-  const [filterType, setFilterType] = useState<string>('ALL');
+  const [filterStatus, setFilterStatus] = useState<string[]>([]);
+  const [filterProject, setFilterProject] = useState<string[]>([]);
+  const [filterType, setFilterType] = useState<string[]>([]);
   const [filterMinValue, setFilterMinValue] = useState('');
   const [filterMaxValue, setFilterMaxValue] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
@@ -235,9 +236,9 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     const maxValue = filterMaxValue ? Number(filterMaxValue) : null;
 
     const matchSearch = !searchTerm || order.title.toLowerCase().includes(searchTerm) || (order.description || '').toLowerCase().includes(searchTerm);
-    const matchStatus = filterStatus === 'ALL' || order.status === filterStatus;
-    const matchProject = filterProject === 'ALL' || order.projectId === filterProject;
-    const matchType = filterType === 'ALL' || order.type === filterType;
+    const matchStatus = filterStatus.length === 0 || filterStatus.includes(order.status);
+    const matchProject = filterProject.length === 0 || filterProject.includes(order.projectId);
+    const matchType = filterType.length === 0 || filterType.includes(order.type);
     const matchMinValue = minValue == null || normalizedValue >= minValue;
     const matchMaxValue = maxValue == null || normalizedValue <= maxValue;
     const matchDesiredDateRange = matchesDesiredDateRange(order.expectedDate, filterStartDate, filterEndDate);
@@ -278,9 +279,9 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
   const clearFilters = () => {
     setFilterSearch('');
-    setFilterStatus('ALL');
-    setFilterProject('ALL');
-    setFilterType('ALL');
+    setFilterStatus([]);
+    setFilterProject([]);
+    setFilterType([]);
     setFilterMinValue('');
     setFilterMaxValue('');
     setFilterStartDate('');
@@ -348,6 +349,11 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   };
 
   const handleImportOrders = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canImportOrders) {
+      event.target.value = '';
+      alert('Somente o SUPERADMIN pode importar pedidos.');
+      return;
+    }
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -462,6 +468,9 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const removeMessageAttachment = (attachmentId: string) => {
     setMessageAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
   };
+
+  const readMultiSelectValues = (event: React.ChangeEvent<HTMLSelectElement>) =>
+    Array.from(event.target.selectedOptions).map((option) => option.value);
 
   const handleDeleteOrder = (order: Order) => {
     if (!confirm('Excluir pedido permanentemente?')) return;
@@ -677,7 +686,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
           <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-2">Gestão consolidada de suprimentos e aprovações de campo.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          {canManageAllOrders && (
+          {canImportOrders && (
             <>
               <button type="button" onClick={downloadImportTemplate} className="bg-white border border-slate-300 text-slate-700 px-6 py-4 font-black uppercase text-xs tracking-widest shadow-sm hover:bg-slate-50">
                 Baixar Modelo
@@ -696,22 +705,28 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 bg-white p-6 border border-slate-200">
         <input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Filtrar por título..." className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
-        <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} className="bg-slate-50 border border-slate-200 px-3 py-3 text-[10px] font-black uppercase">
-          <option value="ALL">Todas as Obras</option>
+        <div className="space-y-2">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Obras (multi)</p>
+        <select multiple value={filterProject} onChange={(e) => setFilterProject(readMultiSelectValues(e))} className="bg-slate-50 border border-slate-200 px-3 py-3 text-[10px] font-black uppercase min-h-32">
           {assignedProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
         </select>
-        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="bg-slate-50 border border-slate-200 px-3 py-3 text-[10px] font-black uppercase">
-          <option value="ALL">Status (Todos)</option>
+        </div>
+        <div className="space-y-2">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Status (multi)</p>
+        <select multiple value={filterStatus} onChange={(e) => setFilterStatus(readMultiSelectValues(e))} className="bg-slate-50 border border-slate-200 px-3 py-3 text-[10px] font-black uppercase min-h-32">
           <option value="PENDENTE">Pendente</option>
           <option value="EM_ANALISE">Em Análise</option>
           <option value="AGUARDANDO_INFORMACAO">Info Solicitada</option>
           <option value="CONCLUIDO">Concluído</option>
           <option value="CANCELADO">Cancelado</option>
         </select>
-        <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="bg-slate-50 border border-slate-200 px-3 py-3 text-[10px] font-black uppercase">
-          <option value="ALL">Tipo do Pedido (Todos)</option>
+        </div>
+        <div className="space-y-2">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tipos (multi)</p>
+        <select multiple value={filterType} onChange={(e) => setFilterType(readMultiSelectValues(e))} className="bg-slate-50 border border-slate-200 px-3 py-3 text-[10px] font-black uppercase min-h-32">
           {orderTypes.map((type) => <option key={type} value={type}>{type}</option>)}
         </select>
+        </div>
         <input type="number" min="0" step="0.01" value={filterMinValue} onChange={(e) => setFilterMinValue(e.target.value)} placeholder="Valor mínimo" className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
         <input type="number" min="0" step="0.01" value={filterMaxValue} onChange={(e) => setFilterMaxValue(e.target.value)} placeholder="Valor máximo" className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
         <input type="date" value={filterStartDate} onChange={(e) => setFilterStartDate(e.target.value)} title="Data desejada inicial" className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />

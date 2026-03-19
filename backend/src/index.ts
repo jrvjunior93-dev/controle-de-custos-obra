@@ -979,10 +979,7 @@ app.put("/order-types", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req
 app.post("/orders/import", requireAuth, async (req: AuthRequest, res) => {
   const parsed = importOrdersSchema.safeParse(req.body);
   if (!parsed.success || !req.authUser) return res.status(400).json({ error: "Invalid payload" });
-  const canImportOrders =
-    req.authUser.role === UserRole.SUPERADMIN ||
-    req.authUser.role === UserRole.ADMIN ||
-    req.authUser.role === UserRole.ADMIN_OBRA;
+  const canImportOrders = req.authUser.role === UserRole.SUPERADMIN;
   if (!canImportOrders) {
     return res.status(403).json({ error: "Forbidden" });
   }

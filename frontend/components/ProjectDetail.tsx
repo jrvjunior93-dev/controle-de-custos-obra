@@ -32,6 +32,7 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, user, onU
   const budgetDraftStorageKey = useMemo(() => `csc_brape_budget_draft_${project.id}`, [project.id]);
   const [budgetDraft, setBudgetDraft] = useState(project.budget || []);
   const canManageProject = isGlobalAdmin(user.role) || (isProjectAdmin(user.role) && user.assignedProjectIds?.includes(project.id));
+  const canAccessFullProjectTabs = user.role !== 'ADMIN_OBRA';
 
   useEffect(() => {
     const savedDraft = sessionStorage.getItem(budgetDraftStorageKey);
@@ -109,15 +110,27 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, user, onU
     }
   };
 
-  const availableTabs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'RESUMO', label: 'Dashboard', icon: 'chart-pie' },
-    { id: 'ORCAMENTO', label: 'Orçamento', icon: 'clipboard-list' },
-    { id: 'CUSTOS', label: 'Custos', icon: 'receipt' },
-    { id: 'PARCELAMENTOS', label: 'Parcelas', icon: 'file-invoice-dollar' },
-    { id: 'PEDIDOS', label: 'Pedidos', icon: 'shopping-cart' },
-    { id: 'ARQUIVOS', label: 'Arquivos', icon: 'folder-open' },
-    { id: 'RELATORIOS', label: 'Relatório Final', icon: 'file-pdf' }
-  ];
+  const availableTabs: { id: Tab; label: string; icon: string }[] = canAccessFullProjectTabs
+    ? [
+        { id: 'RESUMO', label: 'Dashboard', icon: 'chart-pie' },
+        { id: 'ORCAMENTO', label: 'Orçamento', icon: 'clipboard-list' },
+        { id: 'CUSTOS', label: 'Custos', icon: 'receipt' },
+        { id: 'PARCELAMENTOS', label: 'Parcelas', icon: 'file-invoice-dollar' },
+        { id: 'PEDIDOS', label: 'Pedidos', icon: 'shopping-cart' },
+        { id: 'ARQUIVOS', label: 'Arquivos', icon: 'folder-open' },
+        { id: 'RELATORIOS', label: 'Relatório Final', icon: 'file-pdf' }
+      ]
+    : [
+        { id: 'RESUMO', label: 'Dashboard', icon: 'chart-pie' },
+        { id: 'ARQUIVOS', label: 'Arquivos', icon: 'folder-open' },
+        { id: 'RELATORIOS', label: 'Relatório Final', icon: 'file-pdf' }
+      ];
+
+  useEffect(() => {
+    if (!availableTabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab('RESUMO');
+    }
+  }, [activeTab, availableTabs]);
 
   return (
     <div className="flex flex-col h-full bg-slate-50 rounded-none">
@@ -163,10 +176,10 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, user, onU
       <div className="flex-1 p-8 overflow-y-auto rounded-none">
         <div className="no-print">
           {activeTab === 'RESUMO' && <ConsolidationModule project={project} />}
-          {activeTab === 'ORCAMENTO' && <BudgetModule budget={currentBudget} onDraftChange={setBudgetDraft} draftKey={budgetDraftStorageKey} onSave={(budget) => { setBudgetDraft(budget); onUpdate({ ...project, budget }); }} />}
-          {activeTab === 'CUSTOS' && <CostModule project={project} onSave={(costs) => onUpdate({ ...project, costs })} />}
-          {activeTab === 'PARCELAMENTOS' && <InstallmentsModule project={project} onUpdate={onUpdate} />}
-          {activeTab === 'PEDIDOS' && <OrdersModule project={project} user={user} onUpdate={onUpdate} />}
+          {canAccessFullProjectTabs && activeTab === 'ORCAMENTO' && <BudgetModule budget={currentBudget} onDraftChange={setBudgetDraft} draftKey={budgetDraftStorageKey} onSave={(budget) => { setBudgetDraft(budget); onUpdate({ ...project, budget }); }} />}
+          {canAccessFullProjectTabs && activeTab === 'CUSTOS' && <CostModule project={project} onSave={(costs) => onUpdate({ ...project, costs })} />}
+          {canAccessFullProjectTabs && activeTab === 'PARCELAMENTOS' && <InstallmentsModule project={project} onUpdate={onUpdate} />}
+          {canAccessFullProjectTabs && activeTab === 'PEDIDOS' && <OrdersModule project={project} user={user} onUpdate={onUpdate} />}
           {activeTab === 'ARQUIVOS' && <AttachmentsModule project={project} onUpdate={onUpdate} isAdmin={canManageProject} />}
         </div>
 

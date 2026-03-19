@@ -494,7 +494,7 @@ const App: React.FC = () => {
 
 
   const canManageGlobalData = isGlobalAdmin(user.role);
-  const canManageProjectPortfolio = isProjectAdmin(user.role);
+  const canManageProjectPortfolio = isProjectAdmin(user.role) || user.role === 'ADMIN_OBRA';
   const visibleProjects = canManageGlobalData
     ? projects
     : projects.filter((project) => user.assignedProjectIds?.includes(project.id));
