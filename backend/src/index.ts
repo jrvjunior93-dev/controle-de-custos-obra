@@ -30,6 +30,11 @@ const projectPayloadSchema = z.object({ project: z.any() });
 const userPayloadSchema = z.object({ user: z.any() });
 const orderTypesSchema = z.object({ orderTypes: z.array(z.string()) });
 const importOrdersSchema = z.object({ rows: z.array(z.any()) });
+const updateOwnProfileSchema = z.object({
+  name: z.string().trim().min(2),
+  currentPassword: z.string().trim().min(1).optional(),
+  newPassword: z.string().trim().min(6).optional(),
+});
 
 type AuthUser = { id: string; role: UserRole };
 type AuthRequest = express.Request & { authUser?: AuthUser };
@@ -1144,6 +1149,46 @@ app.get("/auth/me", requireAuth, async (req: AuthRequest, res) => {
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { assignedProjects: true } });
   if (!user || !user.isActive) return res.status(401).json({ error: "Unauthorized" });
   res.json(sanitizeUser(user));
+});
+
+app.put("/auth/profile", requireAuth, async (req: AuthRequest, res) => {
+  if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
+
+  const parsed = updateOwnProfileSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  const { name, currentPassword, newPassword } = parsed.data;
+  const userId = Number(req.authUser.id);
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { assignedProjects: true } });
+  if (!user || !user.isActive) return res.status(401).json({ error: "Unauthorized" });
+
+  const nextName = String(name || "").trim();
+  if (!nextName) return res.status(400).json({ error: "Name is required" });
+
+  let passwordHash = user.passwordHash;
+  if (newPassword) {
+    if (!currentPassword) {
+      return res.status(400).json({ error: "Current password is required to change password" });
+    }
+
+    const validPassword = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!validPassword) {
+      return res.status(400).json({ error: "Current password is invalid" });
+    }
+
+    passwordHash = await bcrypt.hash(newPassword, 10);
+  }
+
+  const savedUser = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      name: nextName,
+      passwordHash,
+    },
+    include: { assignedProjects: true }
+  });
+
+  res.json(sanitizeUser(savedUser));
 });
 
 app.use((_req, res) => {

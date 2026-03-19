@@ -162,6 +162,13 @@ export const dbService = {
 
   async me() {
     return request<any>("/auth/me");
+  },
+
+  async updateMyProfile(payload: { name: string; currentPassword?: string; newPassword?: string }) {
+    return request<any>("/auth/profile", {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
   }
 };
 

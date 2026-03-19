@@ -135,6 +135,10 @@ const App: React.FC = () => {
   const [isLoadingData, setIsLoadingData] = useState(true);
 
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState({ name: '', currentPassword: '', newPassword: '', confirmPassword: '' });
 
 
 
@@ -405,6 +409,52 @@ const App: React.FC = () => {
     });
   };
 
+  const openProfileModal = () => {
+    setProfileForm({ name: user.name, currentPassword: '', newPassword: '', confirmPassword: '' });
+    setShowProfileModal(true);
+    setShowProfileMenu(false);
+  };
+
+  const handleSaveProfile = async () => {
+    const nextName = profileForm.name.trim();
+    const nextPassword = profileForm.newPassword.trim();
+    const currentPassword = profileForm.currentPassword.trim();
+
+    if (!nextName) {
+      alert('Informe o nome do usuario.');
+      return;
+    }
+
+    if (nextPassword && nextPassword !== profileForm.confirmPassword.trim()) {
+      alert('A confirmacao da nova senha nao confere.');
+      return;
+    }
+
+    if (nextPassword && !currentPassword) {
+      alert('Informe a senha atual para alterar a senha.');
+      return;
+    }
+
+    setIsSavingProfile(true);
+    try {
+      const savedUser = normalizeUserRecord(await dbService.updateMyProfile({
+        name: nextName,
+        currentPassword: currentPassword || undefined,
+        newPassword: nextPassword || undefined,
+      }));
+
+      setUser(savedUser);
+      sessionStorage.setItem('csc_brape_session', JSON.stringify({ user: savedUser }));
+      setUsers((currentUsers) => currentUsers.map((item) => item.id === savedUser.id ? savedUser : item));
+      setShowProfileModal(false);
+      alert('Perfil atualizado com sucesso.');
+    } catch (error: any) {
+      alert(error?.message || 'Nao foi possivel atualizar o perfil.');
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
 
   const handleSyncMemberOrder = async (projectId: string, order: any) => {
     const savedOrder = await dbService.upsertProjectOrder(projectId, order);
@@ -515,17 +565,44 @@ const App: React.FC = () => {
 
           <div className="h-6 w-px bg-slate-700 mx-2"></div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 relative">
 
-            <div className="text-right hidden sm:block">
+            <button
+              onClick={() => setShowProfileMenu((current) => !current)}
+              className="text-right hidden sm:block hover:text-blue-300 transition-colors"
+              title="Meu perfil"
+            >
 
               <p className="text-[10px] font-black uppercase tracking-tighter leading-none">{user.name}</p>
 
               <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">{user.role.replace('_', ' ')}</p>
 
-            </div>
+            </button>
+
+            <button
+              onClick={() => setShowProfileMenu((current) => !current)}
+              className="sm:hidden w-9 h-9 border border-slate-700 text-slate-200 hover:text-white hover:border-slate-500 transition-colors"
+              title="Meu perfil"
+            >
+              <i className="fas fa-user"></i>
+            </button>
 
             <button onClick={handleLogout} className="text-slate-500 hover:text-white transition-colors" title="Sair"><i className="fas fa-power-off"></i></button>
+
+            {showProfileMenu && (
+              <div className="absolute right-10 top-full mt-3 w-64 bg-white text-slate-900 border border-slate-200 shadow-2xl z-[80]">
+                <div className="px-4 py-3 border-b border-slate-100">
+                  <p className="text-[10px] font-black uppercase tracking-wider">{user.name}</p>
+                  <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-1">{user.role.replace('_', ' ')}</p>
+                </div>
+                <button
+                  onClick={openProfileModal}
+                  className="w-full px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-colors"
+                >
+                  <i className="fas fa-id-card mr-2 text-blue-600"></i>Meu perfil
+                </button>
+              </div>
+            )}
 
           </div>
 
@@ -635,6 +712,100 @@ const App: React.FC = () => {
               Fechar
 
             </button>
+
+          </div>
+
+        </div>
+
+      )}
+
+      {showProfileModal && (
+
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-6">
+
+          <div className="bg-white max-w-md w-full p-8 border border-slate-200 shadow-2xl space-y-5">
+
+            <div>
+
+              <h3 className="text-lg font-black uppercase tracking-tighter">Meu Perfil</h3>
+
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Atualize nome e senha de acesso.</p>
+
+            </div>
+
+            <div className="space-y-4">
+
+              <div>
+
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Nome</label>
+
+                <input
+                  value={profileForm.name}
+                  onChange={(e) => setProfileForm((current) => ({ ...current, name: e.target.value }))}
+                  className="w-full border border-slate-200 px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+
+              </div>
+
+              <div>
+
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Senha atual</label>
+
+                <input
+                  type="password"
+                  value={profileForm.currentPassword}
+                  onChange={(e) => setProfileForm((current) => ({ ...current, currentPassword: e.target.value }))}
+                  className="w-full border border-slate-200 px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+
+              </div>
+
+              <div>
+
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Nova senha</label>
+
+                <input
+                  type="password"
+                  value={profileForm.newPassword}
+                  onChange={(e) => setProfileForm((current) => ({ ...current, newPassword: e.target.value }))}
+                  className="w-full border border-slate-200 px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+
+              </div>
+
+              <div>
+
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Confirmar nova senha</label>
+
+                <input
+                  type="password"
+                  value={profileForm.confirmPassword}
+                  onChange={(e) => setProfileForm((current) => ({ ...current, confirmPassword: e.target.value }))}
+                  className="w-full border border-slate-200 px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+
+              </div>
+
+            </div>
+
+            <div className="flex gap-3">
+
+              <button
+                onClick={() => setShowProfileModal(false)}
+                className="flex-1 py-3 border border-slate-200 text-slate-500 font-black uppercase text-[10px] tracking-widest"
+              >
+                Cancelar
+              </button>
+
+              <button
+                onClick={handleSaveProfile}
+                disabled={isSavingProfile}
+                className="flex-1 bg-slate-900 text-white py-3 font-black uppercase text-[10px] tracking-widest disabled:opacity-50"
+              >
+                {isSavingProfile ? 'Salvando...' : 'Salvar Perfil'}
+              </button>
+
+            </div>
 
           </div>
 
