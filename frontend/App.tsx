@@ -106,6 +106,10 @@ const ScreenFallback: React.FC = () => (
   </div>
 );
 
+const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+const SESSION_KEY = 'csc_brape_session';
+const LAST_ACTIVITY_KEY = 'csc_brape_last_activity';
+
 const App: React.FC = () => {
 
   const [user, setUser] = useState<User | null>(null);
@@ -139,6 +143,28 @@ const App: React.FC = () => {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: '', currentPassword: '', newPassword: '', confirmPassword: '' });
+
+  const markSessionActivity = () => {
+    sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+  };
+
+  const clearSessionState = () => {
+    setUser(null);
+    dbService.clearAuthToken();
+    sessionStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(LAST_ACTIVITY_KEY);
+    setView('PROJECT_LIST');
+    setSelectedProjectId(null);
+    setProjects([]);
+    setUsers([]);
+    setShowProfileMenu(false);
+    setShowProfileModal(false);
+  };
+
+  const forceLogout = (message?: string) => {
+    clearSessionState();
+    if (message) alert(message);
+  };
 
 
 
@@ -214,7 +240,8 @@ const App: React.FC = () => {
 
     const token = dbService.getAuthToken();
 
-    const session = sessionStorage.getItem('csc_brape_session');
+    const session = sessionStorage.getItem(SESSION_KEY);
+    const lastActivity = Number(sessionStorage.getItem(LAST_ACTIVITY_KEY) || 0);
 
 
 
@@ -226,20 +253,28 @@ const App: React.FC = () => {
 
     }
 
+    if (!lastActivity || Date.now() - lastActivity > INACTIVITY_TIMEOUT_MS) {
+      forceLogout('Sua sessao foi encerrada por inatividade.');
+      setIsLoadingData(false);
+      return;
+    }
+
 
 
     const restoreSession = async () => {
       try {
         const refreshedUser = await dbService.me();
         setUser(normalizeUserRecord(refreshedUser));
-        sessionStorage.setItem('csc_brape_session', JSON.stringify({ user: normalizeUserRecord(refreshedUser) }));
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify({ user: normalizeUserRecord(refreshedUser) }));
+        markSessionActivity();
 
         if (!isProjectAdmin(refreshedUser.role)) setView('ORDERS_GLOBAL');
 
         await initData(refreshedUser);
       } catch {
         dbService.clearAuthToken();
-        sessionStorage.removeItem('csc_brape_session');
+        sessionStorage.removeItem(SESSION_KEY);
+        sessionStorage.removeItem(LAST_ACTIVITY_KEY);
         setIsLoadingData(false);
       }
     };
@@ -280,6 +315,30 @@ const App: React.FC = () => {
   }, [user]);
 
 
+  useEffect(() => {
+    if (!user) return undefined;
+
+    let timeoutId: number | undefined;
+
+    const resetInactivityTimeout = () => {
+      markSessionActivity();
+      if (timeoutId) window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => {
+        forceLogout('Sua sessao foi encerrada por inatividade.');
+      }, INACTIVITY_TIMEOUT_MS);
+    };
+
+    const activityEvents: Array<keyof WindowEventMap> = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, resetInactivityTimeout, { passive: true }));
+    resetInactivityTimeout();
+
+    return () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, resetInactivityTimeout));
+    };
+  }, [user]);
+
+
 
   const handleLogin = async (u: User, token: string) => {
 
@@ -289,7 +348,8 @@ const App: React.FC = () => {
 
     setUser(normalizeUserRecord(authenticatedUser));
 
-    sessionStorage.setItem('csc_brape_session', JSON.stringify({ user: normalizeUserRecord(authenticatedUser) }));
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ user: normalizeUserRecord(authenticatedUser) }));
+    markSessionActivity();
 
 
 
@@ -315,19 +375,7 @@ const App: React.FC = () => {
 
     if (!confirm('Deseja encerrar a sessao atual?')) return;
 
-    setUser(null);
-
-    dbService.clearAuthToken();
-
-    sessionStorage.removeItem('csc_brape_session');
-
-    setView('PROJECT_LIST');
-
-    setSelectedProjectId(null);
-
-    setProjects([]);
-
-    setUsers([]);
+    clearSessionState();
 
   };
 
@@ -444,7 +492,8 @@ const App: React.FC = () => {
       }));
 
       setUser(savedUser);
-      sessionStorage.setItem('csc_brape_session', JSON.stringify({ user: savedUser }));
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ user: savedUser }));
+      markSessionActivity();
       setUsers((currentUsers) => currentUsers.map((item) => item.id === savedUser.id ? savedUser : item));
       setShowProfileModal(false);
       alert('Perfil atualizado com sucesso.');
