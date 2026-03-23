@@ -683,7 +683,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
 
   if (authUser.role === UserRole.MEMBRO) {
     const requesterId = Number(orderPayload?.requesterId || authUser.id);
-    if (existingOrder && existingOrder.requesterUserId !== Number(authUser.id)) {
+    if (existingOrder) {
       const error = new Error("Forbidden") as Error & { status?: number };
       error.status = 403;
       throw error;
@@ -1030,7 +1030,7 @@ app.delete("/projects/:projectId/orders/:orderId", requireAuth, async (req: Auth
     include: { attachments: true, messages: { include: { attachments: true } } }
   });
   if (!order) return res.status(404).json({ error: "Order not found" });
-  if (req.authUser.role === UserRole.MEMBRO && order.requesterUserId !== Number(req.authUser.id)) {
+  if (req.authUser.role === UserRole.MEMBRO) {
     return res.status(403).json({ error: "Forbidden" });
   }
 

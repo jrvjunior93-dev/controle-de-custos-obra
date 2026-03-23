@@ -257,9 +257,10 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const isNewOrderOtherType = isOtherOrderType(newOrder.type);
   const isOrderActive = (order: Order) => order.status !== 'CONCLUIDO' && order.status !== 'CANCELADO';
   const canTreatOrder = (order: Order) => canManageAllOrders && isOrderActive(order) && order.responsibleId === user.id;
+  const canEditExistingOrder = user.role === 'SUPERADMIN' || user.role === 'ADMIN' || user.role === 'ADMIN_OBRA';
   const activeProjectForModal = isActionModalOpen ? projects.find((project) => project.id === isActionModalOpen.projectId) : null;
-  const canEditMacroItem = (order: Order) => canManageAllOrders && isOrderActive(order);
-  const canEditOrderValueDirectly = (order: Order) => user.role === 'SUPERADMIN' && !!order;
+  const canEditMacroItem = (order: Order) => canEditExistingOrder && isOrderActive(order);
+  const canEditOrderValueDirectly = (order: Order) => canEditExistingOrder && !!order;
   const findSectorName = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.name;
   const getMessageMeta = (order: Order, message: Order['messages'][number]) => {
     if (message.userId === 'system') {
@@ -577,6 +578,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
   const handleSendMessage = () => {
     if (!isActionModalOpen || !messageText.trim()) return alert('Escreva a interação que deseja registrar.');
+    if (!canEditExistingOrder) return alert('Somente administradores podem editar pedidos existentes.');
     if (!confirm(`Adicionar interação ao pedido "${isActionModalOpen.title}"?`)) return;
 
     let updatedOrder: Order | null = null;
@@ -1236,7 +1238,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 </div>
               )}
 
-              {isActionModalOpen.status !== 'CONCLUIDO' && isActionModalOpen.status !== 'CANCELADO' && (
+              {canEditExistingOrder && isActionModalOpen.status !== 'CONCLUIDO' && isActionModalOpen.status !== 'CANCELADO' && (
                 <div className="space-y-4 pt-6 border-t border-slate-100">
                   <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Interações Livres</h4>
                   <textarea value={messageText} onChange={(e) => setMessageText(e.target.value)} className="w-full bg-slate-50 border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder="Registre uma orientação, alinhamento ou resposta livre do pedido..." />

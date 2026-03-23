@@ -49,6 +49,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const isNewOrderOtherType = isOtherOrderType(newOrder.type);
   const isOrderActive = (order: Order) => order.status !== 'CONCLUIDO' && order.status !== 'CANCELADO';
   const canTreatOrder = (order: Order) => canManageProjectOrders && isOrderActive(order) && order.responsibleId === user.id;
+  const canEditExistingOrder = user.role === 'SUPERADMIN' || user.role === 'ADMIN' || user.role === 'ADMIN_OBRA';
   const findSectorName = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.name;
   const getMessageMeta = (order: Order, message: OrderMessage) => {
     if (message.userId === 'system') {
@@ -219,6 +220,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   };
 
   const handleSendMessage = (order: Order) => {
+    if (!canEditExistingOrder) return alert('Somente administradores podem editar pedidos existentes.');
     if (!messageText.trim()) return alert('Escreva sua interação.');
     if (!confirm(`Confirmar envio da interação para o pedido "${order.title}"?`)) return;
     const msg: OrderMessage = {
@@ -576,12 +578,12 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                         className="w-full bg-slate-50 border border-slate-200 px-3 py-2 font-black text-[10px] uppercase"
                         value={selectedMacroItemId}
                         onChange={(event) => setSelectedMacroItemId(event.target.value)}
-                        disabled={!canManageProjectOrders || !isOrderActive(isActionModalOpen)}
+                        disabled={!canEditExistingOrder || !isOrderActive(isActionModalOpen)}
                       >
                         <option value="">Selecione...</option>
                         {project.budget.map((macro) => <option key={macro.id} value={macro.id}>{macro.description}</option>)}
                       </select>
-                      {canManageProjectOrders && isOrderActive(isActionModalOpen) && (
+                      {canEditExistingOrder && isOrderActive(isActionModalOpen) && (
                         <button type="button" onClick={handleUpdateMacroItem} className="w-full bg-slate-900 text-white py-2 font-black uppercase text-[9px] tracking-widest">
                           Salvar Item Macro
                         </button>
@@ -593,7 +595,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                     <p className="text-[10px] font-black text-slate-800">{formatMoney(isActionModalOpen.value)}</p>
                   </div>
                 </div>
-                {canManageProjectOrders && isOrderActive(isActionModalOpen) && sectors.length > 0 && (
+                {canEditExistingOrder && isOrderActive(isActionModalOpen) && sectors.length > 0 && (
                   <div className="bg-white border border-slate-100 p-4 space-y-3">
                     <label className="text-[9px] font-black text-slate-400 uppercase block">Encaminhar para Outro Setor</label>
                     <select className="w-full bg-slate-50 border border-slate-200 px-3 py-2 font-black text-[10px] uppercase" value={selectedForwardSectorId} onChange={(event) => setSelectedForwardSectorId(event.target.value)}>
@@ -713,7 +715,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                   </>
                 )}
 
-                {isActionModalOpen.status !== 'CONCLUIDO' && isActionModalOpen.status !== 'CANCELADO' && (
+                {canEditExistingOrder && isActionModalOpen.status !== 'CONCLUIDO' && isActionModalOpen.status !== 'CANCELADO' && (
                   <div className="space-y-4 pt-4 border-t border-slate-200">
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Interações Livres</h4>
                     <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder="Registre uma orientação, alinhamento ou resposta livre..." value={messageText} onChange={(e) => setMessageText(e.target.value)} />
