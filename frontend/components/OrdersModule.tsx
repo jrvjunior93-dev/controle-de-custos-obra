@@ -36,6 +36,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const [selectedMacroItemId, setSelectedMacroItemId] = useState('');
   const [selectedForwardSectorId, setSelectedForwardSectorId] = useState('');
   const [selectedSectorStatus, setSelectedSectorStatus] = useState('');
+  const [isEditingSectorStatus, setIsEditingSectorStatus] = useState(false);
   const [newOrder, setNewOrder] = useState<Partial<Order>>({
     title: '',
     type: '',
@@ -93,6 +94,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     setSelectedMacroItemId(order.macroItemId || '');
     setSelectedForwardSectorId(order.currentSectorId || '');
     setSelectedSectorStatus(order.sectorStatus || '');
+    setIsEditingSectorStatus(false);
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, target: 'NEW' | 'ACTION' | 'MESSAGE') => {
@@ -335,6 +337,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     };
     onUpdate({ ...project, orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item) });
     setIsActionModalOpen(updatedOrder);
+    setIsEditingSectorStatus(false);
   };
 
   const handleSaveSectorStatus = () => {
@@ -574,7 +577,26 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
           <div className="bg-white w-full max-w-6xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
             <div className="p-5 sm:p-8 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-4">
               <div>
-                <span className={`text-[9px] font-black uppercase px-2 py-1 ${getStatusColor(isActionModalOpen.status)} mb-2 block w-fit`}>{isActionModalOpen.status.replace('_', ' ')}</span>
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className={`text-[9px] font-black uppercase px-2 py-1 ${getStatusColor(isActionModalOpen.status)} block w-fit`}>{isActionModalOpen.status.replace('_', ' ')}</span>
+                  {(isActionModalOpen.sectorStatus || getSectorStatuses(isActionModalOpen.currentSectorId).length > 0) && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-black uppercase px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 block w-fit">
+                        {isActionModalOpen.sectorStatus || 'Sem status setorial'}
+                      </span>
+                      {canEditSectorStatus(isActionModalOpen) && (
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingSectorStatus((current) => !current)}
+                          className="w-7 h-7 border border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:border-slate-300"
+                          title="Editar status do setor"
+                        >
+                          <i className="fas fa-pen text-[10px]"></i>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{isActionModalOpen.title}</h3>
                 <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Por {isActionModalOpen.requesterName} em {new Date(isActionModalOpen.createdAt).toLocaleString('pt-BR')}</p>
               </div>
@@ -587,6 +609,24 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                 <button onClick={() => setIsActionModalOpen(null)} className="text-slate-400 hover:text-slate-600 px-2"><i className="fas fa-times text-xl"></i></button>
               </div>
             </div>
+            {isEditingSectorStatus && (getSectorStatuses(isActionModalOpen.currentSectorId).length > 0 || isActionModalOpen.sectorStatus) && (
+              <div className="px-5 sm:px-8 py-4 border-b border-slate-100 bg-white">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <select
+                    className="flex-1 bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase"
+                    value={selectedSectorStatus}
+                    onChange={(event) => setSelectedSectorStatus(event.target.value)}
+                    disabled={!canEditSectorStatus(isActionModalOpen)}
+                  >
+                    <option value="">Sem status setorial</option>
+                    {getSectorStatuses(isActionModalOpen.currentSectorId).map((status) => <option key={status} value={status}>{status}</option>)}
+                  </select>
+                  <button type="button" onClick={handleSaveSectorStatus} className="bg-slate-900 text-white px-5 py-3 text-[10px] font-black uppercase tracking-widest shadow-sm">
+                    Salvar Status
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-10 grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-10">
               <div className="space-y-8">
                 <div>
@@ -633,27 +673,6 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                     <p className="text-[10px] font-black text-slate-800">{formatMoney(isActionModalOpen.value)}</p>
                   </div>
                 </div>
-                {(getSectorStatuses(isActionModalOpen.currentSectorId).length > 0 || isActionModalOpen.sectorStatus) && (
-                  <div className="bg-white border border-slate-100 p-4 space-y-3">
-                    <label className="text-[9px] font-black text-slate-400 uppercase block">Status do Setor</label>
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      <select
-                        className="w-full bg-slate-50 border border-slate-200 px-3 py-2 font-black text-[10px] uppercase"
-                        value={selectedSectorStatus}
-                        onChange={(event) => setSelectedSectorStatus(event.target.value)}
-                        disabled={!canEditSectorStatus(isActionModalOpen)}
-                      >
-                        <option value="">Sem status setorial</option>
-                        {getSectorStatuses(isActionModalOpen.currentSectorId).map((status) => <option key={status} value={status}>{status}</option>)}
-                      </select>
-                      {canEditSectorStatus(isActionModalOpen) && (
-                        <button type="button" onClick={handleSaveSectorStatus} className="bg-slate-900 text-white px-4 py-2 font-black uppercase text-[9px] tracking-widest">
-                          Salvar Status
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
                 {canForwardOrder(isActionModalOpen) && sectors.length > 0 && (
                   <div className="bg-white border border-slate-100 p-4 space-y-3">
                     <label className="text-[9px] font-black text-slate-400 uppercase block">Encaminhar para Outro Setor</label>
