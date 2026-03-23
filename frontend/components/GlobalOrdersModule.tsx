@@ -213,6 +213,9 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const [isImporting, setIsImporting] = useState(false);
   const [selectedMacroItemId, setSelectedMacroItemId] = useState('');
   const [selectedForwardSectorId, setSelectedForwardSectorId] = useState('');
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [isBulkActionModalOpen, setIsBulkActionModalOpen] = useState(false);
+  const [bulkForwardSectorId, setBulkForwardSectorId] = useState('');
   const [newOrder, setNewOrder] = useState<Partial<Order>>({
     projectId: '',
     title: '',
@@ -309,6 +312,8 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   };
 
   const openOrderModal = (order: Order) => {
+    setSelectedOrderIds([order.id]);
+    setIsBulkActionModalOpen(false);
     setIsActionModalOpen(order);
     resetActionState();
     const currentValue = Number(order.value || 0);
@@ -517,6 +522,81 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     { value: 'CANCELADO', label: 'Cancelado' },
   ];
   const typeFilterItems = orderTypes.map((type) => ({ value: type, label: type }));
+  const selectedOrders = filteredOrders.filter((order) => selectedOrderIds.includes(order.id));
+  const selectedOrdersCount = selectedOrders.length;
+
+  const clearSelectedOrders = () => {
+    setSelectedOrderIds([]);
+    setIsBulkActionModalOpen(false);
+    setBulkForwardSectorId('');
+  };
+
+  const handleToggleOrderSelection = (order: Order) => {
+    setSelectedOrderIds((current) => current.includes(order.id)
+      ? current.filter((item) => item !== order.id)
+      : [...current, order.id]);
+  };
+
+  const handleOpenSelectionModal = () => {
+    if (selectedOrdersCount === 0) return;
+    if (selectedOrdersCount === 1) {
+      openOrderModal(selectedOrders[0]);
+      return;
+    }
+    setIsActionModalOpen(null);
+    setBulkForwardSectorId('');
+    setIsBulkActionModalOpen(true);
+  };
+
+  const handleBulkForwardOrders = () => {
+    if (!canManageAllOrders) return alert('Somente administradores podem encaminhar pedidos em massa.');
+    if (selectedOrdersCount < 2) return;
+    if (!bulkForwardSectorId) return alert('Selecione o setor de destino.');
+
+    const nextSectorName = findSectorName(bulkForwardSectorId) || 'SETOR';
+    const invalidOrders = selectedOrders.filter((order) => !isOrderActive(order));
+    if (invalidOrders.length > 0) {
+      return alert('Remova da seleção os pedidos concluídos ou cancelados antes de encaminhar em massa.');
+    }
+
+    if (!confirm(`Encaminhar ${selectedOrdersCount} pedido(s) para o setor "${nextSectorName}"?`)) return;
+
+    const selectedIds = new Set(selectedOrderIds);
+    const nextProjects = projects.map((project) => {
+      let changed = false;
+      const nextOrders = (project.orders || []).map((order) => {
+        if (!selectedIds.has(order.id)) return order;
+        changed = true;
+        const previousSectorName = order.currentSectorName || 'SEM SETOR';
+        return {
+          ...order,
+          currentSectorId: bulkForwardSectorId,
+          currentSectorName: nextSectorName,
+          accessibleSectorIds: Array.from(new Set([...(order.accessibleSectorIds || []), bulkForwardSectorId])),
+          responsibleId: undefined,
+          responsibleName: undefined,
+          status: 'PENDENTE' as OrderStatus,
+          messages: [...(order.messages || []), {
+            id: crypto.randomUUID(),
+            userId: 'system',
+            userName: 'SISTEMA',
+            text: `Pedido encaminhado de ${previousSectorName} para ${nextSectorName} por ${user.name}.`,
+            date: new Date().toISOString()
+          }]
+        };
+      });
+      return changed ? { ...project, orders: nextOrders } : project;
+    });
+
+    onUpdateProjects(nextProjects);
+    nextProjects.forEach((project) => {
+      if ((project.orders || []).some((order) => selectedIds.has(order.id))) {
+        persistProjectState(project);
+      }
+    });
+
+    clearSelectedOrders();
+  };
 
   const handleDeleteOrder = (order: Order) => {
     if (!confirm('Excluir pedido permanentemente?')) return;
@@ -552,7 +632,17 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       ...project,
       orders: (project.orders || []).map((item) => {
         if (item.id !== isActionModalOpen.id) return item;
-        updatedOrder = { ...item, value: Number(editableOrderValue || 0) };
+        updatedOrder = {
+          ...item,
+          value: Number(editableOrderValue || 0),
+          messages: [...(item.messages || []), {
+            id: crypto.randomUUID(),
+            userId: 'system',
+            userName: 'SISTEMA',
+            text: `${user.name} alterou o valor do pedido para R$ ${Number(editableOrderValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
+            date: new Date().toISOString()
+          }]
+        };
         return updatedOrder;
       })
     }));
@@ -711,7 +801,18 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       ...project,
       orders: (project.orders || []).map((item) => {
         if (item.id !== isActionModalOpen.id) return item;
-        updatedOrder = { ...item, macroItemId: selectedMacroItemId };
+        const macroName = (project.budget || []).find((macro) => macro.id === selectedMacroItemId)?.description || 'ITEM MACRO';
+        updatedOrder = {
+          ...item,
+          macroItemId: selectedMacroItemId,
+          messages: [...(item.messages || []), {
+            id: crypto.randomUUID(),
+            userId: 'system',
+            userName: 'SISTEMA',
+            text: `${user.name} alterou a apropriação do pedido para ${macroName}.`,
+            date: new Date().toISOString()
+          }]
+        };
         return updatedOrder;
       })
     }));
@@ -852,6 +953,33 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
         </button>
       </div>
 
+      {selectedOrdersCount > 0 && (
+        <div className="bg-slate-900 text-white border border-slate-800 px-5 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 shadow-xl">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest">Seleção de Pedidos</p>
+            <p className="text-xs font-bold text-slate-300 mt-1">
+              {selectedOrdersCount === 1 ? '1 pedido selecionado.' : `${selectedOrdersCount} pedidos selecionados.`}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleOpenSelectionModal}
+              className="bg-white text-slate-900 px-4 py-3 text-[10px] font-black uppercase tracking-widest shadow-sm"
+            >
+              {selectedOrdersCount === 1 ? 'Gerenciar Pedido' : 'Encaminhar em Massa'}
+            </button>
+            <button
+              type="button"
+              onClick={clearSelectedOrders}
+              className="bg-transparent border border-slate-600 text-white px-4 py-3 text-[10px] font-black uppercase tracking-widest"
+            >
+              Limpar Seleção
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="hidden lg:block bg-white border border-slate-200 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1180px] text-left table-fixed">
@@ -869,8 +997,14 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredOrders.map((order) => (
-                <tr key={order.id} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => openOrderModal(order)}>
+              {filteredOrders.map((order) => {
+                const isSelected = selectedOrderIds.includes(order.id);
+                return (
+                <tr
+                  key={order.id}
+                  className={`${isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'} transition-colors cursor-pointer`}
+                  onClick={() => handleToggleOrderSelection(order)}
+                >
                   <td className="px-4 py-6 text-[10px] font-bold text-slate-500 font-mono whitespace-nowrap">{formatOrderDate(order.createdAt)}</td>
                   <td className="px-4 py-6 text-[10px] font-bold text-slate-500 font-mono whitespace-nowrap">{formatOrderDate(order.expectedDate)}</td>
                   <td className="px-4 py-6">
@@ -906,7 +1040,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                     </span>
                   </td>
                 </tr>
-              ))}
+              )})}
               {filteredOrders.length === 0 && <tr><td colSpan={9} className="p-20 text-center text-slate-300 font-black uppercase text-xs tracking-[0.4em]">Nenhum pedido encontrado.</td></tr>}
             </tbody>
           </table>
@@ -915,7 +1049,11 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
       <div className="lg:hidden space-y-4">
         {filteredOrders.map((order) => (
-          <div key={order.id} className="bg-white border border-slate-200 shadow-sm p-4 space-y-4 cursor-pointer" onClick={() => openOrderModal(order)}>
+          <div
+            key={order.id}
+            className={`border shadow-sm p-4 space-y-4 cursor-pointer ${selectedOrderIds.includes(order.id) ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-200'}`}
+            onClick={() => handleToggleOrderSelection(order)}
+          >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="font-black text-slate-900 uppercase text-sm">{order.title}</div>
@@ -1282,6 +1420,64 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                       </div>
                     )})}
                   </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isBulkActionModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md flex items-center justify-center z-[125] p-4 sm:p-6">
+          <div className="bg-white w-full max-w-3xl max-h-[95vh] shadow-2xl overflow-y-auto border border-slate-800">
+            <div className="p-5 sm:p-8 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-4">
+              <div>
+                <span className="text-[9px] font-black uppercase px-2 py-1 bg-slate-900 text-white mb-2 block w-fit">Ação em Massa</span>
+                <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Encaminhar Pedidos</h3>
+                <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">{selectedOrdersCount} pedido(s) selecionado(s)</p>
+              </div>
+              <button onClick={() => setIsBulkActionModalOpen(false)} className="text-slate-400 hover:text-slate-900 px-2"><i className="fas fa-times text-2xl"></i></button>
+            </div>
+            <div className="p-5 sm:p-8 space-y-6">
+              <div className="space-y-2">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pedidos Selecionados</p>
+                <div className="max-h-64 overflow-y-auto border border-slate-200 divide-y divide-slate-100">
+                  {selectedOrders.map((order) => (
+                    <div key={order.id} className="px-4 py-3 bg-white">
+                      <div className="text-xs font-black text-slate-900 uppercase">{order.title}</div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase mt-1">{order.projectName} • {order.currentSectorName || 'Sem setor'}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {canManageAllOrders ? (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Enviar para Outro Setor</p>
+                    <p className="text-xs font-bold text-slate-500">Todos os pedidos mantêm histórico completo e acesso para os setores envolvidos.</p>
+                  </div>
+                  <select
+                    className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500"
+                    value={bulkForwardSectorId}
+                    onChange={(event) => setBulkForwardSectorId(event.target.value)}
+                  >
+                    <option value="">Selecione...</option>
+                    {sectors.map((sector) => (
+                      <option key={sector.id} value={sector.id}>{sector.name}</option>
+                    ))}
+                  </select>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <button type="button" onClick={handleBulkForwardOrders} className="flex-1 bg-slate-900 text-white py-4 font-black uppercase text-[10px] tracking-widest shadow-sm">
+                      Encaminhar em Massa
+                    </button>
+                    <button type="button" onClick={clearSelectedOrders} className="flex-1 bg-white border border-slate-300 text-slate-700 py-4 font-black uppercase text-[10px] tracking-widest">
+                      Limpar Seleção
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-amber-50 border border-amber-200 p-4 text-[10px] font-black uppercase text-amber-700">
+                  Somente administradores podem encaminhar pedidos em massa.
                 </div>
               )}
             </div>
