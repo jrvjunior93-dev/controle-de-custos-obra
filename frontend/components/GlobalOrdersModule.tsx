@@ -1408,18 +1408,21 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                     </button>
                   </div>
                 )}
-                {canDeleteOrderDirectly && (
-                  <div className="mt-4 space-y-3">
-                    <label className="text-[10px] font-black text-slate-500 uppercase">Excluir Pedido</label>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteOrder(isActionModalOpen)}
-                      className="bg-rose-50 text-rose-600 border border-rose-200 px-4 py-3 text-[9px] font-black uppercase shadow-sm"
-                    >
-                      Excluir
-                    </button>
+              {canDeleteOrderDirectly && (
+                <div className="bg-white border border-slate-200 p-6 space-y-3">
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gerenciar Pedido</p>
+                    <p className="text-xs font-bold text-slate-500">Exclusão permanente disponível apenas para ADMIN CENTRAL e SUPERADMIN.</p>
                   </div>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteOrder(isActionModalOpen)}
+                    className="bg-rose-50 text-rose-600 border border-rose-200 px-4 py-3 text-[9px] font-black uppercase shadow-sm"
+                  >
+                    Excluir Pedido
+                  </button>
+                </div>
+              )}
 
               {canManageAllOrders && (isActionModalOpen.status === 'PENDENTE' || isActionModalOpen.status === 'EM_ANALISE' || isActionModalOpen.status === 'AGUARDANDO_INFORMACAO') && (
                 <div className="space-y-6 pt-6 border-t border-slate-100">
