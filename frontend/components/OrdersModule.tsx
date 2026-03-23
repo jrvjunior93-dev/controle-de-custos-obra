@@ -534,6 +534,23 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
                     <p className="text-[10px] font-black text-slate-800">{formatMoney(isActionModalOpen.value)}</p>
                   </div>
                 </div>
+                {isActionModalOpen.attachments && isActionModalOpen.attachments.length > 0 && (
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Anexos do Pedido</label>
+                    <div className="flex flex-wrap gap-2">
+                      {isActionModalOpen.attachments.map((attachment) => (
+                        <div key={attachment.id} className="flex items-center gap-2">
+                          <button type="button" onClick={() => setPreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
+                            Visualizar
+                          </button>
+                          <button type="button" onClick={() => downloadAttachment(attachment)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">
+                            Download
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {isActionModalOpen.messages.length > 0 && (
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Histórico de Mensagens</label>

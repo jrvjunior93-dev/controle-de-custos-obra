@@ -1037,6 +1037,23 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                     </div>
                   </div>
                 )}
+                {isActionModalOpen.attachments && isActionModalOpen.attachments.length > 0 && (
+                  <div className="mt-4 space-y-3">
+                    <p className="text-[10px] font-black text-slate-500 uppercase">Anexos do Pedido</p>
+                    <div className="flex flex-wrap gap-2">
+                      {isActionModalOpen.attachments.map((attachment) => (
+                        <div key={attachment.id} className="flex items-center gap-2">
+                          <button type="button" onClick={() => setPreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
+                            Visualizar
+                          </button>
+                          <button type="button" onClick={() => downloadAttachment(attachment)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">
+                            Download
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="bg-white border border-slate-200 p-6 space-y-3">
