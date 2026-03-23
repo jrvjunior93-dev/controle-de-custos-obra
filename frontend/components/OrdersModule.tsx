@@ -15,6 +15,8 @@ const parseMoneyInput = (value: string) => {
   const digits = value.replace(/\D/g, '');
   return digits ? Number(digits) / 100 : undefined;
 };
+
+const canPreviewAttachmentInline = (attachment: Attachment) => attachment.type.startsWith('image/') || attachment.type === 'application/pdf' || attachment.name.toLowerCase().endsWith('.pdf');
 const formatOrderDate = (value?: string) => value ? new Date(value).toLocaleDateString('pt-BR') : '-';
 
 export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, user, onUpdate }) => {
@@ -154,6 +156,18 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handlePreviewAttachment = (attachment: Attachment) => {
+    if (!attachment.data) {
+      alert('Arquivo indisponível para visualização no momento.');
+      return;
+    }
+    if (canPreviewAttachmentInline(attachment)) {
+      setPreviewAttachment(attachment);
+      return;
+    }
+    window.open(attachment.data, '_blank', 'noopener,noreferrer');
   };
 
   const handleCreateOrder = (event: React.FormEvent) => {
@@ -315,7 +329,18 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     if (!selectedMacroItemId) return alert('Selecione um item macro para vincular ao pedido.');
     if (!confirm(`Vincular o item macro ao pedido "${isActionModalOpen.title}"?`)) return;
 
-    const updatedOrder: Order = { ...isActionModalOpen, macroItemId: selectedMacroItemId };
+    const macroName = project.budget.find((macro) => macro.id === selectedMacroItemId)?.description || 'ITEM MACRO';
+    const updatedOrder: Order = {
+      ...isActionModalOpen,
+      macroItemId: selectedMacroItemId,
+      messages: [...(isActionModalOpen.messages || []), {
+        id: crypto.randomUUID(),
+        userId: 'system',
+        userName: 'SISTEMA',
+        text: `${user.name} alterou a apropriação do pedido para ${macroName}.`,
+        date: new Date().toISOString()
+      }]
+    };
     onUpdate({ ...project, orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item) });
     setIsActionModalOpen(updatedOrder);
   };
@@ -334,7 +359,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       ...isActionModalOpen,
       currentSectorId: selectedForwardSectorId,
       currentSectorName: nextSectorName,
-      accessibleSectorIds: Array.from(new Set([...(isActionModalOpen.accessibleSectorIds || []), selectedForwardSectorId])),
+      accessibleSectorIds: Array.from(new Set([...(isActionModalOpen.accessibleSectorIds || []), ...(isActionModalOpen.currentSectorId ? [isActionModalOpen.currentSectorId] : []), selectedForwardSectorId])),
       responsibleId: undefined,
       responsibleName: undefined,
       status: 'PENDENTE',
@@ -613,7 +638,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                     <div className="flex flex-wrap gap-2">
                       {isActionModalOpen.attachments.map((attachment) => (
                         <div key={attachment.id} className="flex items-center gap-2">
-                          <button type="button" onClick={() => setPreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
+                          <button type="button" onClick={() => handlePreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
                             Visualizar
                           </button>
                           <button type="button" onClick={() => downloadAttachment(attachment)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">
@@ -642,7 +667,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                             <div className="mt-3 flex flex-wrap gap-2">
                               {message.attachments.map((attachment) => (
                                 <div key={attachment.id} className="flex items-center gap-2">
-                                  <button type="button" onClick={() => setPreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
+                                  <button type="button" onClick={() => handlePreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
                                     Visualizar
                                   </button>
                                   <button type="button" onClick={() => downloadAttachment(attachment)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">

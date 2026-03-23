@@ -41,6 +41,8 @@ const formatOrderDate = (value?: string) => {
   return `${day}/${month}/${year}`;
 };
 
+const canPreviewAttachmentInline = (attachment: Attachment) => attachment.type.startsWith('image/') || attachment.type === 'application/pdf' || attachment.name.toLowerCase().endsWith('.pdf');
+
 const matchesDesiredDateRange = (expectedDate?: string, startDate?: string, endDate?: string) => {
   const targetDateKey = normalizeDateKey(expectedDate);
   const startDateKey = normalizeDateKey(startDate);
@@ -288,6 +290,18 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setEditableOrderValue(0);
     setFinalValue(0);
     setFinalDate(new Date().toISOString().split('T')[0]);
+  };
+
+  const handlePreviewAttachment = (attachment: Attachment) => {
+    if (!attachment.data) {
+      alert('Arquivo indisponível para visualização no momento.');
+      return;
+    }
+    if (canPreviewAttachmentInline(attachment)) {
+      setPreviewAttachment(attachment);
+      return;
+    }
+    window.open(attachment.data, '_blank', 'noopener,noreferrer');
   };
 
   const clearFilters = () => {
@@ -572,7 +586,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
           ...order,
           currentSectorId: bulkForwardSectorId,
           currentSectorName: nextSectorName,
-          accessibleSectorIds: Array.from(new Set([...(order.accessibleSectorIds || []), bulkForwardSectorId])),
+          accessibleSectorIds: Array.from(new Set([...(order.accessibleSectorIds || []), ...(order.currentSectorId ? [order.currentSectorId] : []), bulkForwardSectorId])),
           responsibleId: undefined,
           responsibleName: undefined,
           status: 'PENDENTE' as OrderStatus,
@@ -845,7 +859,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
           ...item,
           currentSectorId: selectedForwardSectorId,
           currentSectorName: nextSectorName,
-          accessibleSectorIds: Array.from(new Set([...(item.accessibleSectorIds || []), selectedForwardSectorId])),
+          accessibleSectorIds: Array.from(new Set([...(item.accessibleSectorIds || []), ...(item.currentSectorId ? [item.currentSectorId] : []), selectedForwardSectorId])),
           responsibleId: undefined,
           responsibleName: undefined,
           status: 'PENDENTE',
@@ -1271,7 +1285,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                     <div className="flex flex-wrap gap-2">
                       {isActionModalOpen.attachments.map((attachment) => (
                         <div key={attachment.id} className="flex items-center gap-2">
-                          <button type="button" onClick={() => setPreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
+                          <button type="button" onClick={() => handlePreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
                             Visualizar
                           </button>
                           <button type="button" onClick={() => downloadAttachment(attachment)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">
@@ -1424,7 +1438,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                           <div className="mt-3 flex flex-wrap gap-2">
                             {message.attachments.map((attachment) => (
                               <div key={attachment.id} className="flex items-center gap-2">
-                                <button type="button" onClick={() => setPreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
+                                <button type="button" onClick={() => handlePreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
                                   Visualizar
                                 </button>
                                 <button type="button" onClick={() => downloadAttachment(attachment)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">

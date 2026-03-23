@@ -707,6 +707,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
   const sectorIds = Array.from(new Set([
     ...((orderPayload.accessibleSectorIds || []).map((value: any) => Number(value)).filter(Boolean)),
     ...(existingOrder?.sectorAccess || []).map((item: any) => item.sectorId),
+    ...(existingOrder?.currentSectorId ? [existingOrder.currentSectorId] : []),
     ...(requestedSectorId ? [requestedSectorId] : []),
   ]));
   const validSectors = sectorIds.length > 0
