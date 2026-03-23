@@ -985,6 +985,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
           <table className="w-full min-w-[1180px] text-left table-fixed">
             <thead className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200">
               <tr>
+                <th className="px-4 py-5 w-[4%]">Sel.</th>
                 <th className="px-4 py-5 w-[8%]">Data do Pedido</th>
                 <th className="px-4 py-5 w-[8%]">Data Desejada</th>
                 <th className="px-4 py-5 w-[12%]">Código do Pedido</th>
@@ -1005,6 +1006,13 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                   className={`${isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'} transition-colors cursor-pointer`}
                   onClick={() => handleToggleOrderSelection(order)}
                 >
+                  <td className="px-4 py-6" onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => handleToggleOrderSelection(order)}
+                    />
+                  </td>
                   <td className="px-4 py-6 text-[10px] font-bold text-slate-500 font-mono whitespace-nowrap">{formatOrderDate(order.createdAt)}</td>
                   <td className="px-4 py-6 text-[10px] font-bold text-slate-500 font-mono whitespace-nowrap">{formatOrderDate(order.expectedDate)}</td>
                   <td className="px-4 py-6">
@@ -1041,7 +1049,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                   </td>
                 </tr>
               )})}
-              {filteredOrders.length === 0 && <tr><td colSpan={9} className="p-20 text-center text-slate-300 font-black uppercase text-xs tracking-[0.4em]">Nenhum pedido encontrado.</td></tr>}
+              {filteredOrders.length === 0 && <tr><td colSpan={10} className="p-20 text-center text-slate-300 font-black uppercase text-xs tracking-[0.4em]">Nenhum pedido encontrado.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -1055,10 +1063,19 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
             onClick={() => handleToggleOrderSelection(order)}
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
+              <div className="flex items-start gap-3">
+                <div onClick={(event) => event.stopPropagation()} className="pt-1">
+                  <input
+                    type="checkbox"
+                    checked={selectedOrderIds.includes(order.id)}
+                    onChange={() => handleToggleOrderSelection(order)}
+                  />
+                </div>
+                <div>
                 <div className="font-black text-slate-900 uppercase text-sm">{order.title}</div>
                 <div className="text-[10px] text-slate-500 font-black uppercase">{order.projectName}</div>
                 <div className="text-[10px] text-slate-400 font-bold uppercase">{order.requesterName}</div>
+              </div>
               </div>
               <span className={`text-[8px] font-black uppercase px-2 py-1 border ${
                 order.status === 'CONCLUIDO' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
@@ -1439,22 +1456,11 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
               <button onClick={() => setIsBulkActionModalOpen(false)} className="text-slate-400 hover:text-slate-900 px-2"><i className="fas fa-times text-2xl"></i></button>
             </div>
             <div className="p-5 sm:p-8 space-y-6">
-              <div className="space-y-2">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pedidos Selecionados</p>
-                <div className="max-h-64 overflow-y-auto border border-slate-200 divide-y divide-slate-100">
-                  {selectedOrders.map((order) => (
-                    <div key={order.id} className="px-4 py-3 bg-white">
-                      <div className="text-xs font-black text-slate-900 uppercase">{order.title}</div>
-                      <div className="text-[10px] font-bold text-slate-500 uppercase mt-1">{order.projectName} • {order.currentSectorName || 'Sem setor'}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
               {canManageAllOrders ? (
                 <div className="space-y-3">
                   <div>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Enviar para Outro Setor</p>
-                    <p className="text-xs font-bold text-slate-500">Todos os pedidos mantêm histórico completo e acesso para os setores envolvidos.</p>
+                    <p className="text-xs font-bold text-slate-500">Selecione o setor de destino e confirme o envio em massa.</p>
                   </div>
                   <select
                     className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500"
@@ -1468,7 +1474,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                   </select>
                   <div className="flex flex-col sm:flex-row gap-3">
                     <button type="button" onClick={handleBulkForwardOrders} className="flex-1 bg-slate-900 text-white py-4 font-black uppercase text-[10px] tracking-widest shadow-sm">
-                      Encaminhar em Massa
+                      Enviar
                     </button>
                     <button type="button" onClick={clearSelectedOrders} className="flex-1 bg-white border border-slate-300 text-slate-700 py-4 font-black uppercase text-[10px] tracking-widest">
                       Limpar Seleção
