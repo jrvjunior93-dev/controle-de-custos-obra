@@ -725,8 +725,50 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
     throw error;
   }
 
+  const requestAttachmentsPayload = Array.isArray(orderPayload.attachments) && orderPayload.attachments.length > 0
+    ? orderPayload.attachments
+    : (existingOrder?.attachments || []).filter((item: any) => item.kind === AttachmentKind.REQUEST).map((item: any) => ({
+        name: item.name,
+        originalName: item.originalName,
+        data: item.data || "",
+        type: item.mimeType,
+        mimeType: item.mimeType,
+        size: item.size,
+        uploadDate: item.uploadedAt,
+        storageProvider: item.storageProvider,
+        storageBucket: item.storageBucket,
+        storageKey: item.storageKey,
+      }));
+  const completionAttachmentPayload = orderPayload.completionAttachment
+    ? orderPayload.completionAttachment
+    : ((existingOrder?.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION)
+      ? {
+          name: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).name,
+          originalName: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).originalName,
+          data: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).data || "",
+          type: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).mimeType,
+          mimeType: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).mimeType,
+          size: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).size,
+          uploadDate: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).uploadedAt,
+          storageProvider: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).storageProvider,
+          storageBucket: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).storageBucket,
+          storageKey: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).storageKey,
+        }
+      : null);
+  const preservedStorageRefs = new Set(
+    [
+      ...requestAttachmentsPayload,
+      ...(completionAttachmentPayload ? [completionAttachmentPayload] : []),
+      ...((orderPayload.messages || []).flatMap((message: any) => message.attachments || [])),
+    ]
+      .filter((attachment: any) => attachment?.storageProvider === "S3" && attachment?.storageKey)
+      .map((attachment: any) => `${attachment.storageBucket || ""}:${attachment.storageKey}`)
+  );
+
   if (existingOrder) {
-    await deleteStoredAttachments(collectOrderAttachmentRefs(existingOrder));
+    await deleteStoredAttachments(
+      collectOrderAttachmentRefs(existingOrder).filter((attachment: any) => !preservedStorageRefs.has(`${attachment.storageBucket || ""}:${attachment.storageKey || ""}`))
+    );
     await tx.order.delete({ where: { id: existingOrder.id } });
   }
 
@@ -751,8 +793,8 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       createdAt: parseDateTime(orderPayload.createdAt),
       attachments: {
         create: [
-          ...(await toAttachments(orderPayload.attachments, AttachmentKind.REQUEST)),
-          ...(orderPayload.completionAttachment ? [await toAttachment(orderPayload.completionAttachment, AttachmentKind.COMPLETION)] : [])
+          ...(await toAttachments(requestAttachmentsPayload, AttachmentKind.REQUEST)),
+          ...(completionAttachmentPayload ? [await toAttachment(completionAttachmentPayload, AttachmentKind.COMPLETION)] : [])
         ]
       },
       sectorAccess: {
