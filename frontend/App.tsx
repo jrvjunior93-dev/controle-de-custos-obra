@@ -35,6 +35,8 @@ const normalizeSectorRecord = (sector: Sector): Sector => ({
   name: normalizePtText(sector.name),
 });
 
+const isObraSectorName = (name?: string) => String(name || '').trim().toUpperCase() === 'OBRA';
+
 const normalizeProjectRecord = (project: Project): Project => ({
   ...project,
   code: String(project.code || '').trim().toUpperCase(),
@@ -569,9 +571,11 @@ const App: React.FC = () => {
 
   const canManageGlobalData = isGlobalAdmin(user.role);
   const canManageProjectPortfolio = isProjectAdmin(user.role) || user.role === 'ADMIN_OBRA';
+  const usesAssignedProjectScope = !canManageGlobalData && (!user.sectorName || isObraSectorName(user.sectorName));
   const visibleProjects = canManageGlobalData
     ? projects
     : projects.filter((project) => user.assignedProjectIds?.includes(project.id));
+  const orderVisibleProjects = usesAssignedProjectScope ? visibleProjects : projects;
 
 
 
@@ -703,7 +707,7 @@ const App: React.FC = () => {
 
           {view === 'ORDERS_GLOBAL' && (
 
-            <GlobalOrdersModule projects={visibleProjects} sectors={sectors} user={user} onUpdateProjects={(updatedProjects) => {
+            <GlobalOrdersModule projects={orderVisibleProjects} sectors={sectors} user={user} onUpdateProjects={(updatedProjects) => {
               const updatedMap = new Map(updatedProjects.map((project) => [project.id, project]));
               setProjects((currentProjects) => currentProjects.map((project) => updatedMap.get(project.id) || project));
             }} onPersistProject={handleSaveProject} onPersistMemberOrder={handleSyncMemberOrder} onDeleteMemberOrder={handleDeleteMemberOrder} orderTypes={orderTypes} />

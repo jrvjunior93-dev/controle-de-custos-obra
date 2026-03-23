@@ -42,6 +42,7 @@ const formatOrderDate = (value?: string) => {
 };
 
 const canPreviewAttachmentInline = (attachment: Attachment) => attachment.type.startsWith('image/') || attachment.type === 'application/pdf' || attachment.name.toLowerCase().endsWith('.pdf');
+const isObraSectorName = (name?: string) => String(name || '').trim().toUpperCase() === 'OBRA';
 
 const matchesDesiredDateRange = (expectedDate?: string, startDate?: string, endDate?: string) => {
   const targetDateKey = normalizeDateKey(expectedDate);
@@ -257,7 +258,8 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     return matchSearch && matchStatus && matchProject && matchType && matchMinValue && matchMaxValue && matchDesiredDateRange;
   }).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [rawOrders, filterSearch, filterStatus, filterProject, filterType, filterMinValue, filterMaxValue, filterStartDate, filterEndDate]);
 
-  const assignedProjects = canManageAllOrders ? projects : projects.filter((project) => user.assignedProjectIds?.includes(project.id));
+  const usesAssignedProjectScope = !canManageAllOrders && (!user.sectorName || isObraSectorName(user.sectorName));
+  const assignedProjects = canManageAllOrders || !usesAssignedProjectScope ? projects : projects.filter((project) => user.assignedProjectIds?.includes(project.id));
   const isOtherOrderType = (value?: string) => String(value || '').trim().toUpperCase() === 'OUTROS';
   const isNewOrderOtherType = isOtherOrderType(newOrder.type);
   const isOrderActive = (order: Order) => order.status !== 'CONCLUIDO' && order.status !== 'CANCELADO';

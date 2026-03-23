@@ -289,6 +289,16 @@ function sanitizeSector(sector: any) {
   };
 }
 
+function isObraSectorName(name?: string | null) {
+  return String(name || "").trim().toUpperCase() === "OBRA";
+}
+
+function shouldUseAssignedProjectScope(user?: { role: UserRole; sector?: { name?: string | null } | null }) {
+  if (!user) return true;
+  if (GLOBAL_ADMIN_ROLES.includes(user.role)) return false;
+  return !user.sector || isObraSectorName(user.sector.name);
+}
+
 async function mapAttachment(attachment: any) {
   return {
     id: String(attachment.id),
@@ -360,6 +370,7 @@ async function mapOrderFromDb(order: any, projectName: string) {
 
 function canUserAccessOrder(order: any, userId: number, role: UserRole, sectorId?: number | null) {
   if (GLOBAL_ADMIN_ROLES.includes(role)) return true;
+  if (role === UserRole.ADMIN || role === UserRole.ADMIN_OBRA) return true;
   if (order.requesterUserId === userId || order.assignedUserId === userId) return true;
 
   const accessibleSectorIds = Array.from(new Set((order.sectorAccess || []).map((item: any) => item.sectorId)));
@@ -453,6 +464,9 @@ async function getUserProjectScope(userId: number) {
 async function canAccessProject(user: AuthUser | undefined, projectId: number) {
   if (!user || !Number.isFinite(projectId)) return false;
   if (GLOBAL_ADMIN_ROLES.includes(user.role)) return true;
+  const scopedUser = await getScopedAuthUser(Number(user.id));
+  if (!scopedUser || !scopedUser.isActive) return false;
+  if (!shouldUseAssignedProjectScope(scopedUser)) return true;
   const projectIds = await getUserProjectScope(Number(user.id));
   return projectIds.includes(projectId);
 }
@@ -963,7 +977,7 @@ app.get("/projects", requireAuth, async (req: AuthRequest, res) => {
   const scopedUser = await getScopedAuthUser(Number(authUser.id));
   if (!scopedUser || !scopedUser.isActive) return res.status(401).json({ error: "Unauthorized" });
 
-  const where = GLOBAL_ADMIN_ROLES.includes(authUser.role)
+  const where = GLOBAL_ADMIN_ROLES.includes(authUser.role) || !shouldUseAssignedProjectScope(scopedUser)
     ? undefined
     : { id: { in: await getUserProjectScope(Number(authUser.id)) } };
 
