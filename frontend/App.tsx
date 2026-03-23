@@ -4,7 +4,7 @@ import { ProjectList } from './components/ProjectList';
 
 import { Login } from './components/Login';
 
-import { Project, ViewState, User, isGlobalAdmin, isProjectAdmin } from './types';
+import { Project, Sector, ViewState, User, isGlobalAdmin, isProjectAdmin } from './types';
 import { normalizePtText } from './utils/text';
 
 import { dbService } from './apiClient';
@@ -28,6 +28,11 @@ const normalizeUserRecord = (account: User): User => ({
   ...account,
   name: normalizePtText(account.name),
   email: String(account.email || '').trim().toLowerCase(),
+});
+
+const normalizeSectorRecord = (sector: Sector): Sector => ({
+  ...sector,
+  name: normalizePtText(sector.name),
 });
 
 const normalizeProjectRecord = (project: Project): Project => ({
@@ -119,6 +124,7 @@ const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
 
   const [users, setUsers] = useState<User[]>([]);
+  const [sectors, setSectors] = useState<Sector[]>([]);
 
   const [orderTypes, setOrderTypes] = useState<string[]>([
 
@@ -157,6 +163,7 @@ const App: React.FC = () => {
     setSelectedProjectId(null);
     setProjects([]);
     setUsers([]);
+    setSectors([]);
     setShowProfileMenu(false);
     setShowProfileModal(false);
   };
@@ -187,11 +194,13 @@ const App: React.FC = () => {
       const apiProjects = await dbService.getProjects();
 
       const apiOrderTypes = await dbService.getOrderTypes();
+      const apiSectors = await dbService.getSectors();
 
       const apiUsers = canManageGlobalData ? await dbService.getUsers() : null;
 
       const nextProjects = (apiProjects || []).map(normalizeProjectRecord);
       const nextUsers = canManageGlobalData ? (apiUsers || []).map(normalizeUserRecord) : [];
+      const nextSectors = (apiSectors || []).map(normalizeSectorRecord);
       const nextOrderTypes = apiOrderTypes && apiOrderTypes.length > 0 ? apiOrderTypes : [
         'COMPRA DE MATERIAL',
         'CONTRATACAO DE SERVICO',
@@ -201,9 +210,11 @@ const App: React.FC = () => {
 
       setProjects(nextProjects);
       setUsers(nextUsers);
+      setSectors(nextSectors);
       setOrderTypes(nextOrderTypes);
 
       localStorage.setItem('csc_brape_projects', JSON.stringify(nextProjects));
+      localStorage.setItem('csc_brape_sectors', JSON.stringify(nextSectors));
       if (canManageGlobalData) {
         localStorage.setItem('csc_brape_users', JSON.stringify(nextUsers));
       } else {
@@ -217,7 +228,9 @@ const App: React.FC = () => {
       console.error('Erro na sincronizacao com backend:', e);
 
       const savedProjects = localStorage.getItem('csc_brape_projects');
+      const savedSectors = localStorage.getItem('csc_brape_sectors');
       setProjects(savedProjects ? JSON.parse(savedProjects).map(normalizeProjectRecord) : []);
+      setSectors(savedSectors ? JSON.parse(savedSectors).map(normalizeSectorRecord) : []);
 
       if (canManageGlobalData) {
         const savedUsers = localStorage.getItem('csc_brape_users');
@@ -457,6 +470,18 @@ const App: React.FC = () => {
     });
   };
 
+  const handleSaveSector = async (sector: Sector) => {
+    const savedSector = normalizeSectorRecord(await dbService.upsertSector(sector));
+    setSectors((currentSectors) => {
+      const exists = currentSectors.some((item) => item.id === savedSector.id);
+      const nextSectors = exists
+        ? currentSectors.map((item) => item.id === savedSector.id ? savedSector : item)
+        : [...currentSectors, savedSector].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+      localStorage.setItem('csc_brape_sectors', JSON.stringify(nextSectors));
+      return nextSectors;
+    });
+  };
+
   const openProfileModal = () => {
     setProfileForm({ name: user.name, currentPassword: '', newPassword: '', confirmPassword: '' });
     setShowProfileModal(true);
@@ -672,13 +697,13 @@ const App: React.FC = () => {
         <Suspense fallback={<ScreenFallback />}>
           {view === 'PROJECT_DETAIL' && visibleProjects.find((p) => p.id === selectedProjectId) && (
 
-            <ProjectDetail project={visibleProjects.find((p) => p.id === selectedProjectId)!} user={user} onUpdate={(up) => { void handleSaveProject(up); }} onBack={() => setView('PROJECT_LIST')} />
+            <ProjectDetail project={visibleProjects.find((p) => p.id === selectedProjectId)!} sectors={sectors} user={user} onUpdate={(up) => { void handleSaveProject(up); }} onBack={() => setView('PROJECT_LIST')} />
 
           )}
 
           {view === 'ORDERS_GLOBAL' && (
 
-            <GlobalOrdersModule projects={visibleProjects} user={user} onUpdateProjects={(updatedProjects) => {
+            <GlobalOrdersModule projects={visibleProjects} sectors={sectors} user={user} onUpdateProjects={(updatedProjects) => {
               const updatedMap = new Map(updatedProjects.map((project) => [project.id, project]));
               setProjects((currentProjects) => currentProjects.map((project) => updatedMap.get(project.id) || project));
             }} onPersistProject={handleSaveProject} onPersistMemberOrder={handleSyncMemberOrder} onDeleteMemberOrder={handleDeleteMemberOrder} orderTypes={orderTypes} />
@@ -687,7 +712,7 @@ const App: React.FC = () => {
 
           {view === 'USERS_MANAGEMENT' && canManageGlobalData && (
 
-            <UsersManagement users={users} projects={projects} currentUser={user} onSaveUser={handleSaveUser} onDeleteUser={handleDeleteUser} onImportFullBackup={initData} />
+            <UsersManagement users={users} projects={projects} sectors={sectors} currentUser={user} onSaveUser={handleSaveUser} onSaveSector={handleSaveSector} onDeleteUser={handleDeleteUser} onImportFullBackup={initData} />
 
           )}
 

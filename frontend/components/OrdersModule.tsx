@@ -1,9 +1,10 @@
 ﻿import React, { useState } from 'react';
-import { Attachment, ExecutedCost, Order, OrderMessage, OrderStatus, Project, User, canManageAssignedOrders } from '../types';
+import { Attachment, ExecutedCost, Order, OrderMessage, OrderStatus, Project, Sector, User, canManageAssignedOrders } from '../types';
 import { AttachmentViewerModal } from './AttachmentViewerModal';
 
 interface OrdersModuleProps {
   project: Project;
+  sectors: Sector[];
   user: User;
   onUpdate: (project: Project) => void;
 }
@@ -16,7 +17,7 @@ const parseMoneyInput = (value: string) => {
 };
 const formatOrderDate = (value?: string) => value ? new Date(value).toLocaleDateString('pt-BR') : '-';
 
-export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpdate }) => {
+export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, user, onUpdate }) => {
   const canManageProjectOrders = user.role === 'SUPERADMIN' || (canManageAssignedOrders(user.role) && user.assignedProjectIds?.includes(project.id));
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isActionModalOpen, setIsActionModalOpen] = useState<Order | null>(null);
@@ -31,11 +32,13 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
   const [finalDate, setFinalDate] = useState(new Date().toISOString().split('T')[0]);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const [selectedMacroItemId, setSelectedMacroItemId] = useState('');
+  const [selectedForwardSectorId, setSelectedForwardSectorId] = useState('');
   const [newOrder, setNewOrder] = useState<Partial<Order>>({
     title: '',
     type: '',
     description: '',
     macroItemId: '',
+    currentSectorId: '',
     expectedDate: '',
     value: undefined,
     attachments: []
@@ -46,6 +49,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
   const isNewOrderOtherType = isOtherOrderType(newOrder.type);
   const isOrderActive = (order: Order) => order.status !== 'CONCLUIDO' && order.status !== 'CANCELADO';
   const canTreatOrder = (order: Order) => canManageProjectOrders && isOrderActive(order) && order.responsibleId === user.id;
+  const findSectorName = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.name;
   const getMessageMeta = (order: Order, message: OrderMessage) => {
     if (message.userId === 'system') {
       return { label: 'Sistema', classes: 'bg-slate-50 border-slate-300 ml-0 mr-6' };
@@ -78,6 +82,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
     setEditableOrderValue(currentValue);
     setFinalValue(currentValue);
     setSelectedMacroItemId(order.macroItemId || '');
+    setSelectedForwardSectorId(order.currentSectorId || '');
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, target: 'NEW' | 'ACTION' | 'MESSAGE') => {
@@ -157,6 +162,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
 
     if (!newOrder.title?.trim()) return alert('Preencha o título do pedido.');
     if (!normalizedType) return alert('Preencha o tipo do pedido.');
+    if (sectors.length > 0 && !newOrder.currentSectorId) return alert('Selecione o setor de destino do pedido.');
     if (!newOrder.expectedDate) return alert('Preencha a data desejada.');
     if (!isOtherType && !newOrder.macroItemId) return alert('Selecione um item macro para apropriação.');
     if (!isOtherType && (newOrder.value === undefined || newOrder.value === null || Number(newOrder.value) <= 0)) {
@@ -172,19 +178,28 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
       type: normalizedType,
       description: newOrder.description?.trim() || '',
       macroItemId: newOrder.macroItemId || '',
+      currentSectorId: newOrder.currentSectorId || '',
+      currentSectorName: findSectorName(newOrder.currentSectorId || ''),
+      accessibleSectorIds: newOrder.currentSectorId ? [newOrder.currentSectorId] : [],
       expectedDate: newOrder.expectedDate || '',
       value: Number(newOrder.value || 0),
       status: 'PENDENTE',
       requesterId: user.id,
       requesterName: user.name,
       attachments: newOrder.attachments || [],
-      messages: [],
+      messages: [{
+        id: crypto.randomUUID(),
+        userId: 'system',
+        userName: 'SISTEMA',
+        text: newOrder.currentSectorId ? `Pedido enviado para o setor ${findSectorName(newOrder.currentSectorId || '')}.` : 'Pedido protocolado.',
+        date: new Date().toISOString()
+      }],
       createdAt: new Date().toISOString()
     };
 
     onUpdate({ ...project, orders: [...orders, order] });
     setIsModalOpen(false);
-    setNewOrder({ title: '', type: '', description: '', macroItemId: '', expectedDate: '', value: undefined, attachments: [] });
+    setNewOrder({ title: '', type: '', description: '', macroItemId: '', currentSectorId: '', expectedDate: '', value: undefined, attachments: [] });
   };
 
   const handleDeleteOrder = (order: Order) => {
@@ -299,6 +314,37 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
     if (!confirm(`Vincular o item macro ao pedido "${isActionModalOpen.title}"?`)) return;
 
     const updatedOrder: Order = { ...isActionModalOpen, macroItemId: selectedMacroItemId };
+    onUpdate({ ...project, orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item) });
+    setIsActionModalOpen(updatedOrder);
+  };
+
+  const handleForwardOrder = () => {
+    if (!isActionModalOpen) return;
+    if (!canManageProjectOrders || !isOrderActive(isActionModalOpen)) return;
+    if (!selectedForwardSectorId) return alert('Selecione o setor de destino.');
+    if (selectedForwardSectorId === isActionModalOpen.currentSectorId) return alert('Selecione um setor diferente do atual.');
+
+    const nextSectorName = findSectorName(selectedForwardSectorId) || 'SETOR';
+    const previousSectorName = isActionModalOpen.currentSectorName || 'SEM SETOR';
+    if (!confirm(`Encaminhar o pedido "${isActionModalOpen.title}" para o setor "${nextSectorName}"?`)) return;
+
+    const updatedOrder: Order = {
+      ...isActionModalOpen,
+      currentSectorId: selectedForwardSectorId,
+      currentSectorName: nextSectorName,
+      accessibleSectorIds: Array.from(new Set([...(isActionModalOpen.accessibleSectorIds || []), selectedForwardSectorId])),
+      responsibleId: undefined,
+      responsibleName: undefined,
+      status: 'PENDENTE',
+      messages: [...(isActionModalOpen.messages || []), {
+        id: crypto.randomUUID(),
+        userId: 'system',
+        userName: 'SISTEMA',
+        text: `Pedido encaminhado de ${previousSectorName} para ${nextSectorName} por ${user.name}.`,
+        date: new Date().toISOString()
+      }]
+    };
+
     onUpdate({ ...project, orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item) });
     setIsActionModalOpen(updatedOrder);
   };
@@ -429,6 +475,15 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
                   </select>
                 </div>
               </div>
+              {sectors.length > 0 && (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Setor de Destino</label>
+                  <select required className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-slate-800 text-xs uppercase" value={newOrder.currentSectorId || ''} onChange={(e) => setNewOrder({ ...newOrder, currentSectorId: e.target.value })}>
+                    <option value="">Selecione...</option>
+                    {sectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.name}</option>)}
+                  </select>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Pedido</label>
@@ -507,6 +562,10 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
                     <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Código Externo</label>
                     <p className="text-[10px] font-black text-slate-900">{isActionModalOpen.externalCode || 'Não informado'}</p>
                   </div>
+                  <div className="bg-white border border-slate-100 p-4 sm:col-span-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Setor Atual</label>
+                    <p className="text-[10px] font-black text-slate-900 uppercase">{isActionModalOpen.currentSectorName || 'SEM SETOR DEFINIDO'}</p>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-white border border-slate-100 p-4">
@@ -534,6 +593,18 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, user, onUpd
                     <p className="text-[10px] font-black text-slate-800">{formatMoney(isActionModalOpen.value)}</p>
                   </div>
                 </div>
+                {canManageProjectOrders && isOrderActive(isActionModalOpen) && sectors.length > 0 && (
+                  <div className="bg-white border border-slate-100 p-4 space-y-3">
+                    <label className="text-[9px] font-black text-slate-400 uppercase block">Encaminhar para Outro Setor</label>
+                    <select className="w-full bg-slate-50 border border-slate-200 px-3 py-2 font-black text-[10px] uppercase" value={selectedForwardSectorId} onChange={(event) => setSelectedForwardSectorId(event.target.value)}>
+                      <option value="">Selecione...</option>
+                      {sectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.name}</option>)}
+                    </select>
+                    <button type="button" onClick={handleForwardOrder} className="w-full bg-slate-900 text-white py-2 font-black uppercase text-[9px] tracking-widest">
+                      Encaminhar Pedido
+                    </button>
+                  </div>
+                )}
                 {isActionModalOpen.attachments && isActionModalOpen.attachments.length > 0 && (
                   <div className="space-y-3">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Anexos do Pedido</label>

@@ -124,6 +124,23 @@ export const dbService = {
     }
   },
 
+  async getSectors() {
+    try {
+      const data = await request<any[]>("/sectors");
+      return data ?? null;
+    } catch (e) {
+      console.error("Erro ao buscar setores do backend:", e);
+      return null;
+    }
+  },
+
+  async upsertSector(sector: any) {
+    return request<any>(`/sectors/${sector.id || "new"}`, {
+      method: "PUT",
+      body: JSON.stringify({ sector })
+    });
+  },
+
   async saveOrderTypes(orderTypes: string[]) {
     try {
       await request("/order-types", {

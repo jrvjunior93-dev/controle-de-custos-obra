@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from 'react';
-import { Project, User, UserRole, isGlobalAdmin } from '../types';
+import { Project, Sector, User, UserRole, isGlobalAdmin } from '../types';
 
 interface UsersManagementProps {
   users: User[];
   projects: Project[];
+  sectors: Sector[];
   currentUser: User;
   onSaveUser: (user: User) => Promise<void>;
+  onSaveSector: (sector: Sector) => Promise<void>;
   onDeleteUser: (user: User) => Promise<void>;
   onImportFullBackup?: (data: any) => void;
 }
@@ -24,15 +26,17 @@ const roleRank: Record<UserRole, number> = {
   SUPERADMIN: 4,
 };
 
-export const UsersManagement: React.FC<UsersManagementProps> = ({ users, projects, currentUser, onSaveUser, onDeleteUser }) => {
+export const UsersManagement: React.FC<UsersManagementProps> = ({ users, projects, sectors, currentUser, onSaveUser, onSaveSector, onDeleteUser }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [newSectorName, setNewSectorName] = useState('');
   const [formUser, setFormUser] = useState<Partial<User>>({
     name: '',
     email: '',
     password: '',
     role: 'MEMBRO',
     managerId: undefined,
+    sectorId: undefined,
     assignedProjectIds: [],
   });
 
@@ -59,6 +63,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
       password: '',
       role: 'MEMBRO',
       managerId: undefined,
+      sectorId: undefined,
       assignedProjectIds: [],
     });
     setIsModalOpen(true);
@@ -94,6 +99,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
       role: selectedRole,
       email: (formUser.email || '').trim().toLowerCase(),
       managerId: selectedRole === 'SUPERADMIN' ? undefined : formUser.managerId,
+      sectorId: selectedRole === 'SUPERADMIN' ? undefined : formUser.sectorId,
       assignedProjectIds: selectedRole === 'SUPERADMIN' ? [] : (formUser.assignedProjectIds || []),
     };
 
@@ -143,6 +149,20 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
     setFormUser({ ...formUser, assignedProjectIds: [...current, projectId] });
   };
 
+  const handleCreateSector = async () => {
+    const nextName = newSectorName.trim();
+    if (!nextName) return alert('Informe o nome do setor.');
+    if (!confirm(`Confirmar cadastro do setor "${nextName}"?`)) return;
+
+    try {
+      await onSaveSector({ id: crypto.randomUUID(), name: nextName });
+      setNewSectorName('');
+    } catch (error) {
+      console.error(error);
+      alert('Nao foi possivel salvar o setor no banco de dados.');
+    }
+  };
+
   return (
     <div className="p-10 max-w-6xl mx-auto space-y-10">
       <div className="flex justify-between items-end border-b border-slate-200 pb-8">
@@ -157,12 +177,41 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
         </div>
       </div>
 
+      <div className="bg-white border border-slate-200 p-6 shadow-sm space-y-5">
+        <div className="flex flex-wrap justify-between items-end gap-4">
+          <div>
+            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter">Setores</h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Cadastro dos setores que recebem e tratam pedidos.</p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <input
+              className="min-w-[260px] bg-slate-50 border border-slate-200 px-4 py-3 font-black text-slate-800 text-xs uppercase outline-none focus:border-blue-500"
+              value={newSectorName}
+              onChange={(e) => setNewSectorName(e.target.value)}
+              placeholder="Novo setor"
+            />
+            <button onClick={() => void handleCreateSector()} className="bg-slate-900 hover:bg-black text-white px-6 py-3 font-black uppercase text-[10px] tracking-widest shadow-xl">
+              Adicionar Setor
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {sectors.length === 0 && <span className="text-[10px] font-bold uppercase text-slate-400">Nenhum setor cadastrado.</span>}
+          {sectors.map((sector) => (
+            <span key={sector.id} className="px-3 py-2 bg-slate-50 border border-slate-200 text-[10px] font-black uppercase text-slate-700">
+              {sector.name}
+            </span>
+          ))}
+        </div>
+      </div>
+
       <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
         <table className="w-full text-left">
           <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
             <tr>
               <th className="px-6 py-5">Colaborador</th>
               <th className="px-6 py-5">Perfil</th>
+              <th className="px-6 py-5">Setor</th>
               <th className="px-6 py-5">Gestor</th>
               <th className="px-6 py-5">Acessos</th>
               <th className="px-6 py-5 text-right">Acoes</th>
@@ -183,6 +232,9 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
                     <span className={`text-[9px] font-black px-2.5 py-1 uppercase border ${u.role === 'SUPERADMIN' ? 'bg-amber-500 text-white border-amber-500' : u.role === 'ADMIN' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                       {roleLabels[u.role]}
                     </span>
+                  </td>
+                  <td className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase">
+                    {u.sectorName || 'SEM SETOR'}
                   </td>
                   <td className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase">
                     {u.role === 'SUPERADMIN' ? 'GESTAO GLOBAL' : getManagerName(u.managerId)}
@@ -237,11 +289,20 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Perfil</label>
-                  <select className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-slate-800 text-xs uppercase outline-none focus:border-blue-500" value={selectedRole} onChange={(e) => setFormUser({ ...formUser, role: e.target.value as UserRole, managerId: undefined, assignedProjectIds: e.target.value === 'SUPERADMIN' ? [] : formUser.assignedProjectIds })}>
+                  <select className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-slate-800 text-xs uppercase outline-none focus:border-blue-500" value={selectedRole} onChange={(e) => setFormUser({ ...formUser, role: e.target.value as UserRole, managerId: undefined, sectorId: e.target.value === 'SUPERADMIN' ? undefined : formUser.sectorId, assignedProjectIds: e.target.value === 'SUPERADMIN' ? [] : formUser.assignedProjectIds })}>
                     <option value="MEMBRO">Membro</option>
                     <option value="ADMIN_OBRA">Admin de obra</option>
                     <option value="ADMIN">Admin central</option>
                     {canManageSuperadmin && <option value="SUPERADMIN">Superadmin</option>}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Setor</label>
+                  <select className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-slate-800 text-xs uppercase outline-none focus:border-blue-500" value={formUser.sectorId || ''} onChange={(e) => setFormUser({ ...formUser, sectorId: e.target.value || undefined })} disabled={selectedRole === 'SUPERADMIN'}>
+                    <option value="">{selectedRole === 'SUPERADMIN' ? 'NÃO SE APLICA' : 'Sem setor'}</option>
+                    {sectors.map((sector) => (
+                      <option key={sector.id} value={sector.id}>{sector.name}</option>
+                    ))}
                   </select>
                 </div>
               </div>

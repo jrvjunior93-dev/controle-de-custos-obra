@@ -43,11 +43,13 @@ model User {
   name              String         @map("nome")
   role              UserRole       @map("perfil")
   managerId         Int?           @map("gestor_id")
+  sectorId          Int?           @map("setor_id")
   isActive          Boolean        @default(true) @map("ativo")
   createdAt         DateTime       @default(now()) @map("criado_em")
   updatedAt         DateTime       @updatedAt @map("atualizado_em")
   manager           User?          @relation("UserHierarchy", fields: [managerId], references: [id], onDelete: SetNull)
   subordinates      User[]         @relation("UserHierarchy")
+  sector            Sector?        @relation(fields: [sectorId], references: [id], onDelete: SetNull)
   assignedProjects  UserProject[]
   ordersRequested   Order[]        @relation("RequesterOrders")
   ordersResponsible Order[]        @relation("ResponsibleOrders")
@@ -55,8 +57,24 @@ model User {
 
   @@index([role, isActive])
   @@index([managerId])
+  @@index([sectorId])
 
   @@map("usuarios")
+}
+
+model Sector {
+  id            Int                 @id @default(autoincrement())
+  name          String              @unique @map("nome")
+  isActive      Boolean             @default(true) @map("ativo")
+  createdAt     DateTime            @default(now()) @map("criado_em")
+  updatedAt     DateTime            @updatedAt @map("atualizado_em")
+  users         User[]
+  currentOrders Order[]             @relation("CurrentOrderSector")
+  orderAccess   OrderSectorAccess[]
+
+  @@index([name, isActive])
+
+  @@map("setores")
 }
 
 model UserProject {
@@ -224,6 +242,7 @@ model Order {
   projectId          Int           @map("obra_id")
   orderTypeId        Int           @map("tipo_pedido_id")
   macroItemId        Int?          @map("item_macro_id")
+  currentSectorId    Int?          @map("setor_atual_id")
   requesterUserId    Int           @map("solicitante_usuario_id")
   assignedUserId     Int?          @map("responsavel_usuario_id")
   orderCode          String        @unique @map("codigo_pedido")
@@ -240,22 +259,38 @@ model Order {
   project            Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   orderType          OrderType     @relation(fields: [orderTypeId], references: [id])
   macroItem          MacroItem?    @relation(fields: [macroItemId], references: [id])
+  currentSector      Sector?       @relation("CurrentOrderSector", fields: [currentSectorId], references: [id], onDelete: SetNull)
   requester          User          @relation("RequesterOrders", fields: [requesterUserId], references: [id])
   responsible        User?         @relation("ResponsibleOrders", fields: [assignedUserId], references: [id])
   attachments        OrderAttachment[]
   messages           OrderMessage[]
+  sectorAccess       OrderSectorAccess[]
 
   @@index([projectId])
   @@index([orderCode])
   @@index([externalCode])
   @@index([orderTypeId])
   @@index([macroItemId])
+  @@index([currentSectorId])
   @@index([requesterUserId])
   @@index([assignedUserId])
   @@index([status])
   @@index([expectedDate])
 
   @@map("pedidos")
+}
+
+model OrderSectorAccess {
+  orderId     Int       @map("pedido_id")
+  sectorId    Int       @map("setor_id")
+  grantedAt   DateTime  @default(now()) @map("criado_em")
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sector      Sector    @relation(fields: [sectorId], references: [id], onDelete: Cascade)
+
+  @@id([orderId, sectorId])
+  @@index([sectorId])
+
+  @@map("pedidos_setores_acesso")
 }
 
 model OrderAttachment {

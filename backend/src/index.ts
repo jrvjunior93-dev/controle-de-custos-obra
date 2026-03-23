@@ -32,6 +32,12 @@ const projectPayloadSchema = z.object({ project: z.any() });
 const userPayloadSchema = z.object({ user: z.any() });
 const orderTypesSchema = z.object({ orderTypes: z.array(z.string()) });
 const importOrdersSchema = z.object({ rows: z.array(z.any()) });
+const sectorPayloadSchema = z.object({
+  sector: z.object({
+    id: z.union([z.string(), z.number()]).optional(),
+    name: z.string().trim().min(2),
+  })
+});
 const updateOwnProfileSchema = z.object({
   name: z.string().trim().min(2),
   currentPassword: z.string().trim().min(1).optional(),
@@ -66,6 +72,8 @@ const projectInclude = {
   orders: {
     include: {
       orderType: true,
+      currentSector: true,
+      sectorAccess: { include: { sector: true } },
       requester: true,
       responsible: true,
       attachments: { select: attachmentSummarySelect },
@@ -268,7 +276,16 @@ function sanitizeUser(user: any) {
     name: user.name,
     role: user.role,
     managerId: user.managerId ? String(user.managerId) : undefined,
+    sectorId: user.sectorId ? String(user.sectorId) : undefined,
+    sectorName: user.sector?.name || undefined,
     assignedProjectIds: (user.assignedProjects || []).map((item: any) => String(item.projectId))
+  };
+}
+
+function sanitizeSector(sector: any) {
+  return {
+    id: String(sector.id),
+    name: sector.name,
   };
 }
 
@@ -313,6 +330,9 @@ async function mapOrderFromDb(order: any, projectName: string) {
     type: order.orderType?.name || "",
     description: order.description,
     macroItemId: order.macroItemId ? String(order.macroItemId) : undefined,
+    currentSectorId: order.currentSectorId ? String(order.currentSectorId) : undefined,
+    currentSectorName: order.currentSector?.name || undefined,
+    accessibleSectorIds: Array.from(new Set((order.sectorAccess || []).map((item: any) => String(item.sectorId)))),
     expectedDate: formatDateOnly(order.expectedDate),
     status: order.status,
     requesterId: String(order.requesterUserId),
@@ -338,7 +358,22 @@ async function mapOrderFromDb(order: any, projectName: string) {
   };
 }
 
-async function mapProjectFromDb(project: any) {
+function canUserAccessOrder(order: any, userId: number, role: UserRole, sectorId?: number | null) {
+  if (GLOBAL_ADMIN_ROLES.includes(role)) return true;
+  if (order.requesterUserId === userId || order.assignedUserId === userId) return true;
+
+  const accessibleSectorIds = Array.from(new Set((order.sectorAccess || []).map((item: any) => item.sectorId)));
+  if (!order.currentSectorId && accessibleSectorIds.length === 0) return true;
+
+  if (!sectorId) return false;
+  return accessibleSectorIds.includes(sectorId) || order.currentSectorId === sectorId;
+}
+
+async function mapProjectFromDb(project: any, authUser?: any) {
+  const scopedOrders = authUser
+    ? (project.orders || []).filter((order: any) => canUserAccessOrder(order, authUser.id, authUser.role, authUser.sectorId))
+    : (project.orders || []);
+
   return {
     id: String(project.id),
     code: project.code,
@@ -383,7 +418,7 @@ async function mapProjectFromDb(project: any) {
         macroItemId: String(installment.macroItemId),
       };
     })),
-    orders: await Promise.all((project.orders || []).map((order: any) => mapOrderFromDb(order, project.name)))
+    orders: await Promise.all(scopedOrders.map((order: any) => mapOrderFromDb(order, project.name)))
   };
 }
 
@@ -420,6 +455,13 @@ async function canAccessProject(user: AuthUser | undefined, projectId: number) {
   if (GLOBAL_ADMIN_ROLES.includes(user.role)) return true;
   const projectIds = await getUserProjectScope(Number(user.id));
   return projectIds.includes(projectId);
+}
+
+async function getScopedAuthUser(userId: number) {
+  return prisma.user.findUnique({
+    where: { id: userId },
+    include: { assignedProjects: true, sector: true },
+  });
 }
 
 async function resolveOrderTypesByName(tx: any) {
@@ -517,6 +559,14 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
   const users = userIds.length > 0 ? await tx.user.findMany({ where: { id: { in: userIds } } }) : [];
   const userMap = new Map<number, any>(users.map((user: any) => [user.id, user]));
   const orderTypeMap = await resolveOrderTypesByName(tx);
+  const sectorIds = Array.from(new Set(
+    (projectPayload.orders || []).flatMap((order: any) => [
+      order.currentSectorId,
+      ...((order.accessibleSectorIds || [])),
+    ]).filter((value: any) => value != null && value !== '').map((value: any) => Number(value))
+  ));
+  const sectors = sectorIds.length > 0 ? await tx.sector.findMany({ where: { id: { in: sectorIds }, isActive: true } }) : [];
+  const sectorMap = new Map<number, any>(sectors.map((sector: any) => [sector.id, sector]));
 
   for (const order of projectPayload.orders || []) {
     const macro = order.macroItemId ? macroMap.get(String(order.macroItemId || "")) : null;
@@ -530,6 +580,11 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
     if (!requester || !orderType) continue;
 
     const orderCode = String(order.orderCode || "").trim() || `${project.code}-${await allocateOrderNumber(tx, project.id)}`;
+    const currentSectorId = order.currentSectorId ? Number(order.currentSectorId) : null;
+    const accessibleSectorIds = Array.from(new Set([
+      ...(order.accessibleSectorIds || []).map((value: any) => Number(value)),
+      ...(currentSectorId ? [currentSectorId] : []),
+    ])).filter((value) => sectorMap.has(value));
 
     await tx.order.create({
       data: {
@@ -538,6 +593,7 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
         macroItemId: macro?.id || null,
         requesterUserId: requester.id,
         assignedUserId: responsible?.id || null,
+        currentSectorId: currentSectorId && sectorMap.has(currentSectorId) ? currentSectorId : null,
         orderCode,
         externalCode: toOptionalText(order.externalCode),
         title: String(order.title || "").trim(),
@@ -553,6 +609,12 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
             ...(await toAttachments(order.attachments, AttachmentKind.REQUEST)),
             ...(order.completionAttachment ? [await toAttachment(order.completionAttachment, AttachmentKind.COMPLETION)] : [])
           ]
+        },
+        sectorAccess: {
+          create: accessibleSectorIds.map((sectorId) => ({
+            sectorId,
+            grantedAt: new Date(),
+          }))
         },
         messages: {
           create: await Promise.all((order.messages || []).map(async (message: any) => {
@@ -610,7 +672,12 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
   const existingOrder = Number.isFinite(existingOrderId)
     ? await tx.order.findFirst({
         where: { id: existingOrderId, projectId },
-        include: { attachments: true, messages: { include: { attachments: true } } }
+        include: {
+          attachments: true,
+          messages: { include: { attachments: true } },
+          currentSector: true,
+          sectorAccess: true,
+        }
       })
     : null;
 
@@ -636,8 +703,24 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
   }
   const requesterId = existingOrder?.requesterUserId || Number(orderPayload.requesterId || authUser.id);
   const requester = await tx.user.findUnique({ where: { id: requesterId } });
+  const requestedSectorId = orderPayload.currentSectorId ? Number(orderPayload.currentSectorId) : null;
+  const sectorIds = Array.from(new Set([
+    ...((orderPayload.accessibleSectorIds || []).map((value: any) => Number(value)).filter(Boolean)),
+    ...(existingOrder?.sectorAccess || []).map((item: any) => item.sectorId),
+    ...(requestedSectorId ? [requestedSectorId] : []),
+  ]));
+  const validSectors = sectorIds.length > 0
+    ? await tx.sector.findMany({ where: { id: { in: sectorIds }, isActive: true } })
+    : [];
+
   if ((orderPayload.macroItemId && !macro) || !orderType || !requester) {
     const error = new Error("Invalid order payload") as Error & { status?: number };
+    error.status = 400;
+    throw error;
+  }
+
+  if (requestedSectorId && !validSectors.some((sector: any) => sector.id === requestedSectorId)) {
+    const error = new Error("Invalid sector assignment") as Error & { status?: number };
     error.status = 400;
     throw error;
   }
@@ -653,6 +736,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       projectId,
       orderTypeId: orderType.id,
       macroItemId: macro?.id || null,
+      currentSectorId: requestedSectorId || null,
       requesterUserId: requester.id,
       assignedUserId: responsibleId || null,
       orderCode: existingOrder?.orderCode || `${project.code}-${await allocateOrderNumber(tx, projectId)}`,
@@ -671,6 +755,11 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
           ...(orderPayload.completionAttachment ? [await toAttachment(orderPayload.completionAttachment, AttachmentKind.COMPLETION)] : [])
         ]
       },
+      sectorAccess: {
+        create: validSectors.map((sector: any) => ({
+          sectorId: sector.id,
+        }))
+      },
       messages: {
         create: await Promise.all((orderPayload.messages || []).map(async (message: any) => {
           const messageUserId = message.userId && message.userId !== SYSTEM_USER_ID ? Number(message.userId) : null;
@@ -688,6 +777,8 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
     },
     include: {
       orderType: true,
+      currentSector: true,
+      sectorAccess: { include: { sector: true } },
       requester: true,
       responsible: true,
       attachments: true,
@@ -702,6 +793,7 @@ async function upsertUserRecord(tx: any, userId: number | null, userPayload: any
   const existingUser = userId ? await tx.user.findUnique({ where: { id: userId } }) : null;
   const requestedRole = normalizeRole(userPayload.role);
   const managerId = userPayload.managerId ? Number(userPayload.managerId) : null;
+  const sectorId = userPayload.sectorId ? Number(userPayload.sectorId) : null;
 
   if ((requestedRole === UserRole.SUPERADMIN || existingUser?.role === UserRole.SUPERADMIN) && actorRole !== UserRole.SUPERADMIN) {
     const error = new Error("Only SUPERADMIN can manage SUPERADMIN users") as Error & { status?: number };
@@ -752,6 +844,15 @@ async function upsertUserRecord(tx: any, userId: number | null, userPayload: any
 
   const projectIds: number[] = Array.from(new Set((userPayload.assignedProjectIds || []).map((value: any) => Number(value)).filter(Boolean))) as number[];
 
+  if (sectorId) {
+    const sector = await tx.sector.findUnique({ where: { id: sectorId } });
+    if (!sector || !sector.isActive) {
+      const error = new Error("Sector not found") as Error & { status?: number };
+      error.status = 400;
+      throw error;
+    }
+  }
+
   if (requestedRole !== UserRole.SUPERADMIN && projectIds.length === 0) {
     const error = new Error("At least one project must be assigned") as Error & { status?: number };
     error.status = 400;
@@ -766,6 +867,7 @@ async function upsertUserRecord(tx: any, userId: number | null, userPayload: any
           name,
           role: requestedRole,
           managerId: requestedRole === UserRole.SUPERADMIN ? null : managerId,
+          sectorId: requestedRole === UserRole.SUPERADMIN ? null : sectorId,
           isActive: true,
           passwordHash,
         }
@@ -776,6 +878,7 @@ async function upsertUserRecord(tx: any, userId: number | null, userPayload: any
           name,
           role: requestedRole,
           managerId: requestedRole === UserRole.SUPERADMIN ? null : managerId,
+          sectorId: requestedRole === UserRole.SUPERADMIN ? null : sectorId,
           isActive: true,
           passwordHash,
         }
@@ -790,7 +893,7 @@ async function upsertUserRecord(tx: any, userId: number | null, userPayload: any
     });
   }
 
-  const fullUser = await tx.user.findUnique({ where: { id: savedUser.id }, include: { assignedProjects: true } });
+  const fullUser = await tx.user.findUnique({ where: { id: savedUser.id }, include: { assignedProjects: true, sector: true } });
   return sanitizeUser(fullUser);
 }
 
@@ -814,13 +917,15 @@ app.get("/health", async (_req, res) => {
 app.get("/projects", requireAuth, async (req: AuthRequest, res) => {
   const authUser = req.authUser;
   if (!authUser) return res.status(401).json({ error: "Unauthorized" });
+  const scopedUser = await getScopedAuthUser(Number(authUser.id));
+  if (!scopedUser || !scopedUser.isActive) return res.status(401).json({ error: "Unauthorized" });
 
   const where = GLOBAL_ADMIN_ROLES.includes(authUser.role)
     ? undefined
     : { id: { in: await getUserProjectScope(Number(authUser.id)) } };
 
   const projects = await prisma.project.findMany({ where, include: projectInclude, orderBy: { updatedAt: "desc" } });
-  res.json(await Promise.all(projects.map(mapProjectFromDb)));
+  res.json(await Promise.all(projects.map((project) => mapProjectFromDb(project, scopedUser))));
 });
 
 app.put("/projects/:id", requireAuth, async (req: AuthRequest, res) => {
@@ -914,8 +1019,34 @@ app.post("/projects/bulk", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (
 });
 
 app.get("/users", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (_req, res) => {
-  const users = await prisma.user.findMany({ include: { assignedProjects: true }, orderBy: { name: "asc" } });
+  const users = await prisma.user.findMany({ include: { assignedProjects: true, sector: true }, orderBy: { name: "asc" } });
   res.json(users.map(sanitizeUser));
+});
+
+app.get("/sectors", requireAuth, async (_req, res) => {
+  const sectors = await prisma.sector.findMany({
+    where: { isActive: true },
+    orderBy: { name: "asc" },
+  });
+  res.json(sectors.map(sanitizeSector));
+});
+
+app.put("/sectors/:id", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req, res) => {
+  const parsed = sectorPayloadSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  const sectorId = Number(req.params.id);
+  const sectorName = parsed.data.sector.name.trim().toUpperCase();
+  const savedSector = Number.isFinite(sectorId)
+    ? await prisma.sector.update({
+        where: { id: sectorId },
+        data: { name: sectorName, isActive: true },
+      })
+    : await prisma.sector.create({
+        data: { name: sectorName, isActive: true },
+      });
+
+  res.json(sanitizeSector(savedSector));
 });
 
 app.put("/users/:id", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req: AuthRequest, res) => {
@@ -1136,7 +1267,7 @@ app.post("/auth/login", async (req, res) => {
 
   const user = await prisma.user.findFirst({
     where: { email: parsed.data.email.toLowerCase(), isActive: true },
-    include: { assignedProjects: true }
+    include: { assignedProjects: true, sector: true }
   });
 
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
@@ -1150,7 +1281,7 @@ app.post("/auth/login", async (req, res) => {
 app.get("/auth/me", requireAuth, async (req: AuthRequest, res) => {
   if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
   const userId = Number(req.authUser.id);
-  const user = await prisma.user.findUnique({ where: { id: userId }, include: { assignedProjects: true } });
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { assignedProjects: true, sector: true } });
   if (!user || !user.isActive) return res.status(401).json({ error: "Unauthorized" });
   res.json(sanitizeUser(user));
 });
@@ -1163,7 +1294,7 @@ app.put("/auth/profile", requireAuth, async (req: AuthRequest, res) => {
 
   const { name, currentPassword, newPassword } = parsed.data;
   const userId = Number(req.authUser.id);
-  const user = await prisma.user.findUnique({ where: { id: userId }, include: { assignedProjects: true } });
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { assignedProjects: true, sector: true } });
   if (!user || !user.isActive) return res.status(401).json({ error: "Unauthorized" });
 
   const nextName = String(name || "").trim();
@@ -1189,7 +1320,7 @@ app.put("/auth/profile", requireAuth, async (req: AuthRequest, res) => {
       name: nextName,
       passwordHash,
     },
-    include: { assignedProjects: true }
+    include: { assignedProjects: true, sector: true }
   });
 
   res.json(sanitizeUser(savedUser));

@@ -1,8 +1,9 @@
 ﻿import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
-import { Project, User, isGlobalAdmin, isProjectAdmin } from '../types';
+import { Project, Sector, User, isGlobalAdmin, isProjectAdmin } from '../types';
 
 interface ProjectDetailProps {
   project: Project;
+  sectors: Sector[];
   user: User;
   onUpdate: (p: Project) => void;
   onBack: () => void;
@@ -25,7 +26,7 @@ const TabFallback: React.FC = () => (
   </div>
 );
 
-export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, user, onUpdate, onBack }) => {
+export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, user, onUpdate, onBack }) => {
   const [activeTab, setActiveTab] = useState<Tab>('RESUMO');
   const [reportMode, setReportMode] = useState<ReportMode>('CUSTO');
   const [exportStatus, setExportStatus] = useState<ExportStatus>('IDLE');
@@ -179,7 +180,7 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, user, onU
           {canAccessFullProjectTabs && activeTab === 'ORCAMENTO' && <BudgetModule budget={currentBudget} onDraftChange={setBudgetDraft} draftKey={budgetDraftStorageKey} onSave={(budget) => { setBudgetDraft(budget); onUpdate({ ...project, budget }); }} />}
           {canAccessFullProjectTabs && activeTab === 'CUSTOS' && <CostModule project={project} onSave={(costs) => onUpdate({ ...project, costs })} />}
           {canAccessFullProjectTabs && activeTab === 'PARCELAMENTOS' && <InstallmentsModule project={project} onUpdate={onUpdate} />}
-          {canAccessFullProjectTabs && activeTab === 'PEDIDOS' && <OrdersModule project={project} user={user} onUpdate={onUpdate} />}
+          {canAccessFullProjectTabs && activeTab === 'PEDIDOS' && <OrdersModule project={project} sectors={sectors} user={user} onUpdate={onUpdate} />}
           {activeTab === 'ARQUIVOS' && <AttachmentsModule project={project} onUpdate={onUpdate} isAdmin={canManageProject} />}
         </div>
 

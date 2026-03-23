@@ -70,6 +70,9 @@ export interface Order {
   type: string;
   description: string;
   macroItemId?: string;
+  currentSectorId?: string;
+  currentSectorName?: string;
+  accessibleSectorIds?: string[];
   expectedDate: string;
   status: OrderStatus;
   requesterId: string;
@@ -98,7 +101,14 @@ export interface User {
   name: string;
   role: UserRole;
   managerId?: string;
+  sectorId?: string;
+  sectorName?: string;
   assignedProjectIds: string[];
+}
+
+export interface Sector {
+  id: string;
+  name: string;
 }
 
 export interface Project {
