@@ -1251,33 +1251,26 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
               <div>
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   <span className="text-[9px] font-black uppercase px-2 py-1 bg-slate-900 text-white block w-fit">{isActionModalOpen.status}</span>
-                  {(isActionModalOpen.sectorStatus || getSectorStatuses(isActionModalOpen.currentSectorId).length > 0) && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-black uppercase px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 block w-fit">
-                        {isActionModalOpen.sectorStatus || 'Sem status setorial'}
-                      </span>
-                      {canEditSectorStatus(isActionModalOpen) && (
-                        <button
-                          type="button"
-                          onClick={() => setIsEditingSectorStatus((current) => !current)}
-                          className="w-7 h-7 border border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:border-slate-300"
-                          title="Editar status do setor"
-                        >
-                          <i className="fas fa-pen text-[10px]"></i>
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-black uppercase px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 block w-fit">
+                      {isActionModalOpen.sectorStatus || 'Sem status setorial'}
+                    </span>
+                    {canEditSectorStatus(isActionModalOpen) && (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingSectorStatus((current) => !current)}
+                        className="w-7 h-7 border border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:border-slate-300"
+                        title="Editar status do setor"
+                      >
+                        <i className="fas fa-pen text-[10px]"></i>
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{isActionModalOpen.title}</h3>
                 <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Obra: {isActionModalOpen.projectName}</p>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
-                {canDeleteOrderDirectly && (
-                  <button type="button" onClick={() => handleDeleteOrder(isActionModalOpen)} className="bg-rose-50 text-rose-600 border border-rose-200 px-4 py-3 text-[9px] font-black uppercase shadow-sm">
-                    Excluir
-                  </button>
-                )}
                 <button onClick={() => setIsActionModalOpen(null)} className="text-slate-400 hover:text-slate-900 px-2"><i className="fas fa-times text-2xl"></i></button>
               </div>
             </div>
@@ -1412,9 +1405,21 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                   </select>
                   <button type="button" onClick={handleForwardOrder} className="w-full bg-slate-900 text-white py-3 font-black uppercase text-[10px] tracking-widest shadow-sm">
                     Encaminhar Pedido
-                  </button>
-                </div>
-              )}
+                    </button>
+                  </div>
+                )}
+                {canDeleteOrderDirectly && (
+                  <div className="mt-4 space-y-3">
+                    <label className="text-[10px] font-black text-slate-500 uppercase">Excluir Pedido</label>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteOrder(isActionModalOpen)}
+                      className="bg-rose-50 text-rose-600 border border-rose-200 px-4 py-3 text-[9px] font-black uppercase shadow-sm"
+                    >
+                      Excluir
+                    </button>
+                  </div>
+                )}
 
               {canManageAllOrders && (isActionModalOpen.status === 'PENDENTE' || isActionModalOpen.status === 'EM_ANALISE' || isActionModalOpen.status === 'AGUARDANDO_INFORMACAO') && (
                 <div className="space-y-6 pt-6 border-t border-slate-100">
