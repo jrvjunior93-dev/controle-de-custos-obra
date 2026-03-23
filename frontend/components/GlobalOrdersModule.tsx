@@ -933,28 +933,29 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       </div>
 
       {selectedOrdersCount > 0 && (
-        <div className="bg-slate-900 text-white border border-slate-800 px-5 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 shadow-xl">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest">Seleção de Pedidos</p>
-            <p className="text-xs font-bold text-slate-300 mt-1">
-              {selectedOrdersCount === 1 ? '1 pedido selecionado.' : `${selectedOrdersCount} pedidos selecionados.`}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={handleOpenSelectionModal}
-              className="bg-white text-slate-900 px-4 py-3 text-[10px] font-black uppercase tracking-widest shadow-sm"
-            >
-              {selectedOrdersCount === 1 ? 'Gerenciar Pedido' : 'Encaminhar em Massa'}
-            </button>
-            <button
-              type="button"
-              onClick={clearSelectedOrders}
-              className="bg-transparent border border-slate-600 text-white px-4 py-3 text-[10px] font-black uppercase tracking-widest"
-            >
-              Limpar Seleção
-            </button>
+        <div className="fixed inset-x-0 bottom-5 z-[115] flex justify-center px-4 pointer-events-none">
+          <div className="pointer-events-auto bg-white/95 backdrop-blur-sm border border-slate-200 rounded-2xl shadow-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="px-2">
+              <p className="text-xs font-black text-slate-700">
+                {selectedOrdersCount === 1 ? '1 selecionado(a)' : `${selectedOrdersCount} selecionado(s)`}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleOpenSelectionModal}
+                className="bg-white border border-slate-300 text-slate-900 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50"
+              >
+                {selectedOrdersCount === 1 ? 'Ver' : 'Encaminhar'}
+              </button>
+              <button
+                type="button"
+                onClick={clearSelectedOrders}
+                className="bg-white border border-slate-300 text-slate-700 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}
