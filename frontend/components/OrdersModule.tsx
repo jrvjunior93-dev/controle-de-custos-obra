@@ -57,9 +57,19 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const canDeleteOrderDirectly = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canCommentOnOrder = (order: Order) => isOrderActive(order);
   const canForwardOrder = (order: Order) => canManageProjectOrders && isOrderActive(order);
-  const canEditSectorStatus = (order: Order) => isOrderActive(order) && (user.role === 'SUPERADMIN' || user.role === 'ADMIN' || (!!user.sectorId && user.sectorId === order.currentSectorId));
+  const canEditSectorStatus = (order: Order) => isOrderActive(order) && (
+    user.role === 'SUPERADMIN' ||
+    user.role === 'ADMIN' ||
+    (!!user.sectorId && (order.currentSectorId === user.sectorId || (order.accessibleSectorIds || []).includes(user.sectorId)))
+  );
   const findSectorName = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.name;
   const getSectorStatuses = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.statuses || [];
+  const getEditableSectorStatuses = (order: Order) => {
+    if (user.role === 'SUPERADMIN' || user.role === 'ADMIN') {
+      return getSectorStatuses(user.sectorId || order.currentSectorId);
+    }
+    return getSectorStatuses(user.sectorId);
+  };
   const getMessageMeta = (order: Order, message: OrderMessage) => {
     if (message.userId === 'system') {
       return { label: 'Sistema', classes: 'bg-slate-50 border-slate-300 ml-0 mr-6' };
@@ -343,7 +353,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const handleSaveSectorStatus = () => {
     if (!isActionModalOpen) return;
     if (!canEditSectorStatus(isActionModalOpen)) return alert('Você não pode alterar o status deste setor.');
-    const availableStatuses = getSectorStatuses(isActionModalOpen.currentSectorId);
+    const availableStatuses = getEditableSectorStatuses(isActionModalOpen);
     if (availableStatuses.length === 0) return alert('Não há status configurados para o setor atual.');
     if (selectedSectorStatus && !availableStatuses.includes(selectedSectorStatus)) return alert('Selecione um status válido.');
     if ((selectedSectorStatus || '') === (isActionModalOpen.sectorStatus || '')) return;
@@ -607,7 +617,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                 <button onClick={() => setIsActionModalOpen(null)} className="text-slate-400 hover:text-slate-600 px-2"><i className="fas fa-times text-xl"></i></button>
               </div>
             </div>
-            {isEditingSectorStatus && (getSectorStatuses(isActionModalOpen.currentSectorId).length > 0 || isActionModalOpen.sectorStatus) && (
+            {isEditingSectorStatus && (getEditableSectorStatuses(isActionModalOpen).length > 0 || isActionModalOpen.sectorStatus) && (
               <div className="px-5 sm:px-8 py-4 border-b border-slate-100 bg-white">
                 <div className="flex flex-col sm:flex-row gap-3">
                   <select
@@ -617,7 +627,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                     disabled={!canEditSectorStatus(isActionModalOpen)}
                   >
                     <option value="">Sem status setorial</option>
-                    {getSectorStatuses(isActionModalOpen.currentSectorId).map((status) => <option key={status} value={status}>{status}</option>)}
+                    {getEditableSectorStatuses(isActionModalOpen).map((status) => <option key={status} value={status}>{status}</option>)}
                   </select>
                   <button type="button" onClick={handleSaveSectorStatus} className="bg-slate-900 text-white px-5 py-3 text-[10px] font-black uppercase tracking-widest shadow-sm">
                     Salvar Status

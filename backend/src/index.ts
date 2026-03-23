@@ -831,12 +831,23 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
   const normalizedValue = orderPayload.value ?? null;
   const requestAttachmentEntities = (existingOrder?.attachments || []).filter((item: any) => item.kind === AttachmentKind.REQUEST);
   const completionAttachmentEntity = (existingOrder?.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION) || null;
-  const statusSectorId = requestedSectorId || existingOrder?.currentSectorId || null;
+  const existingAccessibleSectorIds = normalizeSectorAccessIds((existingOrder?.sectorAccess || []).map((item: any) => item.sectorId));
+  const requestedAccessibleSectorIds = normalizeSectorAccessIds(sectorIds);
+  const actorSectorHasAccess = !!actorUser && actorUser.sectorId != null && (
+    requestedAccessibleSectorIds.includes(actorUser.sectorId) ||
+    existingAccessibleSectorIds.includes(actorUser.sectorId) ||
+    requestedSectorId === actorUser.sectorId ||
+    existingOrder?.currentSectorId === actorUser.sectorId
+  );
+  const statusSectorId =
+    authUser.role === UserRole.SUPERADMIN || authUser.role === UserRole.ADMIN
+      ? (actorUser?.sectorId || requestedSectorId || existingOrder?.currentSectorId || null)
+      : (actorUser?.sectorId || null);
   const statusSector = statusSectorId ? validSectors.find((sector: any) => sector.id === statusSectorId) : null;
   const canActorEditSectorStatus = !!actorUser && (
     authUser.role === UserRole.SUPERADMIN ||
     authUser.role === UserRole.ADMIN ||
-    (actorUser.sectorId != null && actorUser.sectorId === statusSectorId)
+    actorSectorHasAccess
   );
 
   if (normalizedSectorStatus && statusSector && !(statusSector.statuses || []).some((item: any) => item.name === normalizedSectorStatus)) {
@@ -856,8 +867,6 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
 
   if (existingOrder) {
     const existingRequestAttachmentEntities = requestAttachmentEntities;
-    const existingAccessibleSectorIds = normalizeSectorAccessIds((existingOrder.sectorAccess || []).map((item: any) => item.sectorId));
-    const requestedAccessibleSectorIds = normalizeSectorAccessIds(sectorIds);
     const messagesOnlyAllowed =
       normalizedTitle === existingOrder.title &&
       normalizedDescription === existingOrder.description &&

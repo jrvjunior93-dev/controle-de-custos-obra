@@ -276,12 +276,22 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const canEditFinancialFields = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canDeleteOrderDirectly = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canCommentOnOrder = (order: Order) => isOrderActive(order);
-  const canEditSectorStatus = (order: Order) => isOrderActive(order) && (user.role === 'SUPERADMIN' || user.role === 'ADMIN' || (!!user.sectorId && user.sectorId === order.currentSectorId));
+  const canEditSectorStatus = (order: Order) => isOrderActive(order) && (
+    user.role === 'SUPERADMIN' ||
+    user.role === 'ADMIN' ||
+    (!!user.sectorId && (order.currentSectorId === user.sectorId || (order.accessibleSectorIds || []).includes(user.sectorId)))
+  );
   const activeProjectForModal = isActionModalOpen ? projects.find((project) => project.id === isActionModalOpen.projectId) : null;
   const canEditMacroItem = (order: Order) => canEditFinancialFields && isOrderActive(order);
   const canEditOrderValueDirectly = (order: Order) => canEditFinancialFields && !!order;
   const findSectorName = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.name;
   const getSectorStatuses = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.statuses || [];
+  const getEditableSectorStatuses = (order: Order) => {
+    if (user.role === 'SUPERADMIN' || user.role === 'ADMIN') {
+      return getSectorStatuses(user.sectorId || order.currentSectorId);
+    }
+    return getSectorStatuses(user.sectorId);
+  };
   const getMessageMeta = (order: Order, message: Order['messages'][number]) => {
     if (message.userId === 'system') {
       return { label: 'Sistema', classes: 'bg-slate-50 border-slate-200 text-slate-500' };
@@ -665,7 +675,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const handleSaveSectorStatus = () => {
     if (!isActionModalOpen) return;
     if (!canEditSectorStatus(isActionModalOpen)) return alert('Você não pode alterar o status deste setor.');
-    const availableStatuses = getSectorStatuses(isActionModalOpen.currentSectorId);
+    const availableStatuses = getEditableSectorStatuses(isActionModalOpen);
     if (availableStatuses.length === 0) return alert('Não há status configurados para o setor atual.');
     if (selectedSectorStatus && !availableStatuses.includes(selectedSectorStatus)) return alert('Selecione um status válido.');
     if ((selectedSectorStatus || '') === (isActionModalOpen.sectorStatus || '')) return;
@@ -1274,7 +1284,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 <button onClick={() => setIsActionModalOpen(null)} className="text-slate-400 hover:text-slate-900 px-2"><i className="fas fa-times text-2xl"></i></button>
               </div>
             </div>
-            {isEditingSectorStatus && (getSectorStatuses(isActionModalOpen.currentSectorId).length > 0 || isActionModalOpen.sectorStatus) && (
+            {isEditingSectorStatus && (getEditableSectorStatuses(isActionModalOpen).length > 0 || isActionModalOpen.sectorStatus) && (
               <div className="px-5 sm:px-8 py-4 border-b border-slate-100 bg-white">
                 <div className="flex flex-col sm:flex-row gap-3">
                   <select
@@ -1284,7 +1294,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                     disabled={!canEditSectorStatus(isActionModalOpen)}
                   >
                     <option value="">Sem status setorial</option>
-                    {getSectorStatuses(isActionModalOpen.currentSectorId).map((status) => (
+                    {getEditableSectorStatuses(isActionModalOpen).map((status) => (
                       <option key={status} value={status}>{status}</option>
                     ))}
                   </select>
