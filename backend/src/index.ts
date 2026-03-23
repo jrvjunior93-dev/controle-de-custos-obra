@@ -216,6 +216,49 @@ function toOptionalText(value: unknown) {
   return normalized || null;
 }
 
+function normalizeDateOnlyInput(value: unknown) {
+  return formatDateOnly(parseDateOnly(value));
+}
+
+function normalizeSectorAccessIds(values: unknown[]) {
+  return Array.from(new Set((values || []).map((value: any) => Number(value)).filter(Boolean))).sort((a, b) => a - b);
+}
+
+function attachmentSignatureFromPayload(payload: any) {
+  return [
+    String(payload?.storageProvider || ""),
+    String(payload?.storageBucket || ""),
+    String(payload?.storageKey || ""),
+    String(payload?.name || ""),
+    String(payload?.originalName || ""),
+    String(payload?.type || payload?.mimeType || ""),
+    Number(payload?.size || 0),
+    payload?.uploadDate ? parseDateTime(payload.uploadDate).toISOString() : "",
+    payload?.storageKey ? "" : String(payload?.data || "").length,
+  ].join("|");
+}
+
+function attachmentSignatureFromStored(attachment: any) {
+  return [
+    String(attachment?.storageProvider || ""),
+    String(attachment?.storageBucket || ""),
+    String(attachment?.storageKey || ""),
+    String(attachment?.name || ""),
+    String(attachment?.originalName || ""),
+    String(attachment?.mimeType || ""),
+    Number(attachment?.size || 0),
+    attachment?.uploadedAt ? new Date(attachment.uploadedAt).toISOString() : "",
+    attachment?.storageKey ? "" : String(attachment?.data || "").length,
+  ].join("|");
+}
+
+function attachmentListsMatch(payloads: any[], stored: any[]) {
+  if ((payloads || []).length !== (stored || []).length) return false;
+  const payloadSignatures = (payloads || []).map(attachmentSignatureFromPayload).sort();
+  const storedSignatures = (stored || []).map(attachmentSignatureFromStored).sort();
+  return payloadSignatures.every((signature, index) => signature === storedSignatures[index]);
+}
+
 function normalizeProjectCode(value: unknown) {
   return String(value || "")
     .trim()
@@ -687,6 +730,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
     ? await tx.order.findFirst({
         where: { id: existingOrderId, projectId },
         include: {
+          orderType: true,
           attachments: true,
           messages: { include: { attachments: true } },
           currentSector: true,
@@ -694,20 +738,6 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
         }
       })
     : null;
-
-  if (authUser.role === UserRole.MEMBRO) {
-    const requesterId = Number(orderPayload?.requesterId || authUser.id);
-    if (existingOrder) {
-      const error = new Error("Forbidden") as Error & { status?: number };
-      error.status = 403;
-      throw error;
-    }
-    if (!existingOrder && requesterId !== Number(authUser.id)) {
-      const error = new Error("Forbidden") as Error & { status?: number };
-      error.status = 403;
-      throw error;
-    }
-  }
 
   const macro = orderPayload.macroItemId ? project.budget.find((item: any) => String(item.id) === String(orderPayload.macroItemId)) : null;
   const orderTypeMap = await resolveOrderTypesByName(tx);
@@ -779,6 +809,75 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       .filter((attachment: any) => attachment?.storageProvider === "S3" && attachment?.storageKey)
       .map((attachment: any) => `${attachment.storageBucket || ""}:${attachment.storageKey}`)
   );
+
+  const normalizedStatus = Object.values(OrderStatus).includes(orderPayload.status) ? orderPayload.status : OrderStatus.PENDENTE;
+  const normalizedTitle = String(orderPayload.title || '').trim();
+  const normalizedDescription = String(orderPayload.description || '').trim();
+  const normalizedType = String(orderPayload.type || '').trim().toUpperCase();
+  const normalizedExpectedDate = normalizeDateOnlyInput(orderPayload.expectedDate);
+  const normalizedExternalCode = toOptionalText(orderPayload.externalCode);
+  const normalizedCompletionNote = toOptionalText(orderPayload.completionNote);
+  const normalizedCancellationReason = toOptionalText(orderPayload.cancellationReason);
+  const normalizedValue = orderPayload.value ?? null;
+  const requestAttachmentEntities = (existingOrder?.attachments || []).filter((item: any) => item.kind === AttachmentKind.REQUEST);
+  const completionAttachmentEntity = (existingOrder?.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION) || null;
+
+  if (authUser.role === UserRole.MEMBRO) {
+    const requesterId = Number(orderPayload?.requesterId || authUser.id);
+    if (!existingOrder && requesterId !== Number(authUser.id)) {
+      const error = new Error("Forbidden") as Error & { status?: number };
+      error.status = 403;
+      throw error;
+    }
+  }
+
+  if (existingOrder) {
+    const existingRequestAttachmentEntities = requestAttachmentEntities;
+    const existingAccessibleSectorIds = normalizeSectorAccessIds((existingOrder.sectorAccess || []).map((item: any) => item.sectorId));
+    const requestedAccessibleSectorIds = normalizeSectorAccessIds(sectorIds);
+    const messagesOnlyAllowed =
+      normalizedTitle === existingOrder.title &&
+      normalizedDescription === existingOrder.description &&
+      normalizedType === String(existingOrder.orderType?.name || '').trim().toUpperCase() &&
+      normalizedExpectedDate === formatDateOnly(existingOrder.expectedDate) &&
+      normalizedStatus === existingOrder.status &&
+      normalizedExternalCode === (existingOrder.externalCode || null) &&
+      Number(normalizedValue ?? 0) === Number(existingOrder.requestedValue ?? 0) &&
+      (macro?.id || null) === (existingOrder.macroItemId || null) &&
+      (requestedSectorId || null) === (existingOrder.currentSectorId || null) &&
+      requestedAccessibleSectorIds.length === existingAccessibleSectorIds.length &&
+      requestedAccessibleSectorIds.every((value, index) => value === existingAccessibleSectorIds[index]) &&
+      normalizedCompletionNote === (existingOrder.completionNote || null) &&
+      normalizedCancellationReason === (existingOrder.cancellationReason || null) &&
+      attachmentListsMatch(requestAttachmentsPayload, existingRequestAttachmentEntities) &&
+      ((!completionAttachmentPayload && !completionAttachmentEntity) || (!!completionAttachmentPayload && !!completionAttachmentEntity && attachmentSignatureFromPayload(completionAttachmentPayload) === attachmentSignatureFromStored(completionAttachmentEntity)));
+
+    if (authUser.role === UserRole.MEMBRO && !messagesOnlyAllowed) {
+      const error = new Error("Forbidden") as Error & { status?: number };
+      error.status = 403;
+      throw error;
+    }
+
+    const financialFieldsChanged =
+      Number(normalizedValue ?? 0) !== Number(existingOrder.requestedValue ?? 0) ||
+      (macro?.id || null) !== (existingOrder.macroItemId || null);
+
+    if (authUser.role === UserRole.ADMIN_OBRA) {
+      const structuralFieldsChanged =
+        normalizedTitle !== existingOrder.title ||
+        normalizedDescription !== existingOrder.description ||
+        normalizedType !== String(existingOrder.orderType?.name || '').trim().toUpperCase() ||
+        normalizedExpectedDate !== formatDateOnly(existingOrder.expectedDate) ||
+        normalizedExternalCode !== (existingOrder.externalCode || null) ||
+        !attachmentListsMatch(requestAttachmentsPayload, existingRequestAttachmentEntities);
+
+      if (financialFieldsChanged || structuralFieldsChanged) {
+        const error = new Error("Forbidden") as Error & { status?: number };
+        error.status = 403;
+        throw error;
+      }
+    }
+  }
 
   if (existingOrder) {
     await deleteStoredAttachments(
@@ -1045,7 +1144,8 @@ app.delete("/projects/:projectId/orders/:orderId", requireAuth, async (req: Auth
     include: { attachments: true, messages: { include: { attachments: true } } }
   });
   if (!order) return res.status(404).json({ error: "Order not found" });
-  if (req.authUser.role === UserRole.MEMBRO) {
+  const canDeleteOrder = req.authUser.role === UserRole.SUPERADMIN || req.authUser.role === UserRole.ADMIN;
+  if (!canDeleteOrder) {
     return res.status(403).json({ error: "Forbidden" });
   }
 

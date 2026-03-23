@@ -23,7 +23,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const canManageProjectOrders = user.role === 'SUPERADMIN' || (canManageAssignedOrders(user.role) && user.assignedProjectIds?.includes(project.id));
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isActionModalOpen, setIsActionModalOpen] = useState<Order | null>(null);
-  const [actionType, setActionType] = useState<'COMPLETE' | 'REQUEST_INFO' | 'CANCEL' | 'NONE'>('NONE');
+  const [actionType, setActionType] = useState<'COMPLETE' | 'CANCEL' | 'NONE'>('NONE');
   const [actionText, setActionText] = useState('');
   const [actionAttachments, setActionAttachments] = useState<Attachment[]>([]);
   const [messageText, setMessageText] = useState('');
@@ -50,8 +50,11 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const isOtherOrderType = (value?: string) => String(value || '').trim().toUpperCase() === 'OUTROS';
   const isNewOrderOtherType = isOtherOrderType(newOrder.type);
   const isOrderActive = (order: Order) => order.status !== 'CONCLUIDO' && order.status !== 'CANCELADO';
-  const canTreatOrder = (order: Order) => canManageProjectOrders && isOrderActive(order) && order.responsibleId === user.id;
-  const canEditExistingOrder = user.role === 'SUPERADMIN' || user.role === 'ADMIN' || user.role === 'ADMIN_OBRA';
+  const canTreatOrder = (order: Order) => canManageProjectOrders && isOrderActive(order);
+  const canEditFinancialFields = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
+  const canDeleteOrderDirectly = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
+  const canCommentOnOrder = (order: Order) => isOrderActive(order);
+  const canForwardOrder = (order: Order) => canManageProjectOrders && isOrderActive(order);
   const findSectorName = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.name;
   const getMessageMeta = (order: Order, message: OrderMessage) => {
     if (message.userId === 'system') {
@@ -218,6 +221,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   };
 
   const handleDeleteOrder = (order: Order) => {
+    if (!canDeleteOrderDirectly) return alert('Somente ADMIN CENTRAL e SUPERADMIN podem excluir pedidos.');
     if (confirm(`Deseja realmente excluir o pedido "${order.title}" permanentemente?`)) {
       onUpdate({ ...project, orders: orders.filter((item) => item.id !== order.id) });
       if (isActionModalOpen?.id === order.id) {
@@ -226,15 +230,8 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     }
   };
 
-  const handleAssume = (order: Order) => {
-    if (!confirm(`Assumir a responsabilidade pelo pedido "${order.title}"?`)) return;
-    const updated = { ...order, status: 'EM_ANALISE' as OrderStatus, responsibleId: user.id, responsibleName: user.name };
-    onUpdate({ ...project, orders: orders.map((item) => item.id === updated.id ? updated : item) });
-    setIsActionModalOpen(updated);
-  };
-
   const handleSendMessage = (order: Order) => {
-    if (!canEditExistingOrder) return alert('Somente administradores podem editar pedidos existentes.');
+    if (!canCommentOnOrder(order)) return alert('Este pedido não aceita mais interações.');
     if (!messageText.trim()) return alert('Escreva sua interação.');
     if (!confirm(`Confirmar envio da interação para o pedido "${order.title}"?`)) return;
     const msg: OrderMessage = {
@@ -247,10 +244,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     };
     const updated = {
       ...order,
-      messages: [...(order.messages || []), msg],
-      status: order.status === 'AGUARDANDO_INFORMACAO' && !canManageProjectOrders
-        ? ((order.responsibleId || order.responsibleName) ? 'EM_ANALISE' as OrderStatus : 'PENDENTE' as OrderStatus)
-        : order.status
+      messages: [...(order.messages || []), msg]
     };
     onUpdate({ ...project, orders: orders.map((item) => item.id === updated.id ? updated : item) });
     setIsActionModalOpen(updated);
@@ -260,12 +254,16 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
 
   const handleAction = () => {
     if (!isActionModalOpen || actionType === 'NONE') return;
-    if (!canTreatOrder(isActionModalOpen)) return alert('Assuma o pedido antes de tratar.');
-    if ((actionType === 'REQUEST_INFO' || actionType === 'CANCEL') && !actionText.trim()) return alert('Preencha a mensagem do despacho antes de continuar.');
-    const actionLabel = actionType === 'COMPLETE' ? 'concluir' : actionType === 'CANCEL' ? 'cancelar' : 'solicitar informação';
+    if (!canTreatOrder(isActionModalOpen)) return alert('Você não pode tratar este pedido.');
+    if (actionType === 'CANCEL' && !actionText.trim()) return alert('Preencha a mensagem do cancelamento antes de continuar.');
+    const actionLabel = actionType === 'COMPLETE' ? 'concluir' : 'cancelar';
     if (!confirm(`Confirmar a ação de ${actionLabel} para o pedido "${isActionModalOpen.title}"?`)) return;
 
-    const updatedOrder: Order = { ...isActionModalOpen, value: Number(editableOrderValue || 0), macroItemId: selectedMacroItemId || undefined };
+    const updatedOrder: Order = {
+      ...isActionModalOpen,
+      value: canEditFinancialFields ? Number(editableOrderValue || 0) : isActionModalOpen.value,
+      macroItemId: canEditFinancialFields ? (selectedMacroItemId || undefined) : isActionModalOpen.macroItemId
+    };
     let newCost: ExecutedCost | null = null;
 
     if (actionType === 'COMPLETE') {
@@ -298,16 +296,6 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
         userId: user.id,
         userName: user.name,
         text: `Pedido cancelado: ${actionText.trim()}`,
-        date: new Date().toISOString(),
-        attachments: actionAttachments.length > 0 ? actionAttachments : undefined
-      }];
-    } else if (actionType === 'REQUEST_INFO') {
-      updatedOrder.status = 'AGUARDANDO_INFORMACAO';
-      updatedOrder.messages = [...(updatedOrder.messages || []), {
-        id: crypto.randomUUID(),
-        userId: user.id,
-        userName: user.name,
-        text: actionText.trim(),
         date: new Date().toISOString(),
         attachments: actionAttachments.length > 0 ? actionAttachments : undefined
       }];
@@ -347,7 +335,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
 
   const handleForwardOrder = () => {
     if (!isActionModalOpen) return;
-    if (!canManageProjectOrders || !isOrderActive(isActionModalOpen)) return;
+    if (!canForwardOrder(isActionModalOpen)) return;
     if (!selectedForwardSectorId) return alert('Selecione o setor de destino.');
     if (selectedForwardSectorId === isActionModalOpen.currentSectorId) return alert('Selecione um setor diferente do atual.');
 
@@ -418,7 +406,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                 <th className="px-4 py-4 w-[8%]">Valor</th>
                 <th className="px-4 py-4 w-[7%]">Status</th>
                 <th className="px-4 py-4 w-[9%]">Solicitante</th>
-                <th className="px-4 py-4 w-[12%]">Responsável</th>
+                <th className="px-4 py-4 w-[12%]">Setor Atual</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -445,7 +433,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                   <td className="px-4 py-4 text-[10px] font-black text-slate-700 whitespace-nowrap">{formatMoney(order.value)}</td>
                   <td className="px-4 py-4"><span title={order.status.replace('_', ' ')} className={`inline-flex text-[8px] font-black uppercase px-2 py-1 rounded-none whitespace-nowrap ${getStatusColor(order.status)}`}>{order.status.replace('_', ' ')}</span></td>
                   <td className="px-4 py-4 text-[10px] font-black uppercase text-slate-600 truncate" title={order.requesterName}>{order.requesterName}</td>
-                  <td className="px-4 py-4 text-[10px] font-black uppercase text-slate-400 truncate" title={order.responsibleName || 'AGUARDANDO'}>{order.responsibleName || 'AGUARDANDO'}</td>
+                  <td className="px-4 py-4 text-[10px] font-black uppercase text-slate-400 truncate" title={order.currentSectorName || 'SEM SETOR'}>{order.currentSectorName || 'SEM SETOR'}</td>
                 </tr>
               ))}
               {orders.length === 0 && <tr><td colSpan={11} className="px-6 py-12 text-center text-slate-300 font-black uppercase text-xs tracking-widest">Nenhum pedido registrado nesta obra.</td></tr>}
@@ -474,7 +462,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
               <div className="bg-slate-50 border border-slate-100 p-3"><div className="text-slate-400">Tipo</div><div className="text-blue-600 mt-1">{order.type}</div></div>
               <div className="bg-slate-50 border border-slate-100 p-3"><div className="text-slate-400">Valor</div><div className="text-slate-900 mt-1">{formatMoney(order.value)}</div></div>
               <div className="bg-slate-50 border border-slate-100 p-3"><div className="text-slate-400">Solicitante</div><div className="text-slate-700 mt-1">{order.requesterName}</div></div>
-              <div className="bg-slate-50 border border-slate-100 p-3"><div className="text-slate-400">Responsável</div><div className="text-slate-700 mt-1">{order.responsibleName || 'Aguardando'}</div></div>
+              <div className="bg-slate-50 border border-slate-100 p-3"><div className="text-slate-400">Setor Atual</div><div className="text-slate-700 mt-1">{order.currentSectorName || 'Sem setor'}</div></div>
             </div>
           </div>
         ))}
@@ -561,12 +549,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                 <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Por {isActionModalOpen.requesterName} em {new Date(isActionModalOpen.createdAt).toLocaleString('pt-BR')}</p>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
-                {canManageProjectOrders && !isActionModalOpen.responsibleId && isActionModalOpen.status === 'PENDENTE' && (
-                  <button type="button" onClick={() => handleAssume(isActionModalOpen)} className="bg-slate-900 text-white px-4 py-3 text-[9px] font-black uppercase shadow-lg">
-                    Assumir
-                  </button>
-                )}
-                {canManageProjectOrders && (
+                {canDeleteOrderDirectly && (
                   <button type="button" onClick={() => handleDeleteOrder(isActionModalOpen)} className="bg-rose-50 text-rose-600 border border-rose-200 px-4 py-3 text-[9px] font-black uppercase shadow-sm">
                     Excluir
                   </button>
@@ -603,12 +586,12 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                         className="w-full bg-slate-50 border border-slate-200 px-3 py-2 font-black text-[10px] uppercase"
                         value={selectedMacroItemId}
                         onChange={(event) => setSelectedMacroItemId(event.target.value)}
-                        disabled={!canEditExistingOrder || !isOrderActive(isActionModalOpen)}
+                        disabled={!canEditFinancialFields || !isOrderActive(isActionModalOpen)}
                       >
                         <option value="">Selecione...</option>
                         {project.budget.map((macro) => <option key={macro.id} value={macro.id}>{macro.description}</option>)}
                       </select>
-                      {canEditExistingOrder && isOrderActive(isActionModalOpen) && (
+                      {canEditFinancialFields && isOrderActive(isActionModalOpen) && (
                         <button type="button" onClick={handleUpdateMacroItem} className="w-full bg-slate-900 text-white py-2 font-black uppercase text-[9px] tracking-widest">
                           Salvar Item Macro
                         </button>
@@ -620,7 +603,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                     <p className="text-[10px] font-black text-slate-800">{formatMoney(isActionModalOpen.value)}</p>
                   </div>
                 </div>
-                {canEditExistingOrder && isOrderActive(isActionModalOpen) && sectors.length > 0 && (
+                {canForwardOrder(isActionModalOpen) && sectors.length > 0 && (
                   <div className="bg-white border border-slate-100 p-4 space-y-3">
                     <label className="text-[9px] font-black text-slate-400 uppercase block">Encaminhar para Outro Setor</label>
                     <select className="w-full bg-slate-50 border border-slate-200 px-3 py-2 font-black text-[10px] uppercase" value={selectedForwardSectorId} onChange={(event) => setSelectedForwardSectorId(event.target.value)}>
@@ -688,59 +671,51 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                 {canManageProjectOrders && isActionModalOpen.status !== 'CONCLUIDO' && isActionModalOpen.status !== 'CANCELADO' && (
                   <>
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Tratamento do Pedido</h4>
-                    {!canTreatOrder(isActionModalOpen) ? (
-                      <div className="bg-amber-50 border border-amber-200 p-4 text-[10px] font-black uppercase text-amber-700">
-                        Assuma este pedido para liberar o tratamento.
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex bg-white p-1 shadow-sm border border-slate-200">
-                          {[{ id: 'COMPLETE', label: 'Concluir' }, { id: 'REQUEST_INFO', label: 'Info' }, { id: 'CANCEL', label: 'Cancelar' }].map((item) => (
-                            <button key={item.id} onClick={() => setActionType(item.id as 'COMPLETE' | 'REQUEST_INFO' | 'CANCEL')} className={`flex-1 py-3 text-[9px] font-black uppercase transition-all ${actionType === item.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}>{item.label}</button>
-                          ))}
-                        </div>
-                        {actionType !== 'NONE' && (
-                          <div className="space-y-4 animate-in fade-in duration-200">
-                            <div>
-                              <label className="text-[9px] font-black text-slate-400 uppercase">Valor do Pedido (R$)</label>
-                              <div className="relative">
-                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
-                                <input type="text" inputMode="decimal" className="w-full bg-white border border-slate-200 pl-12 pr-4 py-4 font-bold text-xs" value={formatMoneyInput(editableOrderValue)} onChange={(e) => { const nextValue = parseMoneyInput(e.target.value) || 0; setEditableOrderValue(nextValue); if (incorporateCost && actionType === 'COMPLETE') setFinalValue(nextValue); }} placeholder="0,00" />
-                              </div>
+                    <div className="flex bg-white p-1 shadow-sm border border-slate-200">
+                      {[{ id: 'COMPLETE', label: 'Concluir' }, { id: 'CANCEL', label: 'Cancelar' }].map((item) => (
+                        <button key={item.id} onClick={() => setActionType(item.id as 'COMPLETE' | 'CANCEL')} className={`flex-1 py-3 text-[9px] font-black uppercase transition-all ${actionType === item.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}>{item.label}</button>
+                      ))}
+                    </div>
+                    {actionType !== 'NONE' && (
+                      <div className="space-y-4 animate-in fade-in duration-200">
+                        {canEditFinancialFields && (
+                          <div>
+                            <label className="text-[9px] font-black text-slate-400 uppercase">Valor do Pedido (R$)</label>
+                            <div className="relative">
+                              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
+                              <input type="text" inputMode="decimal" className="w-full bg-white border border-slate-200 pl-12 pr-4 py-4 font-bold text-xs" value={formatMoneyInput(editableOrderValue)} onChange={(e) => { const nextValue = parseMoneyInput(e.target.value) || 0; setEditableOrderValue(nextValue); if (incorporateCost && actionType === 'COMPLETE') setFinalValue(nextValue); }} placeholder="0,00" />
                             </div>
-                            {actionType === 'COMPLETE' && (
-                              <div className="bg-emerald-50 p-4 border border-emerald-100 space-y-4">
-                                <label className="flex items-center gap-3 cursor-pointer">
-                                  <input type="checkbox" checked={incorporateCost} onChange={(e) => { const checked = e.target.checked; setIncorporateCost(checked); if (checked) setFinalValue(Number(editableOrderValue || 0)); }} className="w-4 h-4" />
-                                  <span className="text-[9px] font-black uppercase text-emerald-700">Gerar custo da obra ao concluir</span>
-                                </label>
-                                {incorporateCost && (
-                                  <div className="grid grid-cols-2 gap-4">
-                                    <div className="relative">
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] font-black">R$</span>
-                                      <input type="text" inputMode="decimal" className="w-full bg-white border border-slate-200 pl-10 pr-3 py-3 font-black text-xs" value={formatMoneyInput(finalValue)} onChange={(e) => setFinalValue(parseMoneyInput(e.target.value) || 0)} placeholder="0,00" />
-                                    </div>
-                                    <input type="date" className="bg-white border border-slate-200 p-3 font-black text-xs" value={finalDate} onChange={(e) => setFinalDate(e.target.value)} />
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder={actionType === 'COMPLETE' ? 'Observações finais...' : actionType === 'CANCEL' ? 'Motivo do cancelamento...' : 'O que você precisa saber?'} value={actionText} onChange={(e) => setActionText(e.target.value)} />
-                            {actionType !== 'CANCEL' && (
-                              <div className="space-y-2">
-                                <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'ACTION')} />
-                                {renderAttachmentList(actionAttachments, removeActionAttachment, 'Nenhum anexo selecionado para esta ação.')}
-                              </div>
-                            )}
-                            <button onClick={handleAction} className="w-full bg-slate-900 text-white py-4 font-black uppercase text-[10px] shadow-xl">Confirmar Ação</button>
                           </div>
                         )}
-                      </>
+                        {actionType === 'COMPLETE' && (
+                          <div className="bg-emerald-50 p-4 border border-emerald-100 space-y-4">
+                            <label className="flex items-center gap-3 cursor-pointer">
+                              <input type="checkbox" checked={incorporateCost} onChange={(e) => { const checked = e.target.checked; setIncorporateCost(checked); if (checked) setFinalValue(Number(editableOrderValue || isActionModalOpen.value || 0)); }} className="w-4 h-4" />
+                              <span className="text-[9px] font-black uppercase text-emerald-700">Gerar custo da obra ao concluir</span>
+                            </label>
+                            {incorporateCost && (
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="relative">
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] font-black">R$</span>
+                                  <input type="text" inputMode="decimal" className="w-full bg-white border border-slate-200 pl-10 pr-3 py-3 font-black text-xs" value={formatMoneyInput(finalValue)} onChange={(e) => setFinalValue(parseMoneyInput(e.target.value) || 0)} placeholder="0,00" />
+                                </div>
+                                <input type="date" className="bg-white border border-slate-200 p-3 font-black text-xs" value={finalDate} onChange={(e) => setFinalDate(e.target.value)} />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder={actionType === 'COMPLETE' ? 'Observações finais...' : 'Motivo do cancelamento...'} value={actionText} onChange={(e) => setActionText(e.target.value)} />
+                        <div className="space-y-2">
+                          <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'ACTION')} />
+                          {renderAttachmentList(actionAttachments, removeActionAttachment, 'Nenhum anexo selecionado para esta ação.')}
+                        </div>
+                        <button onClick={handleAction} className="w-full bg-slate-900 text-white py-4 font-black uppercase text-[10px] shadow-xl">Confirmar Ação</button>
+                      </div>
                     )}
                   </>
                 )}
 
-                {canEditExistingOrder && isActionModalOpen.status !== 'CONCLUIDO' && isActionModalOpen.status !== 'CANCELADO' && (
+                {canCommentOnOrder(isActionModalOpen) && (
                   <div className="space-y-4 pt-4 border-t border-slate-200">
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Interações Livres</h4>
                     <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder="Registre uma orientação, alinhamento ou resposta livre..." value={messageText} onChange={(e) => setMessageText(e.target.value)} />
