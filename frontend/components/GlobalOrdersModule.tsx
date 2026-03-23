@@ -216,6 +216,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const [isImporting, setIsImporting] = useState(false);
   const [selectedMacroItemId, setSelectedMacroItemId] = useState('');
   const [selectedForwardSectorId, setSelectedForwardSectorId] = useState('');
+  const [selectedSectorStatus, setSelectedSectorStatus] = useState('');
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [isBulkActionModalOpen, setIsBulkActionModalOpen] = useState(false);
   const [bulkForwardSectorId, setBulkForwardSectorId] = useState('');
@@ -274,10 +275,12 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const canEditFinancialFields = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canDeleteOrderDirectly = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canCommentOnOrder = (order: Order) => isOrderActive(order);
+  const canEditSectorStatus = (order: Order) => isOrderActive(order) && (user.role === 'SUPERADMIN' || user.role === 'ADMIN' || (!!user.sectorId && user.sectorId === order.currentSectorId));
   const activeProjectForModal = isActionModalOpen ? projects.find((project) => project.id === isActionModalOpen.projectId) : null;
   const canEditMacroItem = (order: Order) => canEditFinancialFields && isOrderActive(order);
   const canEditOrderValueDirectly = (order: Order) => canEditFinancialFields && !!order;
   const findSectorName = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.name;
+  const getSectorStatuses = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.statuses || [];
   const getMessageMeta = (order: Order, message: Order['messages'][number]) => {
     if (message.userId === 'system') {
       return { label: 'Sistema', classes: 'bg-slate-50 border-slate-200 text-slate-500' };
@@ -346,6 +349,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setFinalValue(currentValue);
     setSelectedMacroItemId(order.macroItemId || '');
     setSelectedForwardSectorId(order.currentSectorId || '');
+    setSelectedSectorStatus(order.sectorStatus || '');
   };
 
   const persistMemberOrder = (projectId: string, order: Order) => {
@@ -539,9 +543,16 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setIsBulkActionModalOpen(true);
   };
 
+  const handleOpenSingleForwardModal = () => {
+    if (selectedOrdersCount !== 1) return;
+    setIsActionModalOpen(null);
+    setBulkForwardSectorId(selectedOrders[0].currentSectorId || '');
+    setIsBulkActionModalOpen(true);
+  };
+
   const handleBulkForwardOrders = () => {
     if (!canManageAllOrders) return alert('Somente administradores podem encaminhar pedidos em massa.');
-    if (selectedOrdersCount < 2) return;
+    if (selectedOrdersCount < 1) return;
     if (!bulkForwardSectorId) return alert('Selecione o setor de destino.');
 
     const nextSectorName = findSectorName(bulkForwardSectorId) || 'SETOR';
@@ -646,6 +657,50 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     if (updatedOrder) {
       setIsActionModalOpen(updatedOrder);
       if (incorporateCost) setFinalValue(Number(updatedOrder.value || 0));
+    }
+  };
+
+  const handleSaveSectorStatus = () => {
+    if (!isActionModalOpen) return;
+    if (!canEditSectorStatus(isActionModalOpen)) return alert('Você não pode alterar o status deste setor.');
+    const availableStatuses = getSectorStatuses(isActionModalOpen.currentSectorId);
+    if (availableStatuses.length === 0) return alert('Não há status configurados para o setor atual.');
+    if (selectedSectorStatus && !availableStatuses.includes(selectedSectorStatus)) return alert('Selecione um status válido.');
+    if ((selectedSectorStatus || '') === (isActionModalOpen.sectorStatus || '')) return;
+    if (!confirm(`Salvar o status setorial do pedido "${isActionModalOpen.title}"?`)) return;
+
+    let updatedOrder: Order | null = null;
+    const updatedProject = handleProjectMutation(isActionModalOpen.projectId, (project) => ({
+      ...project,
+      orders: (project.orders || []).map((item) => {
+        if (item.id !== isActionModalOpen.id) return item;
+        updatedOrder = {
+          ...item,
+          sectorStatus: selectedSectorStatus || undefined,
+          messages: [...(item.messages || []), {
+            id: crypto.randomUUID(),
+            userId: 'system',
+            userName: 'SISTEMA',
+            text: selectedSectorStatus
+              ? `${user.name} alterou o status do setor para ${selectedSectorStatus}.`
+              : `${user.name} removeu o status do setor.`,
+            date: new Date().toISOString()
+          }]
+        };
+        return updatedOrder;
+      })
+    }));
+
+    if (updatedProject) {
+      if (canManageAllOrders) {
+        persistProjectState(updatedProject);
+      } else if (updatedOrder) {
+        persistMemberOrder(isActionModalOpen.projectId, updatedOrder);
+      }
+    }
+
+    if (updatedOrder) {
+      setIsActionModalOpen(updatedOrder);
     }
   };
 
@@ -948,6 +1003,15 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
               >
                 {selectedOrdersCount === 1 ? 'Ver' : 'Encaminhar'}
               </button>
+              {selectedOrdersCount === 1 && canManageAllOrders && (
+                <button
+                  type="button"
+                  onClick={handleOpenSingleForwardModal}
+                  className="bg-white border border-slate-300 text-slate-900 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50"
+                >
+                  Enviar Setor
+                </button>
+              )}
               <button
                 type="button"
                 onClick={clearSelectedOrders}
@@ -1215,6 +1279,33 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 </div>
                 <p className="text-[10px] font-black text-slate-500 uppercase mt-4">Valor Atual do Pedido</p>
                 <p className="text-lg font-black text-slate-900">R$ {(isActionModalOpen.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                {(getSectorStatuses(isActionModalOpen.currentSectorId).length > 0 || isActionModalOpen.sectorStatus) && (
+                  <div className="mt-4 space-y-3">
+                    <label className="text-[10px] font-black text-slate-500 uppercase">Status do Setor</label>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <select
+                        className="flex-1 bg-white border border-slate-200 px-4 py-3 font-black text-xs uppercase"
+                        value={selectedSectorStatus}
+                        onChange={(event) => setSelectedSectorStatus(event.target.value)}
+                        disabled={!canEditSectorStatus(isActionModalOpen)}
+                      >
+                        <option value="">Sem status setorial</option>
+                        {getSectorStatuses(isActionModalOpen.currentSectorId).map((status) => (
+                          <option key={status} value={status}>{status}</option>
+                        ))}
+                      </select>
+                      {canEditSectorStatus(isActionModalOpen) && (
+                        <button
+                          type="button"
+                          onClick={handleSaveSectorStatus}
+                          className="bg-slate-900 text-white px-5 py-3 text-[10px] font-black uppercase tracking-widest shadow-sm"
+                        >
+                          Salvar Status
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {canEditOrderValueDirectly(isActionModalOpen) && (
                   <div className="mt-4 space-y-3">
                     <label className="text-[10px] font-black text-slate-500 uppercase">Editar Valor do Pedido</label>
@@ -1419,7 +1510,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
             <div className="p-5 sm:p-8 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-4">
               <div>
                 <span className="text-[9px] font-black uppercase px-2 py-1 bg-slate-900 text-white mb-2 block w-fit">Ação em Massa</span>
-                <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Encaminhar Pedidos</h3>
+                <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{selectedOrdersCount === 1 ? 'Encaminhar Pedido' : 'Encaminhar Pedidos'}</h3>
                 <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">{selectedOrdersCount} pedido(s) selecionado(s)</p>
               </div>
               <button onClick={() => setIsBulkActionModalOpen(false)} className="text-slate-400 hover:text-slate-900 px-2"><i className="fas fa-times text-2xl"></i></button>

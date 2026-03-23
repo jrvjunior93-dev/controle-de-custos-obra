@@ -69,12 +69,29 @@ model Sector {
   createdAt     DateTime            @default(now()) @map("criado_em")
   updatedAt     DateTime            @updatedAt @map("atualizado_em")
   users         User[]
+  statuses      SectorOrderStatus[]
   currentOrders Order[]             @relation("CurrentOrderSector")
   orderAccess   OrderSectorAccess[]
 
   @@index([name, isActive])
 
   @@map("setores")
+}
+
+model SectorOrderStatus {
+  id        Int      @id @default(autoincrement())
+  sectorId  Int      @map("setor_id")
+  name      String   @map("nome")
+  sortOrder Int      @default(0) @map("ordem")
+  isActive  Boolean  @default(true) @map("ativo")
+  createdAt DateTime @default(now()) @map("criado_em")
+  updatedAt DateTime @updatedAt @map("atualizado_em")
+  sector    Sector   @relation(fields: [sectorId], references: [id], onDelete: Cascade)
+
+  @@unique([sectorId, name])
+  @@index([sectorId, sortOrder, isActive])
+
+  @@map("setores_status_pedido")
 }
 
 model UserProject {
@@ -251,6 +268,7 @@ model Order {
   description        String        @db.Text @map("descricao")
   expectedDate       DateTime      @map("data_prevista")
   status             OrderStatus   @default(PENDENTE) @map("status")
+  sectorStatus       String?       @map("status_setorial")
   completionNote     String?       @db.Text @map("observacao_conclusao")
   cancellationReason String?       @db.Text @map("motivo_cancelamento")
   requestedValue     Decimal?      @db.Decimal(15, 2) @map("valor_solicitado")

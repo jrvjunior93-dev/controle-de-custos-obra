@@ -75,6 +75,7 @@ export interface Order {
   accessibleSectorIds?: string[];
   expectedDate: string;
   status: OrderStatus;
+  sectorStatus?: string;
   requesterId: string;
   requesterName: string;
   responsibleId?: string;
@@ -109,6 +110,7 @@ export interface User {
 export interface Sector {
   id: string;
   name: string;
+  statuses?: string[];
 }
 
 export interface Project {

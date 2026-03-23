@@ -1,13 +1,18 @@
 ﻿
-import React, { useState } from 'react';
-
-interface SpecificationDocProps {
-  orderTypes: string[];
-  onUpdateOrderTypes: (types: string[]) => void;
-}
-
-export const SpecificationDoc: React.FC<SpecificationDocProps> = ({ orderTypes, onUpdateOrderTypes }) => {
-  const [newType, setNewType] = useState('');
+import React, { useMemo, useState } from 'react';
+import { Sector } from '../types';
+
+interface SpecificationDocProps {
+  orderTypes: string[];
+  sectors: Sector[];
+  onUpdateOrderTypes: (types: string[]) => void;
+  onUpdateSectorStatuses: (sectorId: string, statuses: string[]) => Promise<void>;
+}
+
+export const SpecificationDoc: React.FC<SpecificationDocProps> = ({ orderTypes, sectors, onUpdateOrderTypes, onUpdateSectorStatuses }) => {
+  const [newType, setNewType] = useState('');
+  const [draftStatuses, setDraftStatuses] = useState<Record<string, string>>({});
+  const sectorList = useMemo(() => [...sectors].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), [sectors]);
 
   const addType = () => {
     if (newType.trim() && !orderTypes.includes(newType.toUpperCase())) {
@@ -21,7 +26,21 @@ export const SpecificationDoc: React.FC<SpecificationDocProps> = ({ orderTypes, 
   const removeType = (t: string) => {
     if (!confirm(`Remover o tipo de pedido "${t}"?`)) return;
     onUpdateOrderTypes(orderTypes.filter(item => item !== t));
-  };
+  };
+
+  const addSectorStatus = async (sector: Sector) => {
+    const draft = String(draftStatuses[sector.id] || '').trim().toUpperCase();
+    if (!draft) return;
+    if ((sector.statuses || []).includes(draft)) return;
+    if (!confirm(`Adicionar o status "${draft}" ao setor "${sector.name}"?`)) return;
+    await onUpdateSectorStatuses(sector.id, [...(sector.statuses || []), draft]);
+    setDraftStatuses((current) => ({ ...current, [sector.id]: '' }));
+  };
+
+  const removeSectorStatus = async (sector: Sector, status: string) => {
+    if (!confirm(`Remover o status "${status}" do setor "${sector.name}"?`)) return;
+    await onUpdateSectorStatuses(sector.id, (sector.statuses || []).filter((item) => item !== status));
+  };
 
   return (
     <div className="max-w-5xl mx-auto p-10 space-y-16 animate-in fade-in duration-500">
@@ -31,8 +50,8 @@ export const SpecificationDoc: React.FC<SpecificationDocProps> = ({ orderTypes, 
           <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.3em] mt-3">Painel administrativo de parametrização do sistema.</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-16">
-          <div className="space-y-6">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-16">
+          <div className="space-y-6">
             <h3 className="text-xl font-black uppercase tracking-tight text-slate-800 flex items-center gap-3">
               <i className="fas fa-tags text-blue-600"></i> Tipos de Pedidos
             </h3>
@@ -56,9 +75,53 @@ export const SpecificationDoc: React.FC<SpecificationDocProps> = ({ orderTypes, 
                 </div>
               ))}
             </div>
-          </div>
-
-          <div className="space-y-6">
+          </div>
+
+          <div className="space-y-6">
+
+            <h3 className="text-xl font-black uppercase tracking-tight text-slate-800 flex items-center gap-3">
+
+              <i className="fas fa-diagram-project text-blue-600"></i> Status por Setor
+
+            </h3>
+
+            <p className="text-xs text-slate-500 font-medium leading-relaxed">Cadastre os status disponíveis para cada setor. Esses status poderão ser usados pelos setores no tratamento dos pedidos.</p>
+
+            <div className="space-y-5 max-h-[28rem] overflow-y-auto pr-2">
+              {sectorList.map((sector) => (
+                <div key={sector.id} className="border border-slate-200 bg-slate-50 p-4 space-y-4">
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-tight text-slate-800">{sector.name}</p>
+                    <p className="text-[10px] font-bold uppercase text-slate-400 mt-1">Status configurados para este setor.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      value={draftStatuses[sector.id] || ''}
+                      onChange={(event) => setDraftStatuses((current) => ({ ...current, [sector.id]: event.target.value.toUpperCase() }))}
+                      placeholder="EX: EM COTAÇÃO"
+                      className="flex-1 bg-white border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500"
+                    />
+                    <button onClick={() => void addSectorStatus(sector)} className="bg-slate-900 text-white px-5 py-3 font-black uppercase text-xs shadow-xl">
+                      <i className="fas fa-plus"></i>
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {(sector.statuses || []).length === 0 && (
+                      <span className="text-[10px] font-bold uppercase text-slate-400">Nenhum status cadastrado.</span>
+                    )}
+                    {(sector.statuses || []).map((status) => (
+                      <div key={status} className="bg-white border border-slate-200 px-4 py-2 flex items-center gap-3 group">
+                        <span className="text-[10px] font-black text-slate-600 uppercase">{status}</span>
+                        <button onClick={() => void removeSectorStatus(sector, status)} className="text-slate-300 hover:text-rose-500 transition-colors"><i className="fas fa-times-circle"></i></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-6 xl:col-span-2">
             <h3 className="text-xl font-black uppercase tracking-tight text-slate-800 flex items-center gap-3">
               <i className="fas fa-info-circle text-blue-600"></i> Manual da Central
             </h3>

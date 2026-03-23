@@ -31,6 +31,7 @@ const bulkUsersSchema = z.object({ users: z.array(z.any()) });
 const projectPayloadSchema = z.object({ project: z.any() });
 const userPayloadSchema = z.object({ user: z.any() });
 const orderTypesSchema = z.object({ orderTypes: z.array(z.string()) });
+const sectorStatusesSchema = z.object({ statuses: z.array(z.string()) });
 const importOrdersSchema = z.object({ rows: z.array(z.any()) });
 const sectorPayloadSchema = z.object({
   sector: z.object({
@@ -329,6 +330,10 @@ function sanitizeSector(sector: any) {
   return {
     id: String(sector.id),
     name: sector.name,
+    statuses: (sector.statuses || [])
+      .filter((item: any) => item.isActive !== false)
+      .sort((a: any, b: any) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+      .map((item: any) => item.name),
   };
 }
 
@@ -388,6 +393,7 @@ async function mapOrderFromDb(order: any, projectName: string) {
     accessibleSectorIds: Array.from(new Set((order.sectorAccess || []).map((item: any) => String(item.sectorId)))),
     expectedDate: formatDateOnly(order.expectedDate),
     status: order.status,
+    sectorStatus: order.sectorStatus || undefined,
     requesterId: String(order.requesterUserId),
     requesterName: order.requester?.name || "",
     responsibleId: order.assignedUserId ? String(order.assignedUserId) : undefined,
@@ -622,7 +628,7 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
       ...((order.accessibleSectorIds || [])),
     ]).filter((value: any) => value != null && value !== '').map((value: any) => Number(value))
   ));
-  const sectors = sectorIds.length > 0 ? await tx.sector.findMany({ where: { id: { in: sectorIds }, isActive: true } }) : [];
+  const sectors = sectorIds.length > 0 ? await tx.sector.findMany({ where: { id: { in: sectorIds }, isActive: true }, include: { statuses: { where: { isActive: true }, orderBy: { sortOrder: "asc" } } } }) : [];
   const sectorMap = new Map<number, any>(sectors.map((sector: any) => [sector.id, sector]));
 
   for (const order of projectPayload.orders || []) {
@@ -638,6 +644,7 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
 
     const orderCode = String(order.orderCode || "").trim() || `${project.code}-${await allocateOrderNumber(tx, project.id)}`;
     const currentSectorId = order.currentSectorId ? Number(order.currentSectorId) : null;
+    const normalizedSectorStatus = String(order.sectorStatus || "").trim().toUpperCase() || null;
     const accessibleSectorIds = Array.from(new Set([
       ...(order.accessibleSectorIds || []).map((value: any) => Number(value)),
       ...(currentSectorId ? [currentSectorId] : []),
@@ -657,6 +664,7 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
         description: String(order.description || "").trim(),
         expectedDate: parseDateOnly(order.expectedDate),
         status: Object.values(OrderStatus).includes(order.status) ? order.status : OrderStatus.PENDENTE,
+        sectorStatus: normalizedSectorStatus,
         completionNote: toOptionalText(order.completionNote),
         cancellationReason: toOptionalText(order.cancellationReason),
         requestedValue: order.value ?? null,
@@ -747,6 +755,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
   }
   const requesterId = existingOrder?.requesterUserId || Number(orderPayload.requesterId || authUser.id);
   const requester = await tx.user.findUnique({ where: { id: requesterId } });
+  const actorUser = await tx.user.findUnique({ where: { id: Number(authUser.id) }, include: { sector: true } });
   const requestedSectorId = orderPayload.currentSectorId ? Number(orderPayload.currentSectorId) : null;
   const sectorIds = Array.from(new Set([
     ...((orderPayload.accessibleSectorIds || []).map((value: any) => Number(value)).filter(Boolean)),
@@ -755,7 +764,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
     ...(requestedSectorId ? [requestedSectorId] : []),
   ]));
   const validSectors = sectorIds.length > 0
-    ? await tx.sector.findMany({ where: { id: { in: sectorIds }, isActive: true } })
+    ? await tx.sector.findMany({ where: { id: { in: sectorIds }, isActive: true }, include: { statuses: { where: { isActive: true }, orderBy: { sortOrder: "asc" } } } })
     : [];
 
   if ((orderPayload.macroItemId && !macro) || !orderType || !requester) {
@@ -811,6 +820,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
   );
 
   const normalizedStatus = Object.values(OrderStatus).includes(orderPayload.status) ? orderPayload.status : OrderStatus.PENDENTE;
+  const normalizedSectorStatus = String(orderPayload.sectorStatus || "").trim().toUpperCase() || null;
   const normalizedTitle = String(orderPayload.title || '').trim();
   const normalizedDescription = String(orderPayload.description || '').trim();
   const normalizedType = String(orderPayload.type || '').trim().toUpperCase();
@@ -821,6 +831,19 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
   const normalizedValue = orderPayload.value ?? null;
   const requestAttachmentEntities = (existingOrder?.attachments || []).filter((item: any) => item.kind === AttachmentKind.REQUEST);
   const completionAttachmentEntity = (existingOrder?.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION) || null;
+  const statusSectorId = requestedSectorId || existingOrder?.currentSectorId || null;
+  const statusSector = statusSectorId ? validSectors.find((sector: any) => sector.id === statusSectorId) : null;
+  const canActorEditSectorStatus = !!actorUser && (
+    authUser.role === UserRole.SUPERADMIN ||
+    authUser.role === UserRole.ADMIN ||
+    (actorUser.sectorId != null && actorUser.sectorId === statusSectorId)
+  );
+
+  if (normalizedSectorStatus && statusSector && !(statusSector.statuses || []).some((item: any) => item.name === normalizedSectorStatus)) {
+    const error = new Error("Invalid sector status") as Error & { status?: number };
+    error.status = 400;
+    throw error;
+  }
 
   if (authUser.role === UserRole.MEMBRO) {
     const requesterId = Number(orderPayload?.requesterId || authUser.id);
@@ -849,10 +872,28 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       requestedAccessibleSectorIds.every((value, index) => value === existingAccessibleSectorIds[index]) &&
       normalizedCompletionNote === (existingOrder.completionNote || null) &&
       normalizedCancellationReason === (existingOrder.cancellationReason || null) &&
+      normalizedSectorStatus === (existingOrder.sectorStatus || null) &&
       attachmentListsMatch(requestAttachmentsPayload, existingRequestAttachmentEntities) &&
       ((!completionAttachmentPayload && !completionAttachmentEntity) || (!!completionAttachmentPayload && !!completionAttachmentEntity && attachmentSignatureFromPayload(completionAttachmentPayload) === attachmentSignatureFromStored(completionAttachmentEntity)));
 
-    if (authUser.role === UserRole.MEMBRO && !messagesOnlyAllowed) {
+    const sectorStatusOnlyAllowed = canActorEditSectorStatus &&
+      normalizedTitle === existingOrder.title &&
+      normalizedDescription === existingOrder.description &&
+      normalizedType === String(existingOrder.orderType?.name || '').trim().toUpperCase() &&
+      normalizedExpectedDate === formatDateOnly(existingOrder.expectedDate) &&
+      normalizedStatus === existingOrder.status &&
+      normalizedExternalCode === (existingOrder.externalCode || null) &&
+      Number(normalizedValue ?? 0) === Number(existingOrder.requestedValue ?? 0) &&
+      (macro?.id || null) === (existingOrder.macroItemId || null) &&
+      (requestedSectorId || null) === (existingOrder.currentSectorId || null) &&
+      requestedAccessibleSectorIds.length === existingAccessibleSectorIds.length &&
+      requestedAccessibleSectorIds.every((value, index) => value === existingAccessibleSectorIds[index]) &&
+      normalizedCompletionNote === (existingOrder.completionNote || null) &&
+      normalizedCancellationReason === (existingOrder.cancellationReason || null) &&
+      attachmentListsMatch(requestAttachmentsPayload, existingRequestAttachmentEntities) &&
+      ((!completionAttachmentPayload && !completionAttachmentEntity) || (!!completionAttachmentPayload && !!completionAttachmentEntity && attachmentSignatureFromPayload(completionAttachmentPayload) === attachmentSignatureFromStored(completionAttachmentEntity)));
+
+    if (authUser.role === UserRole.MEMBRO && !messagesOnlyAllowed && !sectorStatusOnlyAllowed) {
       const error = new Error("Forbidden") as Error & { status?: number };
       error.status = 403;
       throw error;
@@ -871,7 +912,8 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
         normalizedExternalCode !== (existingOrder.externalCode || null) ||
         !attachmentListsMatch(requestAttachmentsPayload, existingRequestAttachmentEntities);
 
-      if (financialFieldsChanged || structuralFieldsChanged) {
+      const sectorStatusChanged = normalizedSectorStatus !== (existingOrder.sectorStatus || null);
+      if (financialFieldsChanged || structuralFieldsChanged || (sectorStatusChanged && !canActorEditSectorStatus)) {
         const error = new Error("Forbidden") as Error & { status?: number };
         error.status = 403;
         throw error;
@@ -901,6 +943,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       description: String(orderPayload.description || '').trim(),
       expectedDate: parseDateOnly(orderPayload.expectedDate),
       status: Object.values(OrderStatus).includes(orderPayload.status) ? orderPayload.status : OrderStatus.PENDENTE,
+      sectorStatus: normalizedSectorStatus,
       completionNote: toOptionalText(orderPayload.completionNote),
       cancellationReason: toOptionalText(orderPayload.cancellationReason),
       requestedValue: orderPayload.value ?? null,
@@ -1183,6 +1226,7 @@ app.get("/users", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (_req, res
 app.get("/sectors", requireAuth, async (_req, res) => {
   const sectors = await prisma.sector.findMany({
     where: { isActive: true },
+    include: { statuses: { where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] } },
     orderBy: { name: "asc" },
   });
   res.json(sectors.map(sanitizeSector));
@@ -1198,11 +1242,46 @@ app.put("/sectors/:id", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req
     ? await prisma.sector.update({
         where: { id: sectorId },
         data: { name: sectorName, isActive: true },
+        include: { statuses: { where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] } }
       })
     : await prisma.sector.create({
         data: { name: sectorName, isActive: true },
+        include: { statuses: { where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] } }
       });
 
+  res.json(sanitizeSector(savedSector));
+});
+
+app.put("/sectors/:id/statuses", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req, res) => {
+  const parsed = sectorStatusesSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  const sectorId = Number(req.params.id);
+  if (!Number.isFinite(sectorId)) return res.status(400).json({ error: "Invalid sector id" });
+
+  const normalizedNames = Array.from(
+    new Set(parsed.data.statuses.map((name) => String(name || "").trim().toUpperCase()).filter(Boolean))
+  );
+
+  const savedSector = await prisma.$transaction(async (tx) => {
+    await tx.sectorOrderStatus.deleteMany({ where: { sectorId } });
+    if (normalizedNames.length > 0) {
+      await tx.sectorOrderStatus.createMany({
+        data: normalizedNames.map((name, index) => ({
+          sectorId,
+          name,
+          sortOrder: index,
+          isActive: true,
+        }))
+      });
+    }
+    return tx.sector.findUnique({
+      where: { id: sectorId },
+      include: { statuses: { where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] } }
+    });
+  });
+
+  if (!savedSector) return res.status(404).json({ error: "Sector not found" });
   res.json(sanitizeSector(savedSector));
 });
 

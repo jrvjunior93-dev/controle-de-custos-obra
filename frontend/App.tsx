@@ -33,6 +33,7 @@ const normalizeUserRecord = (account: User): User => ({
 const normalizeSectorRecord = (sector: Sector): Sector => ({
   ...sector,
   name: normalizePtText(sector.name),
+  statuses: (sector.statuses || []).map((status) => normalizePtText(String(status || '').trim().toUpperCase())),
 });
 
 const isObraSectorName = (name?: string) => String(name || '').trim().toUpperCase() === 'OBRA';
@@ -484,6 +485,15 @@ const App: React.FC = () => {
     });
   };
 
+  const handleSaveSectorStatuses = async (sectorId: string, statuses: string[]) => {
+    const savedSector = normalizeSectorRecord(await dbService.saveSectorStatuses(sectorId, statuses));
+    setSectors((currentSectors) => {
+      const nextSectors = currentSectors.map((item) => item.id === savedSector.id ? savedSector : item);
+      localStorage.setItem('csc_brape_sectors', JSON.stringify(nextSectors));
+      return nextSectors;
+    });
+  };
+
   const openProfileModal = () => {
     setProfileForm({ name: user.name, currentPassword: '', newPassword: '', confirmPassword: '' });
     setShowProfileModal(true);
@@ -722,7 +732,12 @@ const App: React.FC = () => {
 
           {view === 'SPECIFICATION' && canManageGlobalData && (
 
-            <SpecificationDoc orderTypes={orderTypes} onUpdateOrderTypes={(types) => { setOrderTypes(types); dbService.saveOrderTypes(types); }} />
+            <SpecificationDoc
+              orderTypes={orderTypes}
+              sectors={sectors}
+              onUpdateOrderTypes={(types) => { setOrderTypes(types); dbService.saveOrderTypes(types); }}
+              onUpdateSectorStatuses={handleSaveSectorStatuses}
+            />
 
           )}
         </Suspense>

@@ -35,6 +35,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const [selectedMacroItemId, setSelectedMacroItemId] = useState('');
   const [selectedForwardSectorId, setSelectedForwardSectorId] = useState('');
+  const [selectedSectorStatus, setSelectedSectorStatus] = useState('');
   const [newOrder, setNewOrder] = useState<Partial<Order>>({
     title: '',
     type: '',
@@ -55,7 +56,9 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const canDeleteOrderDirectly = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canCommentOnOrder = (order: Order) => isOrderActive(order);
   const canForwardOrder = (order: Order) => canManageProjectOrders && isOrderActive(order);
+  const canEditSectorStatus = (order: Order) => isOrderActive(order) && (user.role === 'SUPERADMIN' || user.role === 'ADMIN' || (!!user.sectorId && user.sectorId === order.currentSectorId));
   const findSectorName = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.name;
+  const getSectorStatuses = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.statuses || [];
   const getMessageMeta = (order: Order, message: OrderMessage) => {
     if (message.userId === 'system') {
       return { label: 'Sistema', classes: 'bg-slate-50 border-slate-300 ml-0 mr-6' };
@@ -89,6 +92,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     setFinalValue(currentValue);
     setSelectedMacroItemId(order.macroItemId || '');
     setSelectedForwardSectorId(order.currentSectorId || '');
+    setSelectedSectorStatus(order.sectorStatus || '');
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, target: 'NEW' | 'ACTION' | 'MESSAGE') => {
@@ -326,6 +330,32 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
         userId: 'system',
         userName: 'SISTEMA',
         text: `${user.name} alterou a apropriação do pedido para ${macroName}.`,
+        date: new Date().toISOString()
+      }]
+    };
+    onUpdate({ ...project, orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item) });
+    setIsActionModalOpen(updatedOrder);
+  };
+
+  const handleSaveSectorStatus = () => {
+    if (!isActionModalOpen) return;
+    if (!canEditSectorStatus(isActionModalOpen)) return alert('Você não pode alterar o status deste setor.');
+    const availableStatuses = getSectorStatuses(isActionModalOpen.currentSectorId);
+    if (availableStatuses.length === 0) return alert('Não há status configurados para o setor atual.');
+    if (selectedSectorStatus && !availableStatuses.includes(selectedSectorStatus)) return alert('Selecione um status válido.');
+    if ((selectedSectorStatus || '') === (isActionModalOpen.sectorStatus || '')) return;
+    if (!confirm(`Salvar o status setorial do pedido "${isActionModalOpen.title}"?`)) return;
+
+    const updatedOrder: Order = {
+      ...isActionModalOpen,
+      sectorStatus: selectedSectorStatus || undefined,
+      messages: [...(isActionModalOpen.messages || []), {
+        id: crypto.randomUUID(),
+        userId: 'system',
+        userName: 'SISTEMA',
+        text: selectedSectorStatus
+          ? `${user.name} alterou o status do setor para ${selectedSectorStatus}.`
+          : `${user.name} removeu o status do setor.`,
         date: new Date().toISOString()
       }]
     };
@@ -603,6 +633,27 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                     <p className="text-[10px] font-black text-slate-800">{formatMoney(isActionModalOpen.value)}</p>
                   </div>
                 </div>
+                {(getSectorStatuses(isActionModalOpen.currentSectorId).length > 0 || isActionModalOpen.sectorStatus) && (
+                  <div className="bg-white border border-slate-100 p-4 space-y-3">
+                    <label className="text-[9px] font-black text-slate-400 uppercase block">Status do Setor</label>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <select
+                        className="w-full bg-slate-50 border border-slate-200 px-3 py-2 font-black text-[10px] uppercase"
+                        value={selectedSectorStatus}
+                        onChange={(event) => setSelectedSectorStatus(event.target.value)}
+                        disabled={!canEditSectorStatus(isActionModalOpen)}
+                      >
+                        <option value="">Sem status setorial</option>
+                        {getSectorStatuses(isActionModalOpen.currentSectorId).map((status) => <option key={status} value={status}>{status}</option>)}
+                      </select>
+                      {canEditSectorStatus(isActionModalOpen) && (
+                        <button type="button" onClick={handleSaveSectorStatus} className="bg-slate-900 text-white px-4 py-2 font-black uppercase text-[9px] tracking-widest">
+                          Salvar Status
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {canForwardOrder(isActionModalOpen) && sectors.length > 0 && (
                   <div className="bg-white border border-slate-100 p-4 space-y-3">
                     <label className="text-[9px] font-black text-slate-400 uppercase block">Encaminhar para Outro Setor</label>

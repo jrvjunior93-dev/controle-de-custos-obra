@@ -141,6 +141,13 @@ export const dbService = {
     });
   },
 
+  async saveSectorStatuses(sectorId: string, statuses: string[]) {
+    return request<any>(`/sectors/${sectorId}/statuses`, {
+      method: "PUT",
+      body: JSON.stringify({ statuses })
+    });
+  },
+
   async saveOrderTypes(orderTypes: string[]) {
     try {
       await request("/order-types", {
