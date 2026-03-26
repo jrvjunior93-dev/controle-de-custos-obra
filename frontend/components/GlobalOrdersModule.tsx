@@ -14,6 +14,7 @@ interface GlobalOrdersModuleProps {
   orderTypes: string[];
 }
 
+const formatMoney = (value?: number) => `R$ ${(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const formatMoneyInput = (value?: number) => value == null ? '' : value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const parseMoneyInput = (value: string) => {
   const digits = value.replace(/\D/g, '');
