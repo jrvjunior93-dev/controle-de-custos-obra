@@ -790,6 +790,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
     throw error;
   }
 
+  const normalizedStatus = Object.values(OrderStatus).includes(orderPayload.status) ? orderPayload.status : OrderStatus.PENDENTE;
   const requestAttachmentsPayload = Array.isArray(orderPayload.attachments) && orderPayload.attachments.length > 0
     ? orderPayload.attachments
     : (existingOrder?.attachments || []).filter((item: any) => item.kind === AttachmentKind.REQUEST).map((item: any) => ({
@@ -804,22 +805,28 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
         storageBucket: item.storageBucket,
         storageKey: item.storageKey,
       }));
-  const completionAttachmentPayload = orderPayload.completionAttachment
-    ? orderPayload.completionAttachment
-    : ((existingOrder?.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION)
-      ? {
-          name: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).name,
-          originalName: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).originalName,
-          data: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).data || "",
-          type: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).mimeType,
-          mimeType: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).mimeType,
-          size: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).size,
-          uploadDate: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).uploadedAt,
-          storageProvider: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).storageProvider,
-          storageBucket: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).storageBucket,
-          storageKey: (existingOrder.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION).storageKey,
-        }
-      : null);
+  const hasExplicitCompletionAttachment = Object.prototype.hasOwnProperty.call(orderPayload || {}, "completionAttachment");
+  const existingCompletionAttachment = (existingOrder?.attachments || []).find((item: any) => item.kind === AttachmentKind.COMPLETION);
+  const completionAttachmentPayload = hasExplicitCompletionAttachment
+    ? (orderPayload.completionAttachment || null)
+    : (
+        normalizedStatus === OrderStatus.CONCLUIDO
+          ? null
+          : (existingCompletionAttachment
+            ? {
+                name: existingCompletionAttachment.name,
+                originalName: existingCompletionAttachment.originalName,
+                data: existingCompletionAttachment.data || "",
+                type: existingCompletionAttachment.mimeType,
+                mimeType: existingCompletionAttachment.mimeType,
+                size: existingCompletionAttachment.size,
+                uploadDate: existingCompletionAttachment.uploadedAt,
+                storageProvider: existingCompletionAttachment.storageProvider,
+                storageBucket: existingCompletionAttachment.storageBucket,
+                storageKey: existingCompletionAttachment.storageKey,
+              }
+            : null)
+      );
   const preservedStorageRefs = new Set(
     [
       ...requestAttachmentsPayload,
@@ -830,7 +837,6 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       .map((attachment: any) => `${attachment.storageBucket || ""}:${attachment.storageKey}`)
   );
 
-  const normalizedStatus = Object.values(OrderStatus).includes(orderPayload.status) ? orderPayload.status : OrderStatus.PENDENTE;
   const normalizedSectorStatus = String(orderPayload.sectorStatus || "").trim().toUpperCase() || null;
   const normalizedTitle = String(orderPayload.title || '').trim();
   const normalizedDescription = String(orderPayload.description || '').trim();
