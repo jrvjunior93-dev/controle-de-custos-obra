@@ -187,6 +187,30 @@ const buildImportSummary = (result: { imported?: any[]; skipped?: any[] }) => {
   return lines.join('\n');
 };
 
+const exportOrdersToExcel = async (orders: Order[]) => {
+  if (orders.length === 0) return;
+  const XLSX = await import('xlsx');
+  const rows = orders.map((order) => ({
+    'Data do Pedido': formatOrderDate(order.createdAt),
+    'Data Desejada': formatOrderDate(order.expectedDate),
+    'Código do Pedido': order.orderCode || '',
+    'Código Externo': order.externalCode || '',
+    'Obra': order.projectName || '',
+    'Título': order.title || '',
+    'Descrição': order.description || '',
+    'Tipo do Pedido': order.type || '',
+    'Valor do Pedido': Number(order.value || 0),
+    'Status Atual': order.status.replaceAll('_', ' '),
+    'Status Setorial': order.sectorStatus || '',
+    'Setor Atual': order.currentSectorName || '',
+    'Solicitante': order.requesterName || '',
+  }));
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Pedidos');
+  XLSX.writeFile(workbook, `pedidos_selecionados_${new Date().toISOString().slice(0, 10)}.xlsx`);
+};
+
 export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects, sectors, user, onUpdateProjects, onPersistProject, onPersistMemberOrder, onDeleteMemberOrder, orderTypes }) => {
   const canManageAllOrders = canManageAssignedOrders(user.role);
   const canImportOrders = user.role === 'SUPERADMIN';
@@ -553,6 +577,11 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setIsActionModalOpen(null);
     setBulkForwardSectorId('');
     setIsBulkActionModalOpen(true);
+  };
+
+  const handleExportSelectedOrders = async () => {
+    if (selectedOrdersCount < 1) return;
+    await exportOrdersToExcel(selectedOrders);
   };
 
   const handleOpenSingleForwardModal = () => {
@@ -1025,6 +1054,13 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                   Enviar Setor
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => void handleExportSelectedOrders()}
+                className="bg-white border border-slate-300 text-slate-900 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50"
+              >
+                Exportar Excel
+              </button>
               <button
                 type="button"
                 onClick={clearSelectedOrders}
