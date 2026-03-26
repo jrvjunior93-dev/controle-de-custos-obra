@@ -178,7 +178,7 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, 
         <div className="no-print">
           {activeTab === 'RESUMO' && <ConsolidationModule project={project} />}
           {canAccessFullProjectTabs && activeTab === 'ORCAMENTO' && <BudgetModule budget={currentBudget} onDraftChange={setBudgetDraft} draftKey={budgetDraftStorageKey} onSave={(budget) => { setBudgetDraft(budget); onUpdate({ ...project, budget }); }} />}
-          {canAccessFullProjectTabs && activeTab === 'CUSTOS' && <CostModule project={project} onSave={(costs) => onUpdate({ ...project, costs })} />}
+          {canAccessFullProjectTabs && activeTab === 'CUSTOS' && <CostModule project={project} onSave={(costs) => onUpdate({ ...project, costs })} canManageCosts={user.role === 'SUPERADMIN'} />}
           {canAccessFullProjectTabs && activeTab === 'PARCELAMENTOS' && <InstallmentsModule project={project} onUpdate={onUpdate} />}
           {canAccessFullProjectTabs && activeTab === 'PEDIDOS' && <OrdersModule project={project} sectors={sectors} user={user} onUpdate={onUpdate} />}
           {activeTab === 'ARQUIVOS' && <AttachmentsModule project={project} onUpdate={onUpdate} isAdmin={canManageProject} />}
