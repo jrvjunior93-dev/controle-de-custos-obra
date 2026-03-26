@@ -555,6 +555,8 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const typeFilterItems = orderTypes.map((type) => ({ value: type, label: type }));
   const selectedOrders = filteredOrders.filter((order) => selectedOrderIds.includes(order.id));
   const selectedOrdersCount = selectedOrders.length;
+  const allFilteredOrderIds = filteredOrders.map((order) => order.id);
+  const allFilteredSelected = filteredOrders.length > 0 && allFilteredOrderIds.every((id) => selectedOrderIds.includes(id));
 
   const clearSelectedOrders = () => {
     setSelectedOrderIds([]);
@@ -566,6 +568,16 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setSelectedOrderIds((current) => current.includes(order.id)
       ? current.filter((item) => item !== order.id)
       : [...current, order.id]);
+  };
+
+  const handleToggleSelectAllOrders = () => {
+    if (filteredOrders.length === 0) return;
+    setSelectedOrderIds((current) => {
+      if (allFilteredSelected) {
+        return current.filter((id) => !allFilteredOrderIds.includes(id));
+      }
+      return Array.from(new Set([...current, ...allFilteredOrderIds]));
+    });
   };
 
   const handleOpenSelectionModal = () => {
@@ -1078,7 +1090,16 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
           <table className="w-full min-w-[1180px] text-left table-fixed">
             <thead className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200">
               <tr>
-                <th className="px-4 py-5 w-[4%]">Sel.</th>
+                <th className="px-4 py-5 w-[4%]">
+                  <div className="flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={handleToggleSelectAllOrders}
+                      title={allFilteredSelected ? 'Limpar seleção' : 'Selecionar todos'}
+                    />
+                  </div>
+                </th>
                 <th className="px-4 py-5 w-[8%]">Data do Pedido</th>
                 <th className="px-4 py-5 w-[8%]">Data Desejada</th>
                 <th className="px-4 py-5 w-[12%]">Código do Pedido</th>
