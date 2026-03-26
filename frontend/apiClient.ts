@@ -193,6 +193,13 @@ export const dbService = {
       method: "PUT",
       body: JSON.stringify(payload)
     });
+  },
+
+  async resolveAttachmentData(attachment: any) {
+    return request<{ data: string }>("/attachments/resolve", {
+      method: "POST",
+      body: JSON.stringify({ attachment })
+    });
   }
 };
 

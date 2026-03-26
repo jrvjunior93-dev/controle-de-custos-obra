@@ -69,15 +69,6 @@ const renderAttachmentList = (attachments: Attachment[], onRemove: (attachmentId
   )
 );
 
-const downloadAttachment = (attachment: Attachment) => {
-  const link = document.createElement('a');
-  link.href = attachment.data;
-  link.download = attachment.originalName || attachment.name;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-};
-
 const normalizeCsvHeader = (value: string) => value
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -343,16 +334,42 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setFinalDate(new Date().toISOString().split('T')[0]);
   };
 
+  const refreshAttachmentData = async (attachment: Attachment) => {
+    if (attachment.storageProvider !== 'S3' || !attachment.storageKey) return attachment;
+    try {
+      const result = await dbService.resolveAttachmentData(attachment);
+      return result?.data ? { ...attachment, data: result.data } : attachment;
+    } catch (error) {
+      console.error('Erro ao renovar URL do anexo:', error);
+      return attachment;
+    }
+  };
+
+  const downloadAttachment = (attachment: Attachment) => {
+    void (async () => {
+      const resolvedAttachment = await refreshAttachmentData(attachment);
+      const link = document.createElement('a');
+      link.href = resolvedAttachment.data;
+      link.download = resolvedAttachment.originalName || resolvedAttachment.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    })();
+  };
+
   const handlePreviewAttachment = (attachment: Attachment) => {
-    if (!attachment.data) {
-      alert('Arquivo indisponível para visualização no momento.');
-      return;
-    }
-    if (canPreviewAttachmentInline(attachment)) {
-      setPreviewAttachment(attachment);
-      return;
-    }
-    window.open(attachment.data, '_blank', 'noopener,noreferrer');
+    void (async () => {
+      const resolvedAttachment = await refreshAttachmentData(attachment);
+      if (!resolvedAttachment.data) {
+        alert('Arquivo indisponível para visualização no momento.');
+        return;
+      }
+      if (canPreviewAttachmentInline(resolvedAttachment)) {
+        setPreviewAttachment(resolvedAttachment);
+        return;
+      }
+      window.open(resolvedAttachment.data, '_blank', 'noopener,noreferrer');
+    })();
   };
 
   const clearFilters = () => {

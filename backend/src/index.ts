@@ -49,6 +49,16 @@ const geminiExtractionSchema = z.object({
   mimeType: z.string().optional(),
   extractedText: z.string().optional(),
 });
+const resolveAttachmentSchema = z.object({
+  attachment: z.object({
+    data: z.string().optional(),
+    type: z.string().optional(),
+    mimeType: z.string().optional(),
+    storageProvider: z.string().optional(),
+    storageBucket: z.string().optional(),
+    storageKey: z.string().optional(),
+  })
+});
 
 type AuthUser = { id: string; role: UserRole };
 type AuthRequest = express.Request & { authUser?: AuthUser };
@@ -1529,6 +1539,22 @@ app.get("/auth/me", requireAuth, async (req: AuthRequest, res) => {
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { assignedProjects: true, sector: true } });
   if (!user || !user.isActive) return res.status(401).json({ error: "Unauthorized" });
   res.json(sanitizeUser(user));
+});
+
+app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
+  const parsed = resolveAttachmentSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid attachment payload" });
+
+  const { attachment } = parsed.data;
+  const data = await resolveAttachmentData({
+    data: attachment.data,
+    mimeType: String(attachment.type || attachment.mimeType || "application/octet-stream"),
+    storageProvider: attachment.storageProvider,
+    storageBucket: attachment.storageBucket,
+    storageKey: attachment.storageKey,
+  });
+
+  return res.json({ data });
 });
 
 app.put("/auth/profile", requireAuth, async (req: AuthRequest, res) => {
