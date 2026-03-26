@@ -1399,11 +1399,11 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
       {isActionModalOpen && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md flex items-center justify-center z-[120] p-4 sm:p-6">
-          <div className="bg-white w-full max-w-6xl shadow-2xl overflow-hidden border border-slate-800 flex flex-col max-h-[95vh]">
+          <div className="bg-white w-full max-w-7xl shadow-2xl overflow-hidden border border-slate-800 flex flex-col max-h-[95vh]">
             <div className="p-5 sm:p-8 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-4">
               <div>
                 <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <span className="text-[9px] font-black uppercase px-2 py-1 bg-slate-900 text-white block w-fit">{isActionModalOpen.status}</span>
+                  <span className={`text-[9px] font-black uppercase px-2 py-1 ${getStatusColor(isActionModalOpen.status)} block w-fit`}>{isActionModalOpen.status.replace('_', ' ')}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-[9px] font-black uppercase px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 block w-fit">
                       {isActionModalOpen.sectorStatus || 'Sem status setorial'}
@@ -1421,11 +1421,9 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                   </div>
                 </div>
                 <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{isActionModalOpen.title}</h3>
-                <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Obra: {isActionModalOpen.projectName}</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Por {isActionModalOpen.requesterName} em {new Date(isActionModalOpen.createdAt).toLocaleString('pt-BR')}</p>
               </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <button onClick={() => setIsActionModalOpen(null)} className="text-slate-400 hover:text-slate-900 px-2"><i className="fas fa-times text-2xl"></i></button>
-              </div>
+              <button onClick={() => setIsActionModalOpen(null)} className="text-slate-400 hover:text-slate-600 px-2"><i className="fas fa-times text-xl"></i></button>
             </div>
             {isEditingSectorStatus && (getEditableSectorStatuses(isActionModalOpen).length > 0 || isActionModalOpen.sectorStatus) && (
               <div className="px-5 sm:px-8 py-4 border-b border-slate-100 bg-white">
@@ -1451,36 +1449,60 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 </div>
               </div>
             )}
-            <div className="flex-1 p-4 sm:p-6 lg:p-10 overflow-y-auto space-y-8">
-              <div className="bg-slate-50 p-6 border-l-4 border-slate-900">
-                <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Descrição da Solicitação</p>
-                <p className="text-sm font-bold text-slate-700 italic">"{isActionModalOpen.description}"</p>
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase">Código do Pedido</p>
-                    <p className="text-sm font-black text-slate-900">{isActionModalOpen.orderCode || 'Será gerado pelo backend'}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase">Código Externo</p>
-                    <p className="text-sm font-black text-slate-900">{isActionModalOpen.externalCode || 'Não informado'}</p>
-                  </div>
-                  <div className="md:col-span-2">
-                    <p className="text-[10px] font-black text-slate-500 uppercase">Setor Atual</p>
-                    <p className="text-sm font-black text-slate-900 uppercase">{isActionModalOpen.currentSectorName || 'SEM SETOR DEFINIDO'}</p>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-10 grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-10">
+              <div className="space-y-8">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Descrição da Solicitação</label>
+                <p className="text-xs font-bold text-slate-700 leading-relaxed bg-slate-50 p-5 border border-slate-100 italic">"{isActionModalOpen.description}"</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-white border border-slate-100 p-4">
+                  <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Código do Pedido</label>
+                  <p className="text-[10px] font-black text-slate-900">{isActionModalOpen.orderCode || 'Será gerado pelo backend'}</p>
+                </div>
+                <div className="bg-white border border-slate-100 p-4">
+                  <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Código Externo</label>
+                  <p className="text-[10px] font-black text-slate-900">{isActionModalOpen.externalCode || 'Não informado'}</p>
+                </div>
+                <div className="bg-white border border-slate-100 p-4 sm:col-span-2">
+                  <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Setor Atual</label>
+                  <p className="text-[10px] font-black text-slate-900 uppercase">{isActionModalOpen.currentSectorName || 'SEM SETOR DEFINIDO'}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white border border-slate-100 p-4">
+                  <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Apropriação</label>
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black text-blue-600 uppercase">{activeProjectForModal?.budget.find((macro) => macro.id === isActionModalOpen.macroItemId)?.description || 'Item macro não vinculado'}</p>
+                    <select
+                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 font-black text-[10px] uppercase"
+                      value={selectedMacroItemId}
+                      onChange={(event) => setSelectedMacroItemId(event.target.value)}
+                      disabled={!canEditMacroItem(isActionModalOpen)}
+                    >
+                      <option value="">Selecione...</option>
+                      {(activeProjectForModal?.budget || []).map((macro) => (
+                        <option key={macro.id} value={macro.id}>{macro.description}</option>
+                      ))}
+                    </select>
+                    {canEditMacroItem(isActionModalOpen) && (
+                      <button type="button" onClick={handleUpdateMacroItem} className="w-full bg-slate-900 text-white py-2 font-black uppercase text-[9px] tracking-widest">
+                        Salvar Item Macro
+                      </button>
+                    )}
                   </div>
                 </div>
-                <p className="text-[10px] font-black text-slate-500 uppercase mt-4">Valor Atual do Pedido</p>
-                <p className="text-lg font-black text-slate-900">R$ {(isActionModalOpen.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                {canEditOrderValueDirectly(isActionModalOpen) && (
-                  <div className="mt-4 space-y-3">
-                    <label className="text-[10px] font-black text-slate-500 uppercase">Editar Valor do Pedido</label>
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      <div className="relative flex-1">
+                <div className="bg-white border border-slate-100 p-4">
+                  <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Valor Atual</label>
+                  <p className="text-[10px] font-black text-slate-800">{formatMoney(isActionModalOpen.value)}</p>
+                  {canEditOrderValueDirectly(isActionModalOpen) && (
+                    <div className="mt-3 space-y-3">
+                      <div className="relative">
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
                         <input
                           type="text"
                           inputMode="decimal"
-                          className="w-full bg-white border border-slate-200 pl-12 pr-4 py-3 font-black text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 pl-12 pr-4 py-3 font-black text-sm"
                           value={formatMoneyInput(editableOrderValue)}
                           onChange={(e) => setEditableOrderValue(parseMoneyInput(e.target.value) || 0)}
                           placeholder="0,00"
@@ -1489,89 +1511,89 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                       <button
                         type="button"
                         onClick={handleSaveOrderValue}
-                        className="bg-slate-900 text-white px-5 py-3 text-[10px] font-black uppercase tracking-widest shadow-sm"
+                        className="w-full bg-slate-900 text-white py-2 font-black uppercase text-[9px] tracking-widest"
                       >
                         Salvar Valor
                       </button>
                     </div>
-                  </div>
-                )}
-                {isActionModalOpen.attachments && isActionModalOpen.attachments.length > 0 && (
-                  <div className="mt-4 space-y-3">
-                    <p className="text-[10px] font-black text-slate-500 uppercase">Anexos do Pedido</p>
-                    <div className="flex flex-wrap gap-2">
-                      {isActionModalOpen.attachments.map((attachment) => (
-                        <div key={attachment.id} className="flex items-center gap-2">
-                          <button type="button" onClick={() => handlePreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
-                            Visualizar
-                          </button>
-                          <button type="button" onClick={() => downloadAttachment(attachment)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">
-                            Download
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="bg-white border border-slate-200 p-6 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Macro do Pedido</p>
-                    <p className="text-xs font-bold text-slate-500">Use este campo para complementar pedidos importados sem apropriação.</p>
-                  </div>
-                  {canEditMacroItem(isActionModalOpen) && (
-                    <button type="button" onClick={handleUpdateMacroItem} className="px-4 py-3 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest shadow-sm">
-                      Salvar Item Macro
-                    </button>
                   )}
                 </div>
-                <select
-                  className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500"
-                  value={selectedMacroItemId}
-                  onChange={(event) => setSelectedMacroItemId(event.target.value)}
-                  disabled={!canEditMacroItem(isActionModalOpen)}
-                >
-                  <option value="">Selecione...</option>
-                  {(activeProjectForModal?.budget || []).map((macro) => (
-                    <option key={macro.id} value={macro.id}>{macro.description}</option>
-                  ))}
-                </select>
               </div>
-
               {canManageAllOrders && isOrderActive(isActionModalOpen) && sectors.length > 0 && (
-                <div className="bg-white border border-slate-200 p-6 space-y-3">
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Encaminhar para Outro Setor</p>
-                    <p className="text-xs font-bold text-slate-500">O pedido mantém histórico completo e acesso para os setores envolvidos.</p>
-                  </div>
-                  <select
-                    className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500"
-                    value={selectedForwardSectorId}
-                    onChange={(event) => setSelectedForwardSectorId(event.target.value)}
-                  >
+                <div className="bg-white border border-slate-100 p-4 space-y-3">
+                  <label className="text-[9px] font-black text-slate-400 uppercase block">Encaminhar para Outro Setor</label>
+                  <select className="w-full bg-slate-50 border border-slate-200 px-3 py-2 font-black text-[10px] uppercase" value={selectedForwardSectorId} onChange={(event) => setSelectedForwardSectorId(event.target.value)}>
                     <option value="">Selecione...</option>
                     {sectors.map((sector) => (
                       <option key={sector.id} value={sector.id}>{sector.name}</option>
                     ))}
                   </select>
-                  <button type="button" onClick={handleForwardOrder} className="w-full bg-slate-900 text-white py-3 font-black uppercase text-[10px] tracking-widest shadow-sm">
+                  <button type="button" onClick={handleForwardOrder} className="w-full bg-slate-900 text-white py-2 font-black uppercase text-[9px] tracking-widest shadow-sm">
                     Encaminhar Pedido
-                    </button>
+                  </button>
+                </div>
+              )}
+              {isActionModalOpen.attachments && isActionModalOpen.attachments.length > 0 && (
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Anexos do Pedido</label>
+                  <div className="flex flex-wrap gap-2">
+                    {isActionModalOpen.attachments.map((attachment) => (
+                      <div key={attachment.id} className="flex items-center gap-2">
+                        <button type="button" onClick={() => handlePreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
+                          Visualizar
+                        </button>
+                        <button type="button" onClick={() => downloadAttachment(attachment)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">
+                          Download
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
+              )}
+              {isActionModalOpen.messages && isActionModalOpen.messages.length > 0 && (
+                <div className="space-y-4">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Histórico de Mensagens</label>
+                  <div className="space-y-4 max-h-60 overflow-y-auto pr-4">
+                    {isActionModalOpen.messages.map((message) => {
+                      const meta = getMessageMeta(isActionModalOpen, message);
+                      return (
+                      <div key={message.id} className={`p-4 border-l-4 ${meta.classes}`}>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[9px] font-black uppercase text-slate-900">{message.userName}</span>
+                          <span className="text-[8px] font-bold text-slate-400">{new Date(message.date).toLocaleString('pt-BR')}</span>
+                        </div>
+                        <div className="mb-2 text-[8px] font-black uppercase tracking-widest text-slate-500">{meta.label}</div>
+                        <p className="text-[11px] font-medium text-slate-600">{message.text}</p>
+                        {message.attachments && message.attachments.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {message.attachments.map((attachment) => (
+                              <div key={attachment.id} className="flex items-center gap-2">
+                                <button type="button" onClick={() => handlePreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
+                                  Visualizar
+                                </button>
+                                <button type="button" onClick={() => downloadAttachment(attachment)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">
+                                  Download
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )})}
+                  </div>
+                </div>
+              )}
+              </div>
+
+              <div className="bg-slate-50 p-8 border-l border-slate-100 space-y-6">
               {canDeleteOrderDirectly && (
-                <div className="bg-white border border-slate-200 p-6 space-y-3">
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gerenciar Pedido</p>
-                    <p className="text-xs font-bold text-slate-500">Exclusão permanente disponível apenas para ADMIN CENTRAL e SUPERADMIN.</p>
-                  </div>
+                <div className="space-y-3">
+                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Gerenciar Pedido</h4>
                   {canReopenOrder(isActionModalOpen) && (
                     <button
                       type="button"
                       onClick={handleReopenOrder}
-                      className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-3 text-[9px] font-black uppercase shadow-sm"
+                      className="w-full bg-emerald-50 text-emerald-700 border border-emerald-200 py-4 font-black uppercase text-[10px] shadow-sm"
                     >
                       Reabrir Pedido
                     </button>
@@ -1579,7 +1601,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                   <button
                     type="button"
                     onClick={() => handleDeleteOrder(isActionModalOpen)}
-                    className="bg-rose-50 text-rose-600 border border-rose-200 px-4 py-3 text-[9px] font-black uppercase shadow-sm"
+                    className="w-full bg-rose-50 text-rose-600 border border-rose-200 py-4 font-black uppercase text-[10px] shadow-sm"
                   >
                     Excluir Pedido
                   </button>
@@ -1587,71 +1609,59 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
               )}
 
               {canManageAllOrders && (isActionModalOpen.status === 'PENDENTE' || isActionModalOpen.status === 'EM_ANALISE' || isActionModalOpen.status === 'AGUARDANDO_INFORMACAO') && (
-                <div className="space-y-6 pt-6 border-t border-slate-100">
-                  <h4 className="text-lg font-black uppercase tracking-tighter">Despacho da Central</h4>
-                  <div className="flex gap-2">
-                    {['COMPLETE', 'CANCEL'].map((type) => (
-                      <button key={type} onClick={() => setActionType(type as 'COMPLETE' | 'CANCEL')} className={`flex-1 py-4 text-[10px] font-black uppercase border-2 transition-all ${actionType === type ? 'bg-slate-900 text-white border-slate-900' : 'text-slate-400 border-slate-100'}`}>
-                        {type === 'COMPLETE' ? 'Finalizar' : 'Cancelar'}
-                      </button>
+                <>
+                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Tratamento do Pedido</h4>
+                  <div className="flex bg-white p-1 shadow-sm border border-slate-200">
+                    {[{ id: 'COMPLETE', label: 'Concluir' }, { id: 'CANCEL', label: 'Cancelar' }].map((item) => (
+                      <button key={item.id} onClick={() => setActionType(item.id as 'COMPLETE' | 'CANCEL')} className={`flex-1 py-3 text-[9px] font-black uppercase transition-all ${actionType === item.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}>{item.label}</button>
                     ))}
                   </div>
                   {actionType !== 'NONE' && (
-                    <div className="space-y-4 animate-in slide-in-from-top-4 duration-300">
+                    <div className="space-y-4 animate-in fade-in duration-200">
                       {canEditFinancialFields && (
                         <div>
                           <label className="text-[9px] font-black text-slate-400 uppercase">Valor do Pedido (R$)</label>
                           <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
-                            <input type="text" inputMode="decimal" className="w-full bg-white border border-slate-200 pl-11 pr-3 py-3 font-black text-sm" value={formatMoneyInput(editableOrderValue)} onChange={(e) => { const nextValue = parseMoneyInput(e.target.value) || 0; setEditableOrderValue(nextValue); if (incorporateCost && actionType === 'COMPLETE') setFinalValue(nextValue); }} placeholder="0,00" />
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
+                            <input type="text" inputMode="decimal" className="w-full bg-white border border-slate-200 pl-12 pr-4 py-4 font-bold text-xs" value={formatMoneyInput(editableOrderValue)} onChange={(e) => { const nextValue = parseMoneyInput(e.target.value) || 0; setEditableOrderValue(nextValue); if (incorporateCost && actionType === 'COMPLETE') setFinalValue(nextValue); }} placeholder="0,00" />
                           </div>
                         </div>
                       )}
                       {actionType === 'COMPLETE' && (
-                        <div className="bg-blue-50 p-6 space-y-4 border border-blue-100 mb-4">
+                        <div className="bg-emerald-50 p-4 border border-emerald-100 space-y-4">
                           <label className="flex items-center gap-3 cursor-pointer">
-                            <input type="checkbox" checked={incorporateCost} onChange={(e) => { const checked = e.target.checked; setIncorporateCost(checked); if (checked) setFinalValue(Number(editableOrderValue || isActionModalOpen.value || 0)); }} className="w-4 h-4 text-blue-600 rounded-none" />
-                            <span className="text-[10px] font-black uppercase text-blue-900">Incorporar custo automaticamente na obra</span>
+                            <input type="checkbox" checked={incorporateCost} onChange={(e) => { const checked = e.target.checked; setIncorporateCost(checked); if (checked) setFinalValue(Number(editableOrderValue || isActionModalOpen.value || 0)); }} className="w-4 h-4" />
+                            <span className="text-[9px] font-black uppercase text-emerald-700">Gerar custo da obra ao concluir</span>
                           </label>
                           {incorporateCost && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div>
-                                <label className="text-[9px] font-black text-slate-400 uppercase">Valor Final (R$)</label>
-                                <div className="relative">
-                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
-                                  <input type="text" inputMode="decimal" className="w-full bg-white border border-slate-200 pl-11 pr-3 py-2 font-black text-sm" value={formatMoneyInput(finalValue)} onChange={(e) => setFinalValue(parseMoneyInput(e.target.value) || 0)} placeholder="0,00" />
-                                </div>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] font-black">R$</span>
+                                <input type="text" inputMode="decimal" className="w-full bg-white border border-slate-200 pl-10 pr-3 py-3 font-black text-xs" value={formatMoneyInput(finalValue)} onChange={(e) => setFinalValue(parseMoneyInput(e.target.value) || 0)} placeholder="0,00" />
                               </div>
-                              <div>
-                                <label className="text-[9px] font-black text-slate-400 uppercase">Data do Custo</label>
-                                <input type="date" className="w-full bg-white border border-slate-200 px-3 py-2 font-black text-xs" value={finalDate} onChange={(e) => setFinalDate(e.target.value)} />
-                              </div>
+                              <input type="date" className="bg-white border border-slate-200 p-3 font-black text-xs" value={finalDate} onChange={(e) => setFinalDate(e.target.value)} />
                             </div>
                           )}
                         </div>
                       )}
-                      <textarea value={actionText} onChange={(e) => setActionText(e.target.value)} placeholder={actionType === 'COMPLETE' ? 'Justificativa ou parecer técnico...' : 'Motivo do cancelamento...'} className="w-full bg-slate-50 border border-slate-200 p-4 font-bold text-xs" rows={4} />
+                      <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder={actionType === 'COMPLETE' ? 'Observações finais...' : 'Motivo do cancelamento...'} value={actionText} onChange={(e) => setActionText(e.target.value)} />
                       <div className="space-y-2">
-                        <label className="text-[9px] font-black text-slate-400 uppercase">Anexos da ação</label>
                         <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'ACTION')} />
                         {renderAttachmentList(actionAttachments, removeActionAttachment, 'Nenhum anexo selecionado para esta ação.')}
                       </div>
-                      <button onClick={handleDecision} className="w-full bg-blue-600 text-white py-5 font-black uppercase text-xs tracking-widest shadow-xl">Confirmar Despacho</button>
+                      <button onClick={handleDecision} className="w-full bg-slate-900 text-white py-4 font-black uppercase text-[10px] shadow-xl">Confirmar Ação</button>
                     </div>
                   )}
-                </div>
+                </>
               )}
 
               {canCommentOnOrder(isActionModalOpen) && (
-                <div className="space-y-4 pt-6 border-t border-slate-100">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Interações Livres</h4>
-                  <textarea value={messageText} onChange={(e) => setMessageText(e.target.value)} className="w-full bg-slate-50 border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder="Registre uma orientação, alinhamento ou resposta livre do pedido..." />
-                  <div className="space-y-2">
-                    <label className="text-[9px] font-black text-slate-400 uppercase">Anexos da mensagem</label>
-                    <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'MESSAGE')} />
-                    {renderAttachmentList(messageAttachments, removeMessageAttachment, 'Nenhum anexo selecionado para esta mensagem.')}
-                  </div>
-                  <button onClick={handleSendMessage} className="w-full bg-slate-900 text-white py-4 font-black uppercase text-[10px] shadow-xl">Adicionar Interação</button>
+                <div className="space-y-4 pt-4 border-t border-slate-200">
+                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Interações Livres</h4>
+                  <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder="Registre uma orientação, alinhamento ou resposta livre..." value={messageText} onChange={(e) => setMessageText(e.target.value)} />
+                  <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'MESSAGE')} />
+                  {renderAttachmentList(messageAttachments, removeMessageAttachment, 'Nenhum anexo selecionado para esta mensagem.')}
+                  <button onClick={handleSendMessage} className="w-full bg-purple-600 text-white py-4 font-black uppercase text-[10px] shadow-xl">Adicionar Interação</button>
                 </div>
               )}
 
@@ -1673,39 +1683,13 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 </div>
               )}
 
-              {isActionModalOpen.messages && isActionModalOpen.messages.length > 0 && (
-                <div className="space-y-4">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Histórico de Mensagens</h4>
-                  <div className="space-y-4">
-                    {isActionModalOpen.messages.map((message) => {
-                      const meta = getMessageMeta(isActionModalOpen, message);
-                      return (
-                      <div key={message.id} className={`p-4 border-l-4 ${meta.classes}`}>
-                        <div className="flex justify-between text-[8px] font-black uppercase text-slate-400 mb-1">
-                          <span>{message.userName}</span>
-                          <span>{new Date(message.date).toLocaleString('pt-BR')}</span>
-                        </div>
-                        <div className="mb-2 text-[8px] font-black uppercase tracking-widest">{meta.label}</div>
-                        <p className="text-xs font-bold text-slate-600 italic">"{message.text}"</p>
-                        {message.attachments && message.attachments.length > 0 && (
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {message.attachments.map((attachment) => (
-                              <div key={attachment.id} className="flex items-center gap-2">
-                                <button type="button" onClick={() => handlePreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
-                                  Visualizar
-                                </button>
-                                <button type="button" onClick={() => downloadAttachment(attachment)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">
-                                  Download
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )})}
-                  </div>
+              {isActionModalOpen.status === 'CANCELADO' && (
+                <div className="bg-rose-50 p-6 border-l-4 border-rose-500">
+                  <h4 className="text-[11px] font-black text-rose-700 uppercase mb-2">Pedido Cancelado</h4>
+                  <p className="text-xs text-rose-800 font-medium italic">"{isActionModalOpen.cancellationReason || 'Sem motivo informado.'}"</p>
                 </div>
               )}
+              </div>
             </div>
           </div>
         </div>
