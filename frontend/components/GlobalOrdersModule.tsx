@@ -1634,6 +1634,24 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 </div>
               )}
 
+              {isActionModalOpen.status === 'CONCLUIDO' && (
+                <div className="bg-emerald-50 p-6 border-l-4 border-emerald-500">
+                  <h4 className="text-[11px] font-black text-emerald-700 uppercase mb-2">Pedido Concluído</h4>
+                  {isActionModalOpen.completionNote && <p className="text-xs text-emerald-800 font-medium mb-3">"{isActionModalOpen.completionNote}"</p>}
+                  {isActionModalOpen.completionAttachment && (
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => handlePreviewAttachment(isActionModalOpen.completionAttachment!)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
+                        Visualizar Anexo Final
+                      </button>
+                      <button type="button" onClick={() => downloadAttachment(isActionModalOpen.completionAttachment!)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">
+                        Download
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-[10px] font-black text-emerald-700 uppercase">Valor final registrado: {formatMoney(isActionModalOpen.value)}</p>
+                </div>
+              )}
+
               {isActionModalOpen.messages && isActionModalOpen.messages.length > 0 && (
                 <div className="space-y-4">
                   <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Histórico de Mensagens</h4>
