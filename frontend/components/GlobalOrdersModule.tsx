@@ -43,6 +43,22 @@ const formatOrderDate = (value?: string) => {
 
 const canPreviewAttachmentInline = (attachment: Attachment) => attachment.type.startsWith('image/') || attachment.type === 'application/pdf' || attachment.name.toLowerCase().endsWith('.pdf');
 const isObraSectorName = (name?: string) => String(name || '').trim().toUpperCase() === 'OBRA';
+const getStatusColor = (status: OrderStatus) => {
+  switch (status) {
+    case 'PENDENTE':
+      return 'bg-amber-100 text-amber-700';
+    case 'EM_ANALISE':
+      return 'bg-blue-100 text-blue-700';
+    case 'AGUARDANDO_INFORMACAO':
+      return 'bg-purple-100 text-purple-700';
+    case 'CONCLUIDO':
+      return 'bg-emerald-100 text-emerald-700';
+    case 'CANCELADO':
+      return 'bg-rose-100 text-rose-700';
+    default:
+      return 'bg-slate-100 text-slate-700';
+  }
+};
 
 const matchesDesiredDateRange = (expectedDate?: string, startDate?: string, endDate?: string) => {
   const targetDateKey = normalizeDateKey(expectedDate);
