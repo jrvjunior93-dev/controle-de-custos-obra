@@ -298,6 +298,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const isOrderActive = (order: Order) => order.status !== 'CONCLUIDO' && order.status !== 'CANCELADO';
   const canOpenOrderDetails = (order: Order) => isOrderActive(order) || user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canTreatOrder = (order: Order) => canManageAllOrders && isOrderActive(order);
+  const canReopenOrder = (order: Order) => canManageAllOrders && (order.status === 'CONCLUIDO' || order.status === 'CANCELADO');
   const canEditFinancialFields = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canDeleteOrderDirectly = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canCommentOnOrder = (order: Order) => isOrderActive(order);
@@ -680,6 +681,44 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
     if (isActionModalOpen?.id === order.id) {
       setIsActionModalOpen(null);
+    }
+  };
+
+  const handleReopenOrder = () => {
+    if (!isActionModalOpen) return;
+    if (!canReopenOrder(isActionModalOpen)) return alert('Você não pode reabrir este pedido.');
+    if (!confirm(`Reabrir o pedido "${isActionModalOpen.title}"?`)) return;
+
+    let updatedOrder: Order | null = null;
+    const updatedProject = handleProjectMutation(isActionModalOpen.projectId, (project) => ({
+      ...project,
+      orders: (project.orders || []).map((item) => {
+        if (item.id !== isActionModalOpen.id) return item;
+        updatedOrder = {
+          ...item,
+          status: 'PENDENTE',
+          messages: [...(item.messages || []), {
+            id: crypto.randomUUID(),
+            userId: 'system',
+            userName: 'SISTEMA',
+            text: `${user.name} reabriu o pedido.`,
+            date: new Date().toISOString()
+          }]
+        };
+        return updatedOrder;
+      })
+    }));
+
+    if (updatedProject) {
+      if (canManageAllOrders) {
+        persistProjectState(updatedProject);
+      } else if (updatedOrder) {
+        persistMemberOrder(isActionModalOpen.projectId, updatedOrder);
+      }
+    }
+
+    if (updatedOrder) {
+      setIsActionModalOpen(updatedOrder);
     }
   };
 
@@ -1486,6 +1525,15 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gerenciar Pedido</p>
                     <p className="text-xs font-bold text-slate-500">Exclusão permanente disponível apenas para ADMIN CENTRAL e SUPERADMIN.</p>
                   </div>
+                  {canReopenOrder(isActionModalOpen) && (
+                    <button
+                      type="button"
+                      onClick={handleReopenOrder}
+                      className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-3 text-[9px] font-black uppercase shadow-sm"
+                    >
+                      Reabrir Pedido
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleDeleteOrder(isActionModalOpen)}

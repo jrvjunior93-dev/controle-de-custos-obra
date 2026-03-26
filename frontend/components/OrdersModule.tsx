@@ -54,6 +54,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const isOrderActive = (order: Order) => order.status !== 'CONCLUIDO' && order.status !== 'CANCELADO';
   const canOpenOrderDetails = (order: Order) => isOrderActive(order) || user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canTreatOrder = (order: Order) => canManageProjectOrders && isOrderActive(order);
+  const canReopenOrder = (order: Order) => canManageProjectOrders && (order.status === 'CONCLUIDO' || order.status === 'CANCELADO');
   const canEditFinancialFields = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canDeleteOrderDirectly = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canCommentOnOrder = (order: Order) => isOrderActive(order);
@@ -412,6 +413,27 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     setIsActionModalOpen(updatedOrder);
   };
 
+  const handleReopenOrder = () => {
+    if (!isActionModalOpen) return;
+    if (!canReopenOrder(isActionModalOpen)) return alert('Você não pode reabrir este pedido.');
+    if (!confirm(`Reabrir o pedido "${isActionModalOpen.title}"?`)) return;
+
+    const updatedOrder: Order = {
+      ...isActionModalOpen,
+      status: 'PENDENTE',
+      messages: [...(isActionModalOpen.messages || []), {
+        id: crypto.randomUUID(),
+        userId: 'system',
+        userName: 'SISTEMA',
+        text: `${user.name} reabriu o pedido.`,
+        date: new Date().toISOString()
+      }]
+    };
+
+    onUpdate({ ...project, orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item) });
+    setIsActionModalOpen(updatedOrder);
+  };
+
   const getStatusColor = (status: OrderStatus) => {
     switch (status) {
       case 'PENDENTE':
@@ -751,6 +773,15 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
               </div>
 
               <div className="bg-slate-50 p-8 border-l border-slate-100 space-y-6">
+                {canReopenOrder(isActionModalOpen) && (
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Gerenciar Pedido</h4>
+                    <button onClick={handleReopenOrder} className="w-full bg-emerald-50 text-emerald-700 border border-emerald-200 py-4 font-black uppercase text-[10px] shadow-sm">
+                      Reabrir Pedido
+                    </button>
+                  </div>
+                )}
+
                 {canManageProjectOrders && isActionModalOpen.status !== 'CONCLUIDO' && isActionModalOpen.status !== 'CANCELADO' && (
                   <>
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Tratamento do Pedido</h4>
