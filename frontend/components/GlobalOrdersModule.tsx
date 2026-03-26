@@ -9,7 +9,7 @@ interface GlobalOrdersModuleProps {
   user: User;
   onUpdateProjects: (all: Project[]) => void;
   onPersistProject: (project: Project) => Promise<void>;
-  onPersistMemberOrder: (projectId: string, order: Order) => Promise<void>;
+  onPersistMemberOrder: (projectId: string, order: Order) => Promise<Order>;
   onDeleteMemberOrder: (projectId: string, orderId: string) => Promise<void>;
   orderTypes: string[];
 }
@@ -428,11 +428,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setIsEditingSectorStatus(false);
   };
 
-  const persistMemberOrder = async (projectId: string, order: Order) => {
-    if (!canManageAllOrders) {
-      await onPersistMemberOrder(projectId, order);
-    }
-  };
+  const persistMemberOrder = async (projectId: string, order: Order) => onPersistMemberOrder(projectId, order);
 
   const persistProjectState = async (project: Project) => {
     if (canManageAllOrders) {
@@ -490,11 +486,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     const previousProjects = projects;
     onUpdateProjects(projects.map((project) => project.id === targetProject.id ? updatedProject : project));
     try {
-      if (canManageAllOrders) {
-        await persistProjectState(updatedProject);
-      } else {
-        await onPersistMemberOrder(targetProject.id, order);
-      }
+      await onPersistMemberOrder(targetProject.id, order);
       setIsModalOpen(false);
       setNewOrder({ projectId: '', title: '', type: '', description: '', macroItemId: '', currentSectorId: '', expectedDate: '', value: undefined, attachments: [] });
     } catch (error) {
@@ -751,16 +743,14 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       costs: (project.costs || []).filter((cost) => cost.originOrderId !== isActionModalOpen.id)
     }));
 
-    if (updatedProject) {
-      if (canManageAllOrders) {
-        persistProjectState(updatedProject);
-      } else if (updatedOrder) {
-        persistMemberOrder(isActionModalOpen.projectId, updatedOrder);
-      }
-    }
-
     if (updatedOrder) {
-      setIsActionModalOpen(updatedOrder);
+      void (async () => {
+        const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
+        if (updatedProject) {
+          await persistProjectState({ ...updatedProject, orders: (updatedProject.orders || []).map((item) => item.id === savedOrder.id ? savedOrder : item) });
+        }
+        setIsActionModalOpen(savedOrder);
+      })();
     }
   };
 
@@ -789,13 +779,12 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       })
     }));
 
-    if (updatedProject) {
-      persistProjectState(updatedProject);
-    }
-
     if (updatedOrder) {
-      setIsActionModalOpen(updatedOrder);
-      if (incorporateCost) setFinalValue(Number(updatedOrder.value || 0));
+      void (async () => {
+        const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
+        setIsActionModalOpen(savedOrder);
+        if (incorporateCost) setFinalValue(Number(savedOrder.value || 0));
+      })();
     }
   };
 
@@ -830,17 +819,12 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       })
     }));
 
-    if (updatedProject) {
-      if (canManageAllOrders) {
-        persistProjectState(updatedProject);
-      } else if (updatedOrder) {
-        persistMemberOrder(isActionModalOpen.projectId, updatedOrder);
-      }
-    }
-
     if (updatedOrder) {
-      setIsActionModalOpen(updatedOrder);
-      setIsEditingSectorStatus(false);
+      void (async () => {
+        const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
+        setIsActionModalOpen(savedOrder);
+        setIsEditingSectorStatus(false);
+      })();
     }
   };
 
@@ -880,16 +864,9 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
     const previousProjects = projects;
     try {
-      if (updatedProject) {
-        if (canManageAllOrders) {
-          await persistProjectState(updatedProject);
-        } else if (updatedOrder) {
-          await persistMemberOrder(isActionModalOpen.projectId, updatedOrder);
-        }
-      }
-
       if (updatedOrder) {
-        setIsActionModalOpen(updatedOrder);
+        const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder);
+        setIsActionModalOpen(savedOrder);
       }
 
       setMessageText('');
@@ -963,15 +940,16 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     });
 
     try {
-      if (updatedProject) {
-        if (canManageAllOrders) {
-          await persistProjectState(updatedProject);
-        } else {
-          await persistMemberOrder(updated.projectId, updated);
-        }
+      const savedOrder = await persistMemberOrder(updated.projectId, updated);
+      const shouldPersistCosts = !!newCost || ((updatedProject?.costs || []).length !== (previousProjects.find((project) => project.id === updated.projectId)?.costs || []).length);
+      if (updatedProject && shouldPersistCosts) {
+        await persistProjectState({
+          ...updatedProject,
+          orders: (updatedProject.orders || []).map((order) => order.id === savedOrder.id ? savedOrder : order)
+        });
       }
 
-      setIsActionModalOpen(updated);
+      setIsActionModalOpen(savedOrder);
       setActionType('NONE');
       setActionText('');
       setActionAttachments([]);
@@ -1008,12 +986,11 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       })
     }));
 
-    if (updatedProject) {
-      persistProjectState(updatedProject);
-    }
-
     if (updatedOrder) {
-      setIsActionModalOpen(updatedOrder);
+      void (async () => {
+        const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
+        setIsActionModalOpen(savedOrder);
+      })();
     }
   };
 
@@ -1052,11 +1029,11 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       })
     }));
 
-    if (updatedProject) {
-      persistProjectState(updatedProject);
-    }
     if (updatedOrder) {
-      setIsActionModalOpen(updatedOrder);
+      void (async () => {
+        const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
+        setIsActionModalOpen(savedOrder);
+      })();
     }
   };
 

@@ -1,11 +1,13 @@
 ﻿import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
-import { Project, Sector, User, isGlobalAdmin, isProjectAdmin } from '../types';
+import { Order, Project, Sector, User, isGlobalAdmin, isProjectAdmin } from '../types';
 
 interface ProjectDetailProps {
   project: Project;
   sectors: Sector[];
   user: User;
   onUpdate: (p: Project) => Promise<void> | void;
+  onPersistOrder: (projectId: string, order: Order) => Promise<Order>;
+  onDeleteOrder: (projectId: string, orderId: string) => Promise<void>;
   onBack: () => void;
 }
 
@@ -26,7 +28,7 @@ const TabFallback: React.FC = () => (
   </div>
 );
 
-export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, user, onUpdate, onBack }) => {
+export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, user, onUpdate, onPersistOrder, onDeleteOrder, onBack }) => {
   const [activeTab, setActiveTab] = useState<Tab>('RESUMO');
   const [reportMode, setReportMode] = useState<ReportMode>('CUSTO');
   const [exportStatus, setExportStatus] = useState<ExportStatus>('IDLE');
@@ -180,7 +182,7 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, 
           {canAccessFullProjectTabs && activeTab === 'ORCAMENTO' && <BudgetModule budget={currentBudget} onDraftChange={setBudgetDraft} draftKey={budgetDraftStorageKey} onSave={(budget) => { setBudgetDraft(budget); onUpdate({ ...project, budget }); }} />}
           {canAccessFullProjectTabs && activeTab === 'CUSTOS' && <CostModule project={project} onSave={(costs) => onUpdate({ ...project, costs })} canManageCosts={user.role === 'SUPERADMIN'} />}
           {canAccessFullProjectTabs && activeTab === 'PARCELAMENTOS' && <InstallmentsModule project={project} onUpdate={onUpdate} />}
-          {canAccessFullProjectTabs && activeTab === 'PEDIDOS' && <OrdersModule project={project} sectors={sectors} user={user} onUpdate={onUpdate} />}
+          {canAccessFullProjectTabs && activeTab === 'PEDIDOS' && <OrdersModule project={project} sectors={sectors} user={user} onUpdate={onUpdate} onPersistOrder={onPersistOrder} onDeleteOrder={onDeleteOrder} />}
           {activeTab === 'ARQUIVOS' && <AttachmentsModule project={project} onUpdate={onUpdate} isAdmin={canManageProject} />}
         </div>
 

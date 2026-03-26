@@ -8,6 +8,8 @@ interface OrdersModuleProps {
   sectors: Sector[];
   user: User;
   onUpdate: (project: Project) => Promise<void> | void;
+  onPersistOrder: (projectId: string, order: Order) => Promise<Order>;
+  onDeleteOrder: (projectId: string, orderId: string) => Promise<void>;
 }
 
 const formatMoney = (value?: number) => `R$ ${(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -20,7 +22,7 @@ const parseMoneyInput = (value: string) => {
 const canPreviewAttachmentInline = (attachment: Attachment) => attachment.type.startsWith('image/') || attachment.type === 'application/pdf' || attachment.name.toLowerCase().endsWith('.pdf');
 const formatOrderDate = (value?: string) => value ? new Date(value).toLocaleDateString('pt-BR') : '-';
 
-export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, user, onUpdate }) => {
+export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, user, onUpdate, onPersistOrder, onDeleteOrder }) => {
   const canManageProjectOrders = user.role === 'SUPERADMIN' || (canManageAssignedOrders(user.role) && user.assignedProjectIds?.includes(project.id));
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isActionModalOpen, setIsActionModalOpen] = useState<Order | null>(null);
@@ -213,6 +215,13 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     })();
   };
 
+  const mergeOrderIntoProject = (order: Order) => ({
+    ...project,
+    orders: orders.some((item) => item.id === order.id)
+      ? orders.map((item) => item.id === order.id ? order : item)
+      : [...orders, order]
+  });
+
   const handleCreateOrder = async (event: React.FormEvent) => {
     event.preventDefault();
     const normalizedType = String(newOrder.type || '').trim().toUpperCase();
@@ -256,7 +265,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     };
 
     try {
-      await onUpdate({ ...project, orders: [...orders, order] });
+      await onPersistOrder(project.id, order);
       setIsModalOpen(false);
       setNewOrder({ title: '', type: '', description: '', macroItemId: '', currentSectorId: '', expectedDate: '', value: undefined, attachments: [] });
     } catch (error) {
@@ -269,7 +278,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     if (!canDeleteOrderDirectly) return alert('Somente ADMIN CENTRAL e SUPERADMIN podem excluir pedidos.');
     if (confirm(`Deseja realmente excluir o pedido "${order.title}" permanentemente?`)) {
       try {
-        await onUpdate({ ...project, orders: orders.filter((item) => item.id !== order.id) });
+        await onDeleteOrder(project.id, order.id);
         if (isActionModalOpen?.id === order.id) {
           setIsActionModalOpen(null);
         }
@@ -297,8 +306,8 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       messages: [...(order.messages || []), msg]
     };
     try {
-      await onUpdate({ ...project, orders: orders.map((item) => item.id === updated.id ? updated : item) });
-      setIsActionModalOpen(updated);
+      const savedOrder = await onPersistOrder(project.id, updated);
+      setIsActionModalOpen(savedOrder);
       setMessageText('');
       setMessageAttachments([]);
     } catch (error) {
@@ -358,12 +367,16 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
 
     const costsWithoutOrder = (project.costs || []).filter((cost) => cost.originOrderId !== updatedOrder.id);
     try {
-      await onUpdate({
-        ...project,
-        orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item),
-        costs: newCost ? [...costsWithoutOrder, newCost] : costsWithoutOrder
-      });
-      setIsActionModalOpen(updatedOrder);
+      const savedOrder = await onPersistOrder(project.id, updatedOrder);
+      const shouldPersistCosts = !!newCost || costsWithoutOrder.length !== (project.costs || []).length;
+      if (shouldPersistCosts) {
+        await onUpdate({
+          ...project,
+          orders: orders.map((item) => item.id === savedOrder.id ? savedOrder : item),
+          costs: newCost ? [...costsWithoutOrder, newCost] : costsWithoutOrder
+        });
+      }
+      setIsActionModalOpen(savedOrder);
       setActionType('NONE');
       setActionText('');
       setActionAttachments([]);
@@ -390,9 +403,11 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
         date: new Date().toISOString()
       }]
     };
-    onUpdate({ ...project, orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item) });
-    setIsActionModalOpen(updatedOrder);
-    setIsEditingSectorStatus(false);
+    void (async () => {
+      const savedOrder = await onPersistOrder(project.id, updatedOrder);
+      setIsActionModalOpen(savedOrder);
+      setIsEditingSectorStatus(false);
+    })();
   };
 
   const handleSaveSectorStatus = () => {
@@ -417,12 +432,10 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
         date: new Date().toISOString()
       }]
     };
-    onUpdate({
-      ...project,
-      orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item),
-      costs: (project.costs || []).filter((cost) => cost.originOrderId !== updatedOrder.id)
-    });
-    setIsActionModalOpen(updatedOrder);
+    void (async () => {
+      const savedOrder = await onPersistOrder(project.id, updatedOrder);
+      setIsActionModalOpen(savedOrder);
+    })();
   };
 
   const handleForwardOrder = () => {
@@ -452,8 +465,10 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       }]
     };
 
-    onUpdate({ ...project, orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item) });
-    setIsActionModalOpen(updatedOrder);
+    void (async () => {
+      const savedOrder = await onPersistOrder(project.id, updatedOrder);
+      setIsActionModalOpen(savedOrder);
+    })();
   };
 
   const handleReopenOrder = () => {
@@ -473,8 +488,10 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       }]
     };
 
-    onUpdate({ ...project, orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item) });
-    setIsActionModalOpen(updatedOrder);
+    void (async () => {
+      const savedOrder = await onPersistOrder(project.id, updatedOrder);
+      setIsActionModalOpen(savedOrder);
+    })();
   };
 
   const getStatusColor = (status: OrderStatus) => {

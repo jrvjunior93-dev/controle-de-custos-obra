@@ -544,14 +544,18 @@ const App: React.FC = () => {
 
   const handleSyncMemberOrder = async (projectId: string, order: any) => {
     const savedOrder = await dbService.upsertProjectOrder(projectId, order);
+    const normalizedOrder = normalizeProjectRecord({
+      ...(projects.find((project) => project.id === projectId) || { id: projectId, code: '', name: '', location: '', startDate: '', notes: '', budget: [], costs: [], installments: [], orders: [] }),
+      orders: [savedOrder]
+    }).orders?.[0] || savedOrder;
     setProjects((currentProjects) => currentProjects.map((project) => {
       if (project.id !== projectId) return project;
-      const normalizedOrder = normalizeProjectRecord({ ...project, orders: [savedOrder] }).orders?.[0] || savedOrder;
       const nextOrders = (project.orders || []).some((item) => item.id === order.id || item.id === normalizedOrder.id)
         ? (project.orders || []).map((item) => item.id === order.id || item.id === normalizedOrder.id ? normalizedOrder : item)
         : [...(project.orders || []), normalizedOrder];
       return { ...project, orders: nextOrders };
     }));
+    return normalizedOrder;
   };
 
   const handleDeleteMemberOrder = async (projectId: string, orderId: string) => {
@@ -711,7 +715,7 @@ const App: React.FC = () => {
         <Suspense fallback={<ScreenFallback />}>
           {view === 'PROJECT_DETAIL' && visibleProjects.find((p) => p.id === selectedProjectId) && (
 
-            <ProjectDetail project={visibleProjects.find((p) => p.id === selectedProjectId)!} sectors={sectors} user={user} onUpdate={handleSaveProject} onBack={() => setView('PROJECT_LIST')} />
+            <ProjectDetail project={visibleProjects.find((p) => p.id === selectedProjectId)!} sectors={sectors} user={user} onUpdate={handleSaveProject} onPersistOrder={handleSyncMemberOrder} onDeleteOrder={handleDeleteMemberOrder} onBack={() => setView('PROJECT_LIST')} />
 
           )}
 
