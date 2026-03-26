@@ -52,6 +52,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const isOtherOrderType = (value?: string) => String(value || '').trim().toUpperCase() === 'OUTROS';
   const isNewOrderOtherType = isOtherOrderType(newOrder.type);
   const isOrderActive = (order: Order) => order.status !== 'CONCLUIDO' && order.status !== 'CANCELADO';
+  const canOpenOrderDetails = (order: Order) => isOrderActive(order) || user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canTreatOrder = (order: Order) => canManageProjectOrders && isOrderActive(order);
   const canEditFinancialFields = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canDeleteOrderDirectly = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
@@ -96,6 +97,10 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   };
 
   const openOrderModal = (order: Order) => {
+    if (!canOpenOrderDetails(order)) {
+      alert('Somente ADMIN CENTRAL e SUPERADMIN podem abrir pedidos finalizados ou cancelados.');
+      return;
+    }
     setIsActionModalOpen(order);
     resetActionState();
     const currentValue = Number(order.value || 0);
