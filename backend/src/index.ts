@@ -51,6 +51,7 @@ const geminiExtractionSchema = z.object({
 });
 const resolveAttachmentSchema = z.object({
   attachment: z.object({
+    id: z.union([z.string(), z.number()]).optional(),
     data: z.string().optional(),
     type: z.string().optional(),
     mimeType: z.string().optional(),
@@ -1544,15 +1545,81 @@ app.get("/auth/me", requireAuth, async (req: AuthRequest, res) => {
 app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
   const parsed = resolveAttachmentSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid attachment payload" });
+  if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
 
   const { attachment } = parsed.data;
-  const data = await resolveAttachmentData({
+  const attachmentId = Number(attachment.id);
+  let resolvedSource = {
     data: attachment.data,
     mimeType: String(attachment.type || attachment.mimeType || "application/octet-stream"),
     storageProvider: attachment.storageProvider,
     storageBucket: attachment.storageBucket,
     storageKey: attachment.storageKey,
-  });
+  };
+
+  if (Number.isFinite(attachmentId) && attachmentId > 0) {
+    const orderAttachment = await prisma.orderAttachment.findUnique({
+      where: { id: attachmentId },
+      include: { order: { select: { projectId: true } } }
+    });
+
+    if (orderAttachment && await canAccessProject(req.authUser, orderAttachment.order.projectId)) {
+      resolvedSource = {
+        data: orderAttachment.data || "",
+        mimeType: orderAttachment.mimeType,
+        storageProvider: orderAttachment.storageProvider || undefined,
+        storageBucket: orderAttachment.storageBucket || undefined,
+        storageKey: orderAttachment.storageKey || undefined,
+      };
+    } else {
+      const orderMessageAttachment = await prisma.orderMessageAttachment.findUnique({
+        where: { id: attachmentId },
+        include: { message: { include: { order: { select: { projectId: true } } } } }
+      });
+
+      if (orderMessageAttachment && await canAccessProject(req.authUser, orderMessageAttachment.message.order.projectId)) {
+        resolvedSource = {
+          data: orderMessageAttachment.data || "",
+          mimeType: orderMessageAttachment.mimeType,
+          storageProvider: orderMessageAttachment.storageProvider || undefined,
+          storageBucket: orderMessageAttachment.storageBucket || undefined,
+          storageKey: orderMessageAttachment.storageKey || undefined,
+        };
+      } else {
+        const costAttachment = await prisma.costAttachment.findUnique({
+          where: { id: attachmentId },
+          include: { cost: { select: { projectId: true } } }
+        });
+
+        if (costAttachment && await canAccessProject(req.authUser, costAttachment.cost.projectId)) {
+          resolvedSource = {
+            data: costAttachment.data || "",
+            mimeType: costAttachment.mimeType,
+            storageProvider: costAttachment.storageProvider || undefined,
+            storageBucket: costAttachment.storageBucket || undefined,
+            storageKey: costAttachment.storageKey || undefined,
+          };
+        } else {
+          const installmentAttachment = await prisma.installmentAttachment.findUnique({
+            where: { id: attachmentId },
+            include: { installment: { select: { projectId: true } } }
+          });
+
+          if (installmentAttachment && await canAccessProject(req.authUser, installmentAttachment.installment.projectId)) {
+            resolvedSource = {
+              data: installmentAttachment.data || "",
+              mimeType: installmentAttachment.mimeType,
+              storageProvider: installmentAttachment.storageProvider || undefined,
+              storageBucket: installmentAttachment.storageBucket || undefined,
+              storageKey: installmentAttachment.storageKey || undefined,
+            };
+          }
+        }
+      }
+    }
+  }
+
+  const data = await resolveAttachmentData(resolvedSource);
 
   return res.json({ data });
 });
