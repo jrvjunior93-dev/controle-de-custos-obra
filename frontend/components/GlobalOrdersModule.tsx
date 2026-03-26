@@ -706,7 +706,8 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
           }]
         };
         return updatedOrder;
-      })
+      }),
+      costs: (project.costs || []).filter((cost) => cost.originOrderId !== isActionModalOpen.id)
     }));
 
     if (updatedProject) {
@@ -903,11 +904,14 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       }];
     }
 
-    const updatedProject = handleProjectMutation(updated.projectId, (project) => ({
-      ...project,
-      orders: (project.orders || []).map((order) => order.id === updated.id ? updated : order),
-      costs: newCost ? [...(project.costs || []), newCost] : (project.costs || [])
-    }));
+    const updatedProject = handleProjectMutation(updated.projectId, (project) => {
+      const costsWithoutOrder = (project.costs || []).filter((cost) => cost.originOrderId !== updated.id);
+      return {
+        ...project,
+        orders: (project.orders || []).map((order) => order.id === updated.id ? updated : order),
+        costs: newCost ? [...costsWithoutOrder, newCost] : costsWithoutOrder
+      };
+    });
 
     if (updatedProject) {
       if (canManageAllOrders) {

@@ -323,10 +323,11 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       }];
     }
 
+    const costsWithoutOrder = (project.costs || []).filter((cost) => cost.originOrderId !== updatedOrder.id);
     onUpdate({
       ...project,
       orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item),
-      costs: newCost ? [...(project.costs || []), newCost] : (project.costs || [])
+      costs: newCost ? [...costsWithoutOrder, newCost] : costsWithoutOrder
     });
     setIsActionModalOpen(updatedOrder);
     setActionType('NONE');
@@ -378,7 +379,11 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
         date: new Date().toISOString()
       }]
     };
-    onUpdate({ ...project, orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item) });
+    onUpdate({
+      ...project,
+      orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item),
+      costs: (project.costs || []).filter((cost) => cost.originOrderId !== updatedOrder.id)
+    });
     setIsActionModalOpen(updatedOrder);
   };
 
