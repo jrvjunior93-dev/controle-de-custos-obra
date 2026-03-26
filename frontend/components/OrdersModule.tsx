@@ -7,7 +7,7 @@ interface OrdersModuleProps {
   project: Project;
   sectors: Sector[];
   user: User;
-  onUpdate: (project: Project) => void;
+  onUpdate: (project: Project) => Promise<void> | void;
 }
 
 const formatMoney = (value?: number) => `R$ ${(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -213,7 +213,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     })();
   };
 
-  const handleCreateOrder = (event: React.FormEvent) => {
+  const handleCreateOrder = async (event: React.FormEvent) => {
     event.preventDefault();
     const normalizedType = String(newOrder.type || '').trim().toUpperCase();
     const isOtherType = isOtherOrderType(normalizedType);
@@ -255,22 +255,32 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       createdAt: new Date().toISOString()
     };
 
-    onUpdate({ ...project, orders: [...orders, order] });
-    setIsModalOpen(false);
-    setNewOrder({ title: '', type: '', description: '', macroItemId: '', currentSectorId: '', expectedDate: '', value: undefined, attachments: [] });
+    try {
+      await onUpdate({ ...project, orders: [...orders, order] });
+      setIsModalOpen(false);
+      setNewOrder({ title: '', type: '', description: '', macroItemId: '', currentSectorId: '', expectedDate: '', value: undefined, attachments: [] });
+    } catch (error) {
+      console.error('Erro ao criar pedido:', error);
+      alert('Não foi possível salvar o pedido. Tente novamente.');
+    }
   };
 
-  const handleDeleteOrder = (order: Order) => {
+  const handleDeleteOrder = async (order: Order) => {
     if (!canDeleteOrderDirectly) return alert('Somente ADMIN CENTRAL e SUPERADMIN podem excluir pedidos.');
     if (confirm(`Deseja realmente excluir o pedido "${order.title}" permanentemente?`)) {
-      onUpdate({ ...project, orders: orders.filter((item) => item.id !== order.id) });
-      if (isActionModalOpen?.id === order.id) {
-        setIsActionModalOpen(null);
+      try {
+        await onUpdate({ ...project, orders: orders.filter((item) => item.id !== order.id) });
+        if (isActionModalOpen?.id === order.id) {
+          setIsActionModalOpen(null);
+        }
+      } catch (error) {
+        console.error('Erro ao excluir pedido:', error);
+        alert('Não foi possível excluir o pedido. Tente novamente.');
       }
     }
   };
 
-  const handleSendMessage = (order: Order) => {
+  const handleSendMessage = async (order: Order) => {
     if (!canCommentOnOrder(order)) return alert('Este pedido não aceita mais interações.');
     if (!messageText.trim()) return alert('Escreva sua interação.');
     if (!confirm(`Confirmar envio da interação para o pedido "${order.title}"?`)) return;
@@ -286,13 +296,18 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       ...order,
       messages: [...(order.messages || []), msg]
     };
-    onUpdate({ ...project, orders: orders.map((item) => item.id === updated.id ? updated : item) });
-    setIsActionModalOpen(updated);
-    setMessageText('');
-    setMessageAttachments([]);
+    try {
+      await onUpdate({ ...project, orders: orders.map((item) => item.id === updated.id ? updated : item) });
+      setIsActionModalOpen(updated);
+      setMessageText('');
+      setMessageAttachments([]);
+    } catch (error) {
+      console.error('Erro ao salvar interação do pedido:', error);
+      alert('Não foi possível salvar a interação. Tente novamente.');
+    }
   };
 
-  const handleAction = () => {
+  const handleAction = async () => {
     if (!isActionModalOpen || actionType === 'NONE') return;
     if (!canTreatOrder(isActionModalOpen)) return alert('Você não pode tratar este pedido.');
     if (actionType === 'CANCEL' && !actionText.trim()) return alert('Preencha a mensagem do cancelamento antes de continuar.');
@@ -342,15 +357,20 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     }
 
     const costsWithoutOrder = (project.costs || []).filter((cost) => cost.originOrderId !== updatedOrder.id);
-    onUpdate({
-      ...project,
-      orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item),
-      costs: newCost ? [...costsWithoutOrder, newCost] : costsWithoutOrder
-    });
-    setIsActionModalOpen(updatedOrder);
-    setActionType('NONE');
-    setActionText('');
-    setActionAttachments([]);
+    try {
+      await onUpdate({
+        ...project,
+        orders: orders.map((item) => item.id === updatedOrder.id ? updatedOrder : item),
+        costs: newCost ? [...costsWithoutOrder, newCost] : costsWithoutOrder
+      });
+      setIsActionModalOpen(updatedOrder);
+      setActionType('NONE');
+      setActionText('');
+      setActionAttachments([]);
+    } catch (error) {
+      console.error('Erro ao atualizar status do pedido:', error);
+      alert('Não foi possível concluir a atualização do pedido. Tente novamente.');
+    }
   };
 
   const handleUpdateMacroItem = () => {

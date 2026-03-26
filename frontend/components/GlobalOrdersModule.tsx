@@ -411,19 +411,19 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setIsEditingSectorStatus(false);
   };
 
-  const persistMemberOrder = (projectId: string, order: Order) => {
+  const persistMemberOrder = async (projectId: string, order: Order) => {
     if (!canManageAllOrders) {
-      void onPersistMemberOrder(projectId, order);
+      await onPersistMemberOrder(projectId, order);
     }
   };
 
-  const persistProjectState = (project: Project) => {
+  const persistProjectState = async (project: Project) => {
     if (canManageAllOrders) {
-      void onPersistProject(project);
+      await onPersistProject(project);
     }
   };
 
-  const handleCreateOrder = (event: React.FormEvent) => {
+  const handleCreateOrder = async (event: React.FormEvent) => {
     event.preventDefault();
     const normalizedType = String(newOrder.type || '').trim().toUpperCase();
     const isOtherType = isOtherOrderType(normalizedType);
@@ -470,14 +470,21 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     };
 
     const updatedProject = { ...targetProject, orders: [...(targetProject.orders || []), order] };
+    const previousProjects = projects;
     onUpdateProjects(projects.map((project) => project.id === targetProject.id ? updatedProject : project));
-    if (canManageAllOrders) {
-      persistProjectState(updatedProject);
-    } else {
-      void onPersistMemberOrder(targetProject.id, order);
+    try {
+      if (canManageAllOrders) {
+        await persistProjectState(updatedProject);
+      } else {
+        await onPersistMemberOrder(targetProject.id, order);
+      }
+      setIsModalOpen(false);
+      setNewOrder({ projectId: '', title: '', type: '', description: '', macroItemId: '', currentSectorId: '', expectedDate: '', value: undefined, attachments: [] });
+    } catch (error) {
+      console.error('Erro ao criar pedido:', error);
+      onUpdateProjects(previousProjects);
+      alert('Não foi possível salvar o pedido. Tente novamente.');
     }
-    setIsModalOpen(false);
-    setNewOrder({ projectId: '', title: '', type: '', description: '', macroItemId: '', currentSectorId: '', expectedDate: '', value: undefined, attachments: [] });
   };
 
   const handleImportOrders = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -829,7 +836,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     return nextProject;
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!isActionModalOpen || !messageText.trim()) return alert('Escreva a interação que deseja registrar.');
     if (!canCommentOnOrder(isActionModalOpen)) return alert('Este pedido não aceita mais interações.');
     if (!confirm(`Adicionar interação ao pedido "${isActionModalOpen.title}"?`)) return;
@@ -854,23 +861,30 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       })
     }));
 
-    if (updatedProject) {
-      if (canManageAllOrders) {
-        persistProjectState(updatedProject);
-      } else if (updatedOrder) {
-        persistMemberOrder(isActionModalOpen.projectId, updatedOrder);
+    const previousProjects = projects;
+    try {
+      if (updatedProject) {
+        if (canManageAllOrders) {
+          await persistProjectState(updatedProject);
+        } else if (updatedOrder) {
+          await persistMemberOrder(isActionModalOpen.projectId, updatedOrder);
+        }
       }
-    }
 
-    if (updatedOrder) {
-      setIsActionModalOpen(updatedOrder);
-    }
+      if (updatedOrder) {
+        setIsActionModalOpen(updatedOrder);
+      }
 
-    setMessageText('');
-    setMessageAttachments([]);
+      setMessageText('');
+      setMessageAttachments([]);
+    } catch (error) {
+      console.error('Erro ao salvar interação do pedido:', error);
+      onUpdateProjects(previousProjects);
+      alert('Não foi possível salvar a interação. Tente novamente.');
+    }
   };
 
-  const handleDecision = () => {
+  const handleDecision = async () => {
     if (!isActionModalOpen || actionType === 'NONE') return;
     if (!canTreatOrder(isActionModalOpen)) return alert('Você não pode tratar este pedido.');
     if (actionType === 'CANCEL' && !actionText.trim()) return alert('Preencha a mensagem do cancelamento antes de continuar.');
@@ -921,6 +935,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       }];
     }
 
+    const previousProjects = projects;
     const updatedProject = handleProjectMutation(updated.projectId, (project) => {
       const costsWithoutOrder = (project.costs || []).filter((cost) => cost.originOrderId !== updated.id);
       return {
@@ -930,18 +945,24 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       };
     });
 
-    if (updatedProject) {
-      if (canManageAllOrders) {
-        persistProjectState(updatedProject);
-      } else {
-        persistMemberOrder(updated.projectId, updated);
+    try {
+      if (updatedProject) {
+        if (canManageAllOrders) {
+          await persistProjectState(updatedProject);
+        } else {
+          await persistMemberOrder(updated.projectId, updated);
+        }
       }
-    }
 
-    setIsActionModalOpen(updated);
-    setActionType('NONE');
-    setActionText('');
-    setActionAttachments([]);
+      setIsActionModalOpen(updated);
+      setActionType('NONE');
+      setActionText('');
+      setActionAttachments([]);
+    } catch (error) {
+      console.error('Erro ao concluir atualização do pedido:', error);
+      onUpdateProjects(previousProjects);
+      alert('Não foi possível salvar a alteração do pedido. Tente novamente.');
+    }
   };
 
   const handleUpdateMacroItem = () => {

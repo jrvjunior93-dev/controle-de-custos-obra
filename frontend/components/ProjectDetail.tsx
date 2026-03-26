@@ -5,7 +5,7 @@ interface ProjectDetailProps {
   project: Project;
   sectors: Sector[];
   user: User;
-  onUpdate: (p: Project) => void;
+  onUpdate: (p: Project) => Promise<void> | void;
   onBack: () => void;
 }
 

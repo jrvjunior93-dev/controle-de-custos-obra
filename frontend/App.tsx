@@ -711,7 +711,7 @@ const App: React.FC = () => {
         <Suspense fallback={<ScreenFallback />}>
           {view === 'PROJECT_DETAIL' && visibleProjects.find((p) => p.id === selectedProjectId) && (
 
-            <ProjectDetail project={visibleProjects.find((p) => p.id === selectedProjectId)!} sectors={sectors} user={user} onUpdate={(up) => { void handleSaveProject(up); }} onBack={() => setView('PROJECT_LIST')} />
+            <ProjectDetail project={visibleProjects.find((p) => p.id === selectedProjectId)!} sectors={sectors} user={user} onUpdate={handleSaveProject} onBack={() => setView('PROJECT_LIST')} />
 
           )}
 
