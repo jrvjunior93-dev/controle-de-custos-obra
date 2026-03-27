@@ -859,20 +859,6 @@ const renderListStatusBadge = (order: Order) => {
                     )}
                   </div>
                 </div>
-                {canEditFinancialFields && isActionModalOpen.status === 'CONCLUIDO' && (
-                  <div className="bg-white border border-slate-100 p-4 space-y-3">
-                    <label className="text-[9px] font-black text-slate-400 uppercase block">Aplicação no Custo da Obra</label>
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input type="checkbox" checked={applyOrderCost} onChange={(event) => setApplyOrderCost(event.target.checked)} className="w-4 h-4" />
-                      <span className="text-[10px] font-black uppercase text-slate-700">
-                        {applyOrderCost ? 'Valor vinculado ao custo da obra' : 'Não vincular valor ao custo da obra'}
-                      </span>
-                    </label>
-                    <button type="button" onClick={() => void handleSaveCostAssignment()} className="w-full bg-slate-900 text-white py-2 font-black uppercase text-[9px] tracking-widest">
-                      Salvar Vinculação de Custo
-                    </button>
-                  </div>
-                )}
                 {canForwardOrder(isActionModalOpen) && sectors.length > 0 && (
                   <div className="bg-white border border-slate-100 p-4 space-y-3">
                     <label className="text-[9px] font-black text-slate-400 uppercase block">Encaminhar para Outro Setor</label>
@@ -947,25 +933,30 @@ const renderListStatusBadge = (order: Order) => {
                   </div>
                 )}
 
-                {canManageProjectOrders && isActionModalOpen.status !== 'CONCLUIDO' && isActionModalOpen.status !== 'CANCELADO' && (
-                  <>
-                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Tratamento do Pedido</h4>
-                    <div className="flex bg-white p-1 shadow-sm border border-slate-200">
-                      {[{ id: 'COMPLETE', label: 'Concluir' }, { id: 'CANCEL', label: 'Cancelar' }].map((item) => (
-                        <button key={item.id} onClick={() => setActionType(item.id as 'COMPLETE' | 'CANCEL')} className={`flex-1 py-3 text-[9px] font-black uppercase transition-all ${actionType === item.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}>{item.label}</button>
-                      ))}
+                {canEditFinancialFields && (
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Atribuir Custo à Obra</h4>
+                    <div className="bg-white border border-slate-200 p-4 space-y-4 shadow-sm">
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={applyOrderCost}
+                          onChange={(event) => setApplyOrderCost(event.target.checked)}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-[10px] font-black uppercase text-slate-700">
+                          {applyOrderCost ? 'Valor vinculado ao custo da obra' : 'Não vincular valor ao custo da obra'}
+                        </span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => void handleSaveCostAssignment()}
+                        className="w-full bg-slate-900 text-white py-4 font-black uppercase text-[10px] shadow-xl"
+                      >
+                        Salvar Vinculação de Custo
+                      </button>
                     </div>
-                    {actionType !== 'NONE' && (
-                      <div className="space-y-4 animate-in fade-in duration-200">
-                        <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder={actionType === 'COMPLETE' ? 'Observações finais...' : 'Motivo do cancelamento...'} value={actionText} onChange={(e) => setActionText(e.target.value)} />
-                        <div className="space-y-2">
-                          <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'ACTION')} />
-                          {renderAttachmentList(actionAttachments, removeActionAttachment, 'Nenhum anexo selecionado para esta ação.')}
-                        </div>
-                        <button onClick={handleAction} className="w-full bg-slate-900 text-white py-4 font-black uppercase text-[10px] shadow-xl">Confirmar Ação</button>
-                      </div>
-                    )}
-                  </>
+                  </div>
                 )}
 
                 {canCommentOnOrder(isActionModalOpen) && (

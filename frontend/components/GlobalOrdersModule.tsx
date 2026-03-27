@@ -1642,25 +1642,30 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 </div>
               )}
 
-              {canManageAllOrders && (isActionModalOpen.status === 'PENDENTE' || isActionModalOpen.status === 'EM_ANALISE' || isActionModalOpen.status === 'AGUARDANDO_INFORMACAO') && (
-                <>
-                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Tratamento do Pedido</h4>
-                  <div className="flex bg-white p-1 shadow-sm border border-slate-200">
-                    {[{ id: 'COMPLETE', label: 'Concluir' }, { id: 'CANCEL', label: 'Cancelar' }].map((item) => (
-                      <button key={item.id} onClick={() => setActionType(item.id as 'COMPLETE' | 'CANCEL')} className={`flex-1 py-3 text-[9px] font-black uppercase transition-all ${actionType === item.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}>{item.label}</button>
-                    ))}
+              {canEditFinancialFields && (
+                <div className="space-y-4">
+                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Atribuir Custo à Obra</h4>
+                  <div className="bg-white border border-slate-200 p-4 space-y-4 shadow-sm">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={applyOrderCost}
+                        onChange={(event) => setApplyOrderCost(event.target.checked)}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-[10px] font-black uppercase text-slate-700">
+                        {applyOrderCost ? 'Valor vinculado ao custo da obra' : 'Não vincular valor ao custo da obra'}
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveCostAssignment()}
+                      className="w-full bg-slate-900 text-white py-4 font-black uppercase text-[10px] shadow-xl"
+                    >
+                      Salvar Vinculação de Custo
+                    </button>
                   </div>
-                  {actionType !== 'NONE' && (
-                    <div className="space-y-4 animate-in fade-in duration-200">
-                      <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder={actionType === 'COMPLETE' ? 'Observações finais...' : 'Motivo do cancelamento...'} value={actionText} onChange={(e) => setActionText(e.target.value)} />
-                      <div className="space-y-2">
-                        <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'ACTION')} />
-                        {renderAttachmentList(actionAttachments, removeActionAttachment, 'Nenhum anexo selecionado para esta ação.')}
-                      </div>
-                      <button onClick={handleDecision} className="w-full bg-slate-900 text-white py-4 font-black uppercase text-[10px] shadow-xl">Confirmar Ação</button>
-                    </div>
-                  )}
-                </>
+                </div>
               )}
 
               {canCommentOnOrder(isActionModalOpen) && (
@@ -1673,10 +1678,10 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 </div>
               )}
 
-              {isActionModalOpen.status === 'CONCLUIDO' && (
-                <div className="bg-emerald-50 p-6 border-l-4 border-emerald-500">
-                  <h4 className="text-[11px] font-black text-emerald-700 uppercase mb-2">Pedido Concluído</h4>
-                  {isActionModalOpen.completionNote && <p className="text-xs text-emerald-800 font-medium mb-3">"{isActionModalOpen.completionNote}"</p>}
+                {isActionModalOpen.status === 'CONCLUIDO' && (
+                  <div className="bg-emerald-50 p-6 border-l-4 border-emerald-500">
+                    <h4 className="text-[11px] font-black text-emerald-700 uppercase mb-2">Pedido Concluído</h4>
+                    {isActionModalOpen.completionNote && <p className="text-xs text-emerald-800 font-medium mb-3">"{isActionModalOpen.completionNote}"</p>}
                   {isActionModalOpen.completionAttachment && (
                     <div className="mb-3 flex flex-wrap gap-2">
                       <button type="button" onClick={() => handlePreviewAttachment(isActionModalOpen.completionAttachment!)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
@@ -1691,12 +1696,12 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 </div>
               )}
 
-              {isActionModalOpen.status === 'CANCELADO' && (
-                <div className="bg-rose-50 p-6 border-l-4 border-rose-500">
-                  <h4 className="text-[11px] font-black text-rose-700 uppercase mb-2">Pedido Cancelado</h4>
-                  <p className="text-xs text-rose-800 font-medium italic">"{isActionModalOpen.cancellationReason || 'Sem motivo informado.'}"</p>
-                </div>
-              )}
+                {isActionModalOpen.status === 'CANCELADO' && (
+                  <div className="bg-rose-50 p-6 border-l-4 border-rose-500">
+                    <h4 className="text-[11px] font-black text-rose-700 uppercase mb-2">Pedido Cancelado</h4>
+                    <p className="text-xs text-rose-800 font-medium italic">"{isActionModalOpen.cancellationReason || 'Sem motivo informado.'}"</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
