@@ -937,17 +937,15 @@ const renderListStatusBadge = (order: Order) => {
                   <div className="space-y-4">
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Atribuir Custo à Obra</h4>
                     <div className="bg-white border border-slate-200 p-4 space-y-4 shadow-sm">
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={applyOrderCost}
-                          onChange={(event) => setApplyOrderCost(event.target.checked)}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-[10px] font-black uppercase text-slate-700">
-                          {applyOrderCost ? 'Valor vinculado ao custo da obra' : 'Não vincular valor ao custo da obra'}
-                        </span>
-                      </label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={applyOrderCost}
+                        onChange={(event) => setApplyOrderCost(event.target.checked)}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-[10px] font-black uppercase text-slate-700">Vincular valor ao custo da obra</span>
+                    </label>
                       <button
                         type="button"
                         onClick={() => void handleSaveCostAssignment()}

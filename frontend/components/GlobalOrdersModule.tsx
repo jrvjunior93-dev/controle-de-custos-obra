@@ -1653,9 +1653,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                         onChange={(event) => setApplyOrderCost(event.target.checked)}
                         className="w-4 h-4"
                       />
-                      <span className="text-[10px] font-black uppercase text-slate-700">
-                        {applyOrderCost ? 'Valor vinculado ao custo da obra' : 'Não vincular valor ao custo da obra'}
-                      </span>
+                      <span className="text-[10px] font-black uppercase text-slate-700">Vincular valor ao custo da obra</span>
                     </label>
                     <button
                       type="button"
