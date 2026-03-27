@@ -260,10 +260,8 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const [isProjectFilterOpen, setIsProjectFilterOpen] = useState(false);
   const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
   const [isTypeFilterOpen, setIsTypeFilterOpen] = useState(false);
-  const [incorporateCost, setIncorporateCost] = useState(false);
+  const [applyOrderCost, setApplyOrderCost] = useState(false);
   const [editableOrderValue, setEditableOrderValue] = useState<number>(0);
-  const [finalValue, setFinalValue] = useState<number>(0);
-  const [finalDate, setFinalDate] = useState(new Date().toISOString().split('T')[0]);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [selectedMacroItemId, setSelectedMacroItemId] = useState('');
@@ -338,6 +336,31 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const activeProjectForModal = isActionModalOpen ? projects.find((project) => project.id === isActionModalOpen.projectId) : null;
   const canEditMacroItem = (order: Order) => canEditFinancialFields && isOrderActive(order);
   const canEditOrderValueDirectly = (order: Order) => canEditFinancialFields && !!order;
+  const getLinkedOrderCost = (order: Order, project = activeProjectForModal) => (project?.costs || []).find((cost) => cost.originOrderId === order.id) || null;
+  const buildOrderCostRecord = (order: Order, project: Project, existingCost?: ExecutedCost | null): ExecutedCost => {
+    const today = new Date().toISOString().split('T')[0];
+    const derivedAttachments = [
+      ...(existingCost?.attachments || []),
+      ...order.attachments,
+      ...(order.completionAttachment ? [order.completionAttachment] : []),
+    ].filter((attachment, index, list) => attachment && list.findIndex((item) => item.id === attachment.id) === index);
+    const value = Number(order.value || 0);
+
+    return {
+      id: existingCost?.id || crypto.randomUUID(),
+      macroItemId: order.macroItemId!,
+      description: `[PEDIDO] ${order.title}`,
+      itemDetail: order.description,
+      unit: existingCost?.unit || 'un',
+      quantity: 1,
+      unitValue: value,
+      totalValue: value,
+      date: existingCost?.date || today,
+      entryDate: existingCost?.entryDate || today,
+      attachments: derivedAttachments,
+      originOrderId: order.id,
+    };
+  };
   const findSectorName = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.name;
   const getSectorStatuses = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.statuses || [];
   const getEditableSectorStatuses = (order: Order) => {
@@ -365,10 +388,8 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setActionAttachments([]);
     setMessageText('');
     setMessageAttachments([]);
-    setIncorporateCost(false);
+    setApplyOrderCost(false);
     setEditableOrderValue(0);
-    setFinalValue(0);
-    setFinalDate(new Date().toISOString().split('T')[0]);
   };
 
   const refreshAttachmentData = async (attachment: Attachment) => {
@@ -441,7 +462,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     resetActionState();
     const currentValue = Number(order.value || 0);
     setEditableOrderValue(currentValue);
-    setFinalValue(currentValue);
+    setApplyOrderCost(!!getLinkedOrderCost(order, projects.find((project) => project.id === order.projectId)));
     setSelectedMacroItemId(order.macroItemId || '');
     setSelectedForwardSectorId(order.currentSectorId || '');
     setSelectedSectorStatus(order.sectorStatus || '');
@@ -770,6 +791,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
           await persistProjectState({ ...updatedProject, orders: (updatedProject.orders || []).map((item) => item.id === savedOrder.id ? savedOrder : item) });
         }
         setIsActionModalOpen(savedOrder);
+        setApplyOrderCost(false);
       })();
     }
   };
@@ -803,8 +825,37 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       void (async () => {
         const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
         setIsActionModalOpen(savedOrder);
-        if (incorporateCost) setFinalValue(Number(savedOrder.value || 0));
+        if (activeProjectForModal && getLinkedOrderCost(savedOrder, activeProjectForModal)) {
+          const existingCost = getLinkedOrderCost(savedOrder, activeProjectForModal);
+          const costsWithoutOrder = (activeProjectForModal.costs || []).filter((cost) => cost.originOrderId !== savedOrder.id);
+          await persistProjectState({
+            ...activeProjectForModal,
+            costs: [...costsWithoutOrder, buildOrderCostRecord(savedOrder, activeProjectForModal, existingCost)],
+          });
+        }
       })();
+    }
+  };
+
+  const handleSaveCostAssignment = async () => {
+    if (!isActionModalOpen || !activeProjectForModal) return;
+    if (!canEditFinancialFields) return alert('Você não pode alterar a vinculação de custo deste pedido.');
+    if (applyOrderCost && !isActionModalOpen.macroItemId) return alert('Selecione um item macro antes de vincular o pedido ao custo.');
+
+    const existingCost = getLinkedOrderCost(isActionModalOpen, activeProjectForModal);
+    const costsWithoutOrder = (activeProjectForModal.costs || []).filter((cost) => cost.originOrderId !== isActionModalOpen.id);
+    const nextCosts = applyOrderCost
+      ? [...costsWithoutOrder, buildOrderCostRecord(isActionModalOpen, activeProjectForModal, existingCost)]
+      : costsWithoutOrder;
+
+    try {
+      await persistProjectState({
+        ...activeProjectForModal,
+        costs: nextCosts,
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar vínculo de custo do pedido:', error);
+      alert('Não foi possível salvar a vinculação do custo. Tente novamente.');
     }
   };
 
@@ -910,32 +961,11 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       value: canEditFinancialFields ? Number(editableOrderValue || 0) : isActionModalOpen.value,
       macroItemId: canEditFinancialFields ? (selectedMacroItemId || undefined) : isActionModalOpen.macroItemId,
     };
-    let newCost: ExecutedCost | null = null;
 
     if (actionType === 'COMPLETE') {
       updated.status = 'CONCLUIDO';
       updated.completionNote = actionText;
       updated.completionAttachment = actionAttachments[0] || undefined;
-      if (incorporateCost) {
-        if (!updated.macroItemId) {
-          return alert('Selecione um item macro antes de incorporar o pedido como custo.');
-        }
-        const costValue = Number(finalValue || editableOrderValue || 0);
-        newCost = {
-          id: crypto.randomUUID(),
-          macroItemId: updated.macroItemId!,
-          description: `[PEDIDO] ${updated.title}`,
-          itemDetail: updated.description,
-          unit: 'un',
-          quantity: 1,
-          unitValue: costValue,
-          totalValue: costValue,
-          date: finalDate,
-          entryDate: new Date().toISOString().split('T')[0],
-          attachments: [...updated.attachments, ...actionAttachments],
-          originOrderId: updated.id
-        };
-      }
     } else if (actionType === 'CANCEL') {
       updated.status = 'CANCELADO';
       updated.cancellationReason = actionText.trim();
@@ -950,25 +980,13 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     }
 
     const previousProjects = projects;
-    const updatedProject = handleProjectMutation(updated.projectId, (project) => {
-      const costsWithoutOrder = (project.costs || []).filter((cost) => cost.originOrderId !== updated.id);
-      return {
-        ...project,
-        orders: (project.orders || []).map((order) => order.id === updated.id ? updated : order),
-        costs: newCost ? [...costsWithoutOrder, newCost] : costsWithoutOrder
-      };
-    });
+    const updatedProject = handleProjectMutation(updated.projectId, (project) => ({
+      ...project,
+      orders: (project.orders || []).map((order) => order.id === updated.id ? updated : order),
+    }));
 
     try {
       const savedOrder = await persistMemberOrder(updated.projectId, updated);
-      const shouldPersistCosts = !!newCost || ((updatedProject?.costs || []).length !== (previousProjects.find((project) => project.id === updated.projectId)?.costs || []).length);
-      if (updatedProject && shouldPersistCosts) {
-        await persistProjectState({
-          ...updatedProject,
-          orders: (updatedProject.orders || []).map((order) => order.id === savedOrder.id ? savedOrder : order)
-        });
-      }
-
       setIsActionModalOpen(savedOrder);
       setActionType('NONE');
       setActionText('');
@@ -1520,6 +1538,20 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                     </div>
                   )}
                 </div>
+                {canEditFinancialFields && isActionModalOpen.status === 'CONCLUIDO' && (
+                  <div className="bg-white border border-slate-100 p-4 space-y-3">
+                    <label className="text-[9px] font-black text-slate-400 uppercase block">Aplicação no Custo da Obra</label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" checked={applyOrderCost} onChange={(event) => setApplyOrderCost(event.target.checked)} className="w-4 h-4" />
+                      <span className="text-[10px] font-black uppercase text-slate-700">
+                        {applyOrderCost ? 'Valor vinculado ao custo da obra' : 'Não vincular valor ao custo da obra'}
+                      </span>
+                    </label>
+                    <button type="button" onClick={() => void handleSaveCostAssignment()} className="w-full bg-slate-900 text-white py-2 font-black uppercase text-[9px] tracking-widest">
+                      Salvar Vinculação de Custo
+                    </button>
+                  </div>
+                )}
               </div>
               {canManageAllOrders && isOrderActive(isActionModalOpen) && sectors.length > 0 && (
                 <div className="bg-white border border-slate-100 p-4 space-y-3">
@@ -1620,32 +1652,6 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                   </div>
                   {actionType !== 'NONE' && (
                     <div className="space-y-4 animate-in fade-in duration-200">
-                      {canEditFinancialFields && (
-                        <div>
-                          <label className="text-[9px] font-black text-slate-400 uppercase">Valor do Pedido (R$)</label>
-                          <div className="relative">
-                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
-                            <input type="text" inputMode="decimal" className="w-full bg-white border border-slate-200 pl-12 pr-4 py-4 font-bold text-xs" value={formatMoneyInput(editableOrderValue)} onChange={(e) => { const nextValue = parseMoneyInput(e.target.value) || 0; setEditableOrderValue(nextValue); if (incorporateCost && actionType === 'COMPLETE') setFinalValue(nextValue); }} placeholder="0,00" />
-                          </div>
-                        </div>
-                      )}
-                      {actionType === 'COMPLETE' && (
-                        <div className="bg-emerald-50 p-4 border border-emerald-100 space-y-4">
-                          <label className="flex items-center gap-3 cursor-pointer">
-                            <input type="checkbox" checked={incorporateCost} onChange={(e) => { const checked = e.target.checked; setIncorporateCost(checked); if (checked) setFinalValue(Number(editableOrderValue || isActionModalOpen.value || 0)); }} className="w-4 h-4" />
-                            <span className="text-[9px] font-black uppercase text-emerald-700">Gerar custo da obra ao concluir</span>
-                          </label>
-                          {incorporateCost && (
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] font-black">R$</span>
-                                <input type="text" inputMode="decimal" className="w-full bg-white border border-slate-200 pl-10 pr-3 py-3 font-black text-xs" value={formatMoneyInput(finalValue)} onChange={(e) => setFinalValue(parseMoneyInput(e.target.value) || 0)} placeholder="0,00" />
-                              </div>
-                              <input type="date" className="bg-white border border-slate-200 p-3 font-black text-xs" value={finalDate} onChange={(e) => setFinalDate(e.target.value)} />
-                            </div>
-                          )}
-                        </div>
-                      )}
                       <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder={actionType === 'COMPLETE' ? 'Observações finais...' : 'Motivo do cancelamento...'} value={actionText} onChange={(e) => setActionText(e.target.value)} />
                       <div className="space-y-2">
                         <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'ACTION')} />
