@@ -61,6 +61,16 @@ const getStatusColor = (status: OrderStatus) => {
   }
 };
 
+const renderSectorStatusBadge = (sectorStatus?: string) => (
+  <span className={`inline-flex text-[8px] font-black uppercase px-2 py-1 border whitespace-nowrap ${
+    sectorStatus
+      ? 'bg-blue-50 text-blue-700 border-blue-200'
+      : 'bg-slate-50 text-slate-500 border-slate-100'
+  }`}>
+    {sectorStatus || 'Sem status setorial'}
+  </span>
+);
+
 const matchesDesiredDateRange = (expectedDate?: string, startDate?: string, endDate?: string) => {
   const targetDateKey = normalizeDateKey(expectedDate);
   const startDateKey = normalizeDateKey(startDate);
@@ -1233,13 +1243,16 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                     <div className="text-[10px] text-slate-700 font-black whitespace-nowrap">R$ {(order.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                   </td>
                   <td className="px-4 py-6">
-                    <span title={order.status.replace('_', ' ')} className={`inline-flex text-[8px] font-black uppercase px-2 py-1 border whitespace-nowrap ${
-                      order.status === 'CONCLUIDO' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                      order.status === 'PENDENTE' ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                      'bg-slate-50 text-slate-600 border-slate-100'}`}
-                    >
-                      {order.status.replace('_', ' ')}
-                    </span>
+                    <div className="flex flex-col items-start gap-2">
+                      <span title={order.status.replace('_', ' ')} className={`inline-flex text-[8px] font-black uppercase px-2 py-1 border whitespace-nowrap ${
+                        order.status === 'CONCLUIDO' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                        order.status === 'PENDENTE' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                        'bg-slate-50 text-slate-600 border-slate-100'}`}
+                      >
+                        {order.status.replace('_', ' ')}
+                      </span>
+                      {renderSectorStatusBadge(order.sectorStatus)}
+                    </div>
                   </td>
                 </tr>
               )})}
@@ -1271,13 +1284,16 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 <div className="text-[10px] text-slate-400 font-bold uppercase">{order.requesterName}</div>
               </div>
               </div>
-              <span className={`text-[8px] font-black uppercase px-2 py-1 border ${
-                order.status === 'CONCLUIDO' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                order.status === 'PENDENTE' ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                'bg-slate-50 text-slate-600 border-slate-100'}`}
-              >
-                {order.status.replace('_', ' ')}
-              </span>
+              <div className="flex flex-col items-end gap-2">
+                <span className={`text-[8px] font-black uppercase px-2 py-1 border ${
+                  order.status === 'CONCLUIDO' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                  order.status === 'PENDENTE' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                  'bg-slate-50 text-slate-600 border-slate-100'}`}
+                >
+                  {order.status.replace('_', ' ')}
+                </span>
+                {renderSectorStatusBadge(order.sectorStatus)}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-[10px] font-bold uppercase">

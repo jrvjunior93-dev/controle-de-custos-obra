@@ -494,8 +494,8 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     })();
   };
 
-  const getStatusColor = (status: OrderStatus) => {
-    switch (status) {
+const getStatusColor = (status: OrderStatus) => {
+  switch (status) {
       case 'PENDENTE':
         return 'bg-amber-100 text-amber-700';
       case 'EM_ANALISE':
@@ -508,8 +508,18 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
         return 'bg-rose-100 text-rose-700';
       default:
         return 'bg-slate-100 text-slate-700';
-    }
-  };
+  }
+};
+
+const renderSectorStatusBadge = (sectorStatus?: string) => (
+  <span className={`inline-flex text-[8px] font-black uppercase px-2 py-1 rounded-none whitespace-nowrap ${
+    sectorStatus
+      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+      : 'bg-slate-50 text-slate-500 border border-slate-100'
+  }`}>
+    {sectorStatus || 'Sem status setorial'}
+  </span>
+);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -561,7 +571,12 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                   </td>
                   <td className="px-4 py-4 text-[10px] font-black text-blue-600 uppercase truncate" title={order.type}>{order.type}</td>
                   <td className="px-4 py-4 text-[10px] font-black text-slate-700 whitespace-nowrap">{formatMoney(order.value)}</td>
-                  <td className="px-4 py-4"><span title={order.status.replace('_', ' ')} className={`inline-flex text-[8px] font-black uppercase px-2 py-1 rounded-none whitespace-nowrap ${getStatusColor(order.status)}`}>{order.status.replace('_', ' ')}</span></td>
+                  <td className="px-4 py-4">
+                    <div className="flex flex-col items-start gap-2">
+                      <span title={order.status.replace('_', ' ')} className={`inline-flex text-[8px] font-black uppercase px-2 py-1 rounded-none whitespace-nowrap ${getStatusColor(order.status)}`}>{order.status.replace('_', ' ')}</span>
+                      {renderSectorStatusBadge(order.sectorStatus)}
+                    </div>
+                  </td>
                   <td className="px-4 py-4 text-[10px] font-black uppercase text-slate-600 truncate" title={order.requesterName}>{order.requesterName}</td>
                   <td className="px-4 py-4 text-[10px] font-black uppercase text-slate-400 truncate" title={order.currentSectorName || 'SEM SETOR'}>{order.currentSectorName || 'SEM SETOR'}</td>
                 </tr>
@@ -580,7 +595,10 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
                 <div className="font-black text-slate-900 uppercase text-sm">{order.title}</div>
                 <div className="text-[10px] text-blue-600 font-bold uppercase tracking-tighter">{project.budget.find((macro) => macro.id === order.macroItemId)?.description || 'Item macro não vinculado'}</div>
               </div>
-              <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-none ${getStatusColor(order.status)}`}>{order.status.replace('_', ' ')}</span>
+              <div className="flex flex-col items-end gap-2">
+                <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-none ${getStatusColor(order.status)}`}>{order.status.replace('_', ' ')}</span>
+                {renderSectorStatusBadge(order.sectorStatus)}
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3 text-[10px] font-bold uppercase">
               <div className="bg-slate-50 border border-slate-100 p-3"><div className="text-slate-400">Data Solic.</div><div className="text-slate-700 mt-1">{formatOrderDate(order.createdAt)}</div></div>
