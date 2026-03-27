@@ -381,6 +381,20 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     }
     return { label: 'Solicitação da central', classes: 'bg-blue-50 border-blue-200 text-blue-700' };
   };
+  const getMessagesForDisplay = (order: Order) => {
+    const baseMessages = [...(order.messages || [])];
+    if (!order.completionAttachment && !order.completionNote) return baseMessages;
+
+    baseMessages.push({
+      id: `legacy-completion-${order.id}`,
+      userId: 'system',
+      userName: 'SISTEMA',
+      text: order.completionNote || 'Anexo legado do fluxo anterior de conclusão do pedido.',
+      date: new Date().toISOString(),
+      attachments: order.completionAttachment ? [order.completionAttachment] : undefined,
+    });
+    return baseMessages;
+  };
 
   const resetActionState = () => {
     setActionType('NONE');
@@ -1584,11 +1598,11 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                   </div>
                 </div>
               )}
-              {isActionModalOpen.messages && isActionModalOpen.messages.length > 0 && (
+              {getMessagesForDisplay(isActionModalOpen).length > 0 && (
                 <div className="space-y-4">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Histórico de Mensagens</label>
                   <div className="space-y-4 max-h-60 overflow-y-auto pr-4">
-                    {isActionModalOpen.messages.map((message) => {
+                    {getMessagesForDisplay(isActionModalOpen).map((message) => {
                       const meta = getMessageMeta(isActionModalOpen, message);
                       return (
                       <div key={message.id} className={`p-4 border-l-4 ${meta.classes}`}>
@@ -1676,25 +1690,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 </div>
               )}
 
-                {isActionModalOpen.status === 'CONCLUIDO' && (
-                  <div className="bg-emerald-50 p-6 border-l-4 border-emerald-500">
-                    <h4 className="text-[11px] font-black text-emerald-700 uppercase mb-2">Pedido Concluído</h4>
-                    {isActionModalOpen.completionNote && <p className="text-xs text-emerald-800 font-medium mb-3">"{isActionModalOpen.completionNote}"</p>}
-                  {isActionModalOpen.completionAttachment && (
-                    <div className="mb-3 flex flex-wrap gap-2">
-                      <button type="button" onClick={() => handlePreviewAttachment(isActionModalOpen.completionAttachment!)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
-                        Visualizar Anexo Final
-                      </button>
-                      <button type="button" onClick={() => downloadAttachment(isActionModalOpen.completionAttachment!)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">
-                        Download
-                      </button>
-                    </div>
-                  )}
-                  <p className="text-[10px] font-black text-emerald-700 uppercase">Valor final registrado: {formatMoney(isActionModalOpen.value)}</p>
-                </div>
-              )}
-
-                {isActionModalOpen.status === 'CANCELADO' && (
+              {isActionModalOpen.status === 'CANCELADO' && (
                   <div className="bg-rose-50 p-6 border-l-4 border-rose-500">
                     <h4 className="text-[11px] font-black text-rose-700 uppercase mb-2">Pedido Cancelado</h4>
                     <p className="text-xs text-rose-800 font-medium italic">"{isActionModalOpen.cancellationReason || 'Sem motivo informado.'}"</p>
