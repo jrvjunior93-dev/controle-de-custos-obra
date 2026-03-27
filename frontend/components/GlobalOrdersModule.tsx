@@ -867,6 +867,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
         ...activeProjectForModal,
         costs: nextCosts,
       });
+      alert(applyOrderCost ? 'Custo vinculado à obra com sucesso.' : 'Vinculação de custo removida com sucesso.');
     } catch (error) {
       console.error('Erro ao atualizar vínculo de custo do pedido:', error);
       alert('Não foi possível salvar a vinculação do custo. Tente novamente.');
