@@ -962,12 +962,6 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
   }
 
   if (existingOrder) {
-    await deleteStoredAttachments(
-      collectOrderAttachmentRefs(existingOrder).filter((attachment: any) => {
-        const signature = storageRefSignature(attachment);
-        return signature && !preservedStorageRefs.has(signature);
-      })
-    );
     await tx.order.delete({ where: { id: existingOrder.id } });
   }
 
@@ -1235,7 +1229,6 @@ app.delete("/projects/:projectId/orders/:orderId", requireAuth, async (req: Auth
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  await deleteStoredAttachments(collectOrderAttachmentRefs(order));
   await prisma.order.delete({ where: { id: orderId } });
   res.json({ ok: true });
 });
