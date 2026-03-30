@@ -111,17 +111,18 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   };
   const getMessagesForDisplay = (order: Order) => {
     const baseMessages = [...(order.messages || [])];
-    if (!order.completionAttachment && !order.completionNote) return baseMessages;
+    if (order.completionAttachment || order.completionNote) {
+      baseMessages.push({
+        id: `legacy-completion-${order.id}`,
+        userId: 'system',
+        userName: 'SISTEMA',
+        text: order.completionNote || 'Anexo legado do fluxo anterior de conclusão do pedido.',
+        date: order.createdAt,
+        attachments: order.completionAttachment ? [order.completionAttachment] : undefined,
+      });
+    }
 
-    baseMessages.push({
-      id: `legacy-completion-${order.id}`,
-      userId: 'system',
-      userName: 'SISTEMA',
-      text: order.completionNote || 'Anexo legado do fluxo anterior de conclusão do pedido.',
-      date: new Date().toISOString(),
-      attachments: order.completionAttachment ? [order.completionAttachment] : undefined,
-    });
-    return baseMessages;
+    return baseMessages.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   };
 
   const resetActionState = () => {
