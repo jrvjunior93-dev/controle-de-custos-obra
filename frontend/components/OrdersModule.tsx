@@ -1,7 +1,7 @@
 ﻿import React, { useState } from 'react';
 import { Attachment, ExecutedCost, Order, OrderMessage, OrderStatus, Project, Sector, User, canManageAssignedOrders } from '../types';
 import { AttachmentViewerModal } from './AttachmentViewerModal';
-import { dbService } from '../apiClient';
+import { canPreviewAttachmentInline, resolveAttachmentForAccess, triggerAttachmentDownload } from '../utils/attachments';
 
 interface OrdersModuleProps {
   project: Project;
@@ -19,7 +19,6 @@ const parseMoneyInput = (value: string) => {
   return digits ? Number(digits) / 100 : undefined;
 };
 
-const canPreviewAttachmentInline = (attachment: Attachment) => attachment.type.startsWith('image/') || attachment.type === 'application/pdf' || attachment.name.toLowerCase().endsWith('.pdf');
 const formatOrderDate = (value?: string) => value ? new Date(value).toLocaleDateString('pt-BR') : '-';
 
 export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, user, onUpdate, onPersistOrder, onDeleteOrder }) => {
@@ -214,39 +213,32 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
 
   const downloadAttachment = (attachment: Attachment) => {
     void (async () => {
-      const resolvedAttachment = await refreshAttachmentData(attachment);
-      const link = document.createElement('a');
-      link.href = resolvedAttachment.data;
-      link.download = resolvedAttachment.originalName || resolvedAttachment.name;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      try {
+        await triggerAttachmentDownload(attachment);
+      } catch (error) {
+        console.error('Erro ao baixar anexo:', error);
+        alert('Arquivo indisponível para download no momento.');
+      }
     })();
-  };
-
-  const refreshAttachmentData = async (attachment: Attachment) => {
-    if (attachment.storageProvider !== 'S3' || !attachment.storageKey) return attachment;
-    try {
-      const result = await dbService.resolveAttachmentData(attachment);
-      return result?.data ? { ...attachment, data: result.data } : attachment;
-    } catch (error) {
-      console.error('Erro ao renovar URL do anexo:', error);
-      return attachment;
-    }
   };
 
   const handlePreviewAttachment = (attachment: Attachment) => {
     void (async () => {
-      const resolvedAttachment = await refreshAttachmentData(attachment);
-      if (!resolvedAttachment.data) {
+      try {
+        const resolvedAttachment = await resolveAttachmentForAccess(attachment);
+        if (!resolvedAttachment.data) {
+          alert('Arquivo indisponível para visualização no momento.');
+          return;
+        }
+        if (canPreviewAttachmentInline(resolvedAttachment)) {
+          setPreviewAttachment(resolvedAttachment);
+          return;
+        }
+        window.open(resolvedAttachment.data, '_blank', 'noopener,noreferrer');
+      } catch (error) {
+        console.error('Erro ao preparar visualização do anexo:', error);
         alert('Arquivo indisponível para visualização no momento.');
-        return;
       }
-      if (canPreviewAttachmentInline(resolvedAttachment)) {
-        setPreviewAttachment(resolvedAttachment);
-        return;
-      }
-      window.open(resolvedAttachment.data, '_blank', 'noopener,noreferrer');
     })();
   };
 

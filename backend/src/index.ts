@@ -239,7 +239,9 @@ function normalizeSectorAccessIds(values: unknown[]) {
 function attachmentSignatureFromPayload(payload: any) {
   return [
     String(payload?.storageProvider || ""),
-    String(payload?.storageBucket || ""),
+    String(payload?.storageProvider || "").toUpperCase() === "S3"
+      ? String(payload?.storageBucket || process.env.AWS_S3_BUCKET || "")
+      : String(payload?.storageBucket || ""),
     String(payload?.storageKey || ""),
     String(payload?.name || ""),
     String(payload?.originalName || ""),
@@ -253,7 +255,9 @@ function attachmentSignatureFromPayload(payload: any) {
 function attachmentSignatureFromStored(attachment: any) {
   return [
     String(attachment?.storageProvider || ""),
-    String(attachment?.storageBucket || ""),
+    String(attachment?.storageProvider || "").toUpperCase() === "S3"
+      ? String(attachment?.storageBucket || process.env.AWS_S3_BUCKET || "")
+      : String(attachment?.storageBucket || ""),
     String(attachment?.storageKey || ""),
     String(attachment?.name || ""),
     String(attachment?.originalName || ""),
@@ -269,6 +273,15 @@ function attachmentListsMatch(payloads: any[], stored: any[]) {
   const payloadSignatures = (payloads || []).map(attachmentSignatureFromPayload).sort();
   const storedSignatures = (stored || []).map(attachmentSignatureFromStored).sort();
   return payloadSignatures.every((signature, index) => signature === storedSignatures[index]);
+}
+
+function storageRefSignature(attachment: any) {
+  if (!attachment?.storageKey) return "";
+  const provider = String(attachment?.storageProvider || "").toUpperCase();
+  const bucket = provider === "S3"
+    ? String(attachment?.storageBucket || process.env.AWS_S3_BUCKET || "")
+    : String(attachment?.storageBucket || "");
+  return `${provider}:${bucket}:${String(attachment.storageKey || "")}`;
 }
 
 function normalizeProjectCode(value: unknown) {
@@ -363,7 +376,7 @@ async function mapAttachment(attachment: any) {
     id: String(attachment.id),
     name: attachment.name,
     originalName: attachment.originalName || undefined,
-    data: await resolveAttachmentData(attachment),
+    data: attachment.data || "",
     type: attachment.mimeType,
     size: attachment.size,
     uploadDate: attachment.uploadedAt.toISOString(),
@@ -834,7 +847,8 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       ...((orderPayload.messages || []).flatMap((message: any) => message.attachments || [])),
     ]
       .filter((attachment: any) => attachment?.storageProvider === "S3" && attachment?.storageKey)
-      .map((attachment: any) => `${attachment.storageBucket || ""}:${attachment.storageKey}`)
+      .map((attachment: any) => storageRefSignature(attachment))
+      .filter(Boolean)
   );
 
   const normalizedSectorStatus = String(orderPayload.sectorStatus || "").trim().toUpperCase() || null;
@@ -949,7 +963,10 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
 
   if (existingOrder) {
     await deleteStoredAttachments(
-      collectOrderAttachmentRefs(existingOrder).filter((attachment: any) => !preservedStorageRefs.has(`${attachment.storageBucket || ""}:${attachment.storageKey || ""}`))
+      collectOrderAttachmentRefs(existingOrder).filter((attachment: any) => {
+        const signature = storageRefSignature(attachment);
+        return signature && !preservedStorageRefs.has(signature);
+      })
     );
     await tx.order.delete({ where: { id: existingOrder.id } });
   }

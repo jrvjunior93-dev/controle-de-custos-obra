@@ -128,10 +128,6 @@ export async function resolveAttachmentData(attachment: {
   storageBucket?: string | null;
   storageKey?: string | null;
 }) {
-  if (attachment.data) {
-    return attachment.data;
-  }
-
   if (
     attachment.storageProvider === "S3" &&
     attachment.storageKey &&
@@ -147,6 +143,10 @@ export async function resolveAttachmentData(attachment: {
       }),
       { expiresIn: Number.isFinite(signedUrlExpiresIn) ? signedUrlExpiresIn : 3600 }
     );
+  }
+
+  if (attachment.data) {
+    return attachment.data;
   }
 
   return "";

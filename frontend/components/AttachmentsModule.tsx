@@ -3,6 +3,7 @@ import { Project, Attachment } from '../types';
 // @ts-ignore
 import JSZip from 'jszip';
 import { AttachmentViewerModal } from './AttachmentViewerModal';
+import { resolveAttachmentForAccess, triggerAttachmentDownload } from '../utils/attachments';
 
 interface FileRow {
   att: Attachment;
@@ -71,32 +72,13 @@ export const AttachmentsModule: React.FC<AttachmentsModuleProps> = ({ project, o
     )
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  const isDataUrl = (value: string) => /^data:/i.test(value || '');
-
-  const base64ToBlob = (base64Data: string, contentType: string) => {
-    const sliceSize = 512;
-    const byteCharacters = atob(base64Data.split(',')[1]);
-    const byteArrays = [];
-
-    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-      const slice = byteCharacters.slice(offset, offset + sliceSize);
-      const byteNumbers = new Array(slice.length);
-      for (let i = 0; i < slice.length; i++) {
-        byteNumbers[i] = slice.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      byteArrays.push(byteArray);
-    }
-
-    return new Blob(byteArrays, { type: contentType });
-  };
-
   const resolveAttachmentBlob = async (att: Attachment) => {
-    if (isDataUrl(att.data)) {
-      return base64ToBlob(att.data, att.type);
+    const resolvedAttachment = await resolveAttachmentForAccess(att);
+    if (!resolvedAttachment.data) {
+      throw new Error('Arquivo indisponível para download.');
     }
 
-    const response = await fetch(att.data);
+    const response = await fetch(resolvedAttachment.data);
     if (!response.ok) {
       throw new Error('Falha ao baixar arquivo remoto');
     }
@@ -106,19 +88,10 @@ export const AttachmentsModule: React.FC<AttachmentsModuleProps> = ({ project, o
 
   const downloadFile = async (att: Attachment) => {
     try {
-      const blob = await resolveAttachmentBlob(att);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = att.originalName || att.name;
-      document.body.appendChild(link);
-      link.click();
-      setTimeout(() => {
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      }, 100);
+      await triggerAttachmentDownload(att);
     } catch (err) {
       console.error('Erro ao baixar arquivo:', err);
+      alert('Arquivo indisponível para download no momento.');
     }
   };
 
@@ -239,7 +212,21 @@ export const AttachmentsModule: React.FC<AttachmentsModuleProps> = ({ project, o
 
               <div className={`grid ${isAdmin ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-1 md:grid-cols-2'}`}>
                 <button
-                  onClick={() => setPreviewAttachment(item.att)}
+                  onClick={() => {
+                    void (async () => {
+                      try {
+                        const resolvedAttachment = await resolveAttachmentForAccess(item.att);
+                        if (!resolvedAttachment.data) {
+                          alert('Arquivo indisponível para visualização no momento.');
+                          return;
+                        }
+                        setPreviewAttachment(resolvedAttachment);
+                      } catch (error) {
+                        console.error('Erro ao preparar visualização do anexo:', error);
+                        alert('Arquivo indisponível para visualização no momento.');
+                      }
+                    })();
+                  }}
                   className="w-full py-4 bg-blue-50 hover:bg-blue-600 hover:text-white transition-colors text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-2 rounded-none text-blue-600"
                 >
                   <i className="fas fa-eye"></i> Visualizar
