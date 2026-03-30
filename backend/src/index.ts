@@ -1561,6 +1561,9 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
 
   const { attachment } = parsed.data;
   const attachmentId = Number(attachment.id);
+  const requestedStorageProvider = String(attachment.storageProvider || "").toUpperCase() || null;
+  const requestedStorageBucket = String(attachment.storageBucket || process.env.AWS_S3_BUCKET || "");
+  const requestedStorageKey = String(attachment.storageKey || "");
   let resolvedSource = {
     data: attachment.data,
     mimeType: String(attachment.type || attachment.mimeType || "application/octet-stream"),
@@ -1569,13 +1572,30 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
     storageKey: attachment.storageKey,
   };
 
+  const matchesRequestedStorage = (record: {
+    storageProvider?: string | null;
+    storageBucket?: string | null;
+    storageKey?: string | null;
+  }) => {
+    if (!requestedStorageKey) return true;
+    return (
+      String(record.storageProvider || "").toUpperCase() === requestedStorageProvider &&
+      String(record.storageBucket || process.env.AWS_S3_BUCKET || "") === requestedStorageBucket &&
+      String(record.storageKey || "") === requestedStorageKey
+    );
+  };
+
   if (Number.isFinite(attachmentId) && attachmentId > 0) {
     const orderAttachment = await prisma.orderAttachment.findUnique({
       where: { id: attachmentId },
       include: { order: { select: { projectId: true } } }
     });
 
-    if (orderAttachment && await canAccessProject(req.authUser, orderAttachment.order.projectId)) {
+    if (
+      orderAttachment &&
+      matchesRequestedStorage(orderAttachment) &&
+      await canAccessProject(req.authUser, orderAttachment.order.projectId)
+    ) {
       resolvedSource = {
         data: orderAttachment.data || "",
         mimeType: orderAttachment.mimeType,
@@ -1589,7 +1609,11 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
         include: { message: { include: { order: { select: { projectId: true } } } } }
       });
 
-      if (orderMessageAttachment && await canAccessProject(req.authUser, orderMessageAttachment.message.order.projectId)) {
+      if (
+        orderMessageAttachment &&
+        matchesRequestedStorage(orderMessageAttachment) &&
+        await canAccessProject(req.authUser, orderMessageAttachment.message.order.projectId)
+      ) {
         resolvedSource = {
           data: orderMessageAttachment.data || "",
           mimeType: orderMessageAttachment.mimeType,
@@ -1603,7 +1627,11 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
           include: { cost: { select: { projectId: true } } }
         });
 
-        if (costAttachment && await canAccessProject(req.authUser, costAttachment.cost.projectId)) {
+        if (
+          costAttachment &&
+          matchesRequestedStorage(costAttachment) &&
+          await canAccessProject(req.authUser, costAttachment.cost.projectId)
+        ) {
           resolvedSource = {
             data: costAttachment.data || "",
             mimeType: costAttachment.mimeType,
@@ -1617,7 +1645,11 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
             include: { installment: { select: { projectId: true } } }
           });
 
-          if (installmentAttachment && await canAccessProject(req.authUser, installmentAttachment.installment.projectId)) {
+          if (
+            installmentAttachment &&
+            matchesRequestedStorage(installmentAttachment) &&
+            await canAccessProject(req.authUser, installmentAttachment.installment.projectId)
+          ) {
             resolvedSource = {
               data: installmentAttachment.data || "",
               mimeType: installmentAttachment.mimeType,
