@@ -911,15 +911,20 @@ const renderListStatusBadge = (order: Order) => {
                           <div className="mb-2 text-[8px] font-black uppercase tracking-widest text-slate-500">{meta.label}</div>
                           <p className="text-[11px] font-medium text-slate-600">{message.text}</p>
                           {message.attachments && message.attachments.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-2">
+                            <div className="mt-3 space-y-2">
                               {message.attachments.map((attachment) => (
-                                <div key={attachment.id} className="flex items-center gap-2">
-                                  <button type="button" onClick={() => handlePreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
-                                    Visualizar
-                                  </button>
-                                  <button type="button" onClick={() => downloadAttachment(attachment)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">
-                                    Download
-                                  </button>
+                                <div key={attachment.id} className="bg-white/70 border border-slate-200 px-3 py-3">
+                                  <p className="text-[9px] font-black uppercase text-slate-700 break-all">
+                                    {attachment.originalName || attachment.name}
+                                  </p>
+                                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <button type="button" onClick={() => handlePreviewAttachment(attachment)} className="px-3 py-2 bg-blue-50 border border-blue-200 text-[9px] font-black uppercase text-blue-700">
+                                      Visualizar
+                                    </button>
+                                    <button type="button" onClick={() => downloadAttachment(attachment)} className="px-3 py-2 bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600">
+                                      Download
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
