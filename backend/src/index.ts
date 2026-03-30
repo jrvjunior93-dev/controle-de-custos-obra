@@ -1181,10 +1181,6 @@ app.put("/projects/:id", requireAuth, async (req: AuthRequest, res) => {
 app.delete("/projects/:id", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req, res) => {
   const projectId = Number(req.params.id);
   if (!Number.isFinite(projectId)) return res.status(400).json({ error: "Invalid project id" });
-  const existingProject = await prisma.project.findUnique({ where: { id: projectId }, include: projectInclude });
-  if (existingProject) {
-    await deleteStoredAttachments(collectProjectAttachmentRefs(existingProject));
-  }
   await prisma.project.delete({ where: { id: projectId } });
   res.json({ ok: true });
 });
