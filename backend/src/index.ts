@@ -587,10 +587,6 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
     ? await tx.project.update({ where: { id: existingProjectId }, data: baseData })
     : await tx.project.create({ data: baseData });
 
-  if (existingProject) {
-    await deleteStoredAttachments(collectProjectAttachmentRefs(existingProject));
-  }
-
   await tx.order.deleteMany({ where: { projectId: project.id } });
   await tx.installment.deleteMany({ where: { projectId: project.id } });
   await tx.cost.deleteMany({ where: { projectId: project.id } });
