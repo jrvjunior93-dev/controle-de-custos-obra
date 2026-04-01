@@ -1633,16 +1633,27 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
               </div>
 
               <div className="bg-slate-50 p-8 border-l border-slate-100 space-y-6">
-              {canReopenOrder(isActionModalOpen) && (
+              {(canReopenOrder(isActionModalOpen) || canDeleteOrderDirectly) && (
                 <div className="space-y-3">
                   <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Gerenciar Pedido</h4>
-                  <button
-                    type="button"
-                    onClick={handleReopenOrder}
-                    className="w-full bg-emerald-50 text-emerald-700 border border-emerald-200 py-4 font-black uppercase text-[10px] shadow-sm"
-                  >
-                    Reabrir Pedido
-                  </button>
+                  {canReopenOrder(isActionModalOpen) && (
+                    <button
+                      type="button"
+                      onClick={handleReopenOrder}
+                      className="w-full bg-emerald-50 text-emerald-700 border border-emerald-200 py-4 font-black uppercase text-[10px] shadow-sm"
+                    >
+                      Reabrir Pedido
+                    </button>
+                  )}
+                  {canDeleteOrderDirectly && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteOrder(isActionModalOpen)}
+                      className="w-full bg-white border border-slate-300 text-slate-900 py-4 font-black uppercase text-[10px] shadow-sm hover:bg-slate-50"
+                    >
+                      Excluir Pedido
+                    </button>
+                  )}
                 </div>
               )}
 
