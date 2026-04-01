@@ -655,7 +655,7 @@ const renderListStatusBadge = (order: Order) => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {sortedOrders.map((order) => (
-                <tr key={order.id} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => openOrderModal(order)}>
+                <tr key={order.id} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => toggleOrderSelection(order.id)}>
                   <td className="px-4 py-4" onClick={(event) => event.stopPropagation()}>
                     <input
                       type="checkbox"
@@ -696,7 +696,7 @@ const renderListStatusBadge = (order: Order) => {
 
       <div className="lg:hidden space-y-4">
         {sortedOrders.map((order) => (
-          <div key={order.id} className="bg-white border border-slate-200 shadow-sm p-4 space-y-4 cursor-pointer" onClick={() => openOrderModal(order)}>
+          <div key={order.id} className="bg-white border border-slate-200 shadow-sm p-4 space-y-4 cursor-pointer" onClick={() => toggleOrderSelection(order.id)}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex items-start gap-3">
                 <div onClick={(event) => event.stopPropagation()}>
