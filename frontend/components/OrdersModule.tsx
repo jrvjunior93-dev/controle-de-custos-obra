@@ -777,11 +777,6 @@ const renderListStatusBadge = (order: Order) => {
                 <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Por {isActionModalOpen.requesterName} em {new Date(isActionModalOpen.createdAt).toLocaleString('pt-BR')}</p>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
-                {canDeleteOrderDirectly && (
-                  <button type="button" onClick={() => handleDeleteOrder(isActionModalOpen)} className="bg-rose-50 text-rose-600 border border-rose-200 px-4 py-3 text-[9px] font-black uppercase shadow-sm">
-                    Excluir
-                  </button>
-                )}
                 <button onClick={() => setIsActionModalOpen(null)} className="text-slate-400 hover:text-slate-600 px-2"><i className="fas fa-times text-xl"></i></button>
               </div>
             </div>
