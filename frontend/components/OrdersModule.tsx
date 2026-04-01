@@ -776,6 +776,13 @@ const renderListStatusBadge = (order: Order) => {
               >
                 Ver
               </button>
+              <button
+                type="button"
+                onClick={() => void handleExportSelectedOrders()}
+                className="bg-white border border-slate-300 text-slate-900 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50"
+              >
+                Exportar Excel
+              </button>
               {selectedOrdersCount === 1 && canDeleteOrderDirectly && (
                 <button
                   type="button"
@@ -785,13 +792,6 @@ const renderListStatusBadge = (order: Order) => {
                   Excluir Pedido
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => void handleExportSelectedOrders()}
-                className="bg-white border border-slate-300 text-slate-900 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50"
-              >
-                Exportar Excel
-              </button>
               <button
                 type="button"
                 onClick={clearSelectedOrders}
