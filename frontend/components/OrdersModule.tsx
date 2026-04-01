@@ -21,6 +21,30 @@ const parseMoneyInput = (value: string) => {
 
 const formatOrderDate = (value?: string) => value ? new Date(value).toLocaleDateString('pt-BR') : '-';
 
+const exportOrdersToExcel = async (projectName: string, orders: Order[]) => {
+  if (orders.length === 0) return;
+  const XLSX = await import('xlsx');
+  const rows = orders.map((order) => ({
+    'Data do Pedido': formatOrderDate(order.createdAt),
+    'Data Desejada': formatOrderDate(order.expectedDate),
+    'Código do Pedido': order.orderCode || '',
+    'Código Externo': order.externalCode || '',
+    'Obra': projectName,
+    'Título': order.title || '',
+    'Descrição': order.description || '',
+    'Tipo do Pedido': order.type || '',
+    'Valor do Pedido': Number(order.value || 0),
+    'Status Atual': order.status.replaceAll('_', ' '),
+    'Status Setorial': order.sectorStatus || '',
+    'Setor Atual': order.currentSectorName || '',
+    'Solicitante': order.requesterName || '',
+  }));
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Pedidos');
+  XLSX.writeFile(workbook, `pedidos_${projectName.replace(/[^A-Za-z0-9_-]+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+};
+
 export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, user, onUpdate, onPersistOrder, onDeleteOrder }) => {
   const canManageProjectOrders = user.role === 'SUPERADMIN' || (canManageAssignedOrders(user.role) && user.assignedProjectIds?.includes(project.id));
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -147,6 +171,11 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       return;
     }
     openOrderModal(selectedOrders[0]);
+  };
+
+  const handleExportSelectedOrders = async () => {
+    if (selectedOrdersCount < 1) return;
+    await exportOrdersToExcel(project.name, selectedOrders);
   };
 
   const resetActionState = () => {
@@ -751,11 +780,18 @@ const renderListStatusBadge = (order: Order) => {
                 <button
                   type="button"
                   onClick={() => void handleDeleteOrder(selectedOrders[0])}
-                  className="bg-white border border-rose-300 text-rose-600 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-rose-50"
+                  className="bg-white border border-slate-300 text-slate-900 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50"
                 >
                   Excluir Pedido
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => void handleExportSelectedOrders()}
+                className="bg-white border border-slate-300 text-slate-900 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50"
+              >
+                Exportar Excel
+              </button>
               <button
                 type="button"
                 onClick={clearSelectedOrders}
