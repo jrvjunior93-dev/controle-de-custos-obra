@@ -25,6 +25,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const canManageProjectOrders = user.role === 'SUPERADMIN' || (canManageAssignedOrders(user.role) && user.assignedProjectIds?.includes(project.id));
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isActionModalOpen, setIsActionModalOpen] = useState<Order | null>(null);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [actionType, setActionType] = useState<'COMPLETE' | 'CANCEL' | 'NONE'>('NONE');
   const [actionText, setActionText] = useState('');
   const [actionAttachments, setActionAttachments] = useState<Attachment[]>([]);
@@ -123,6 +124,29 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     }
 
     return baseMessages.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  };
+  const sortedOrders = orders.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const selectedOrders = sortedOrders.filter((order) => selectedOrderIds.includes(order.id));
+  const selectedOrdersCount = selectedOrders.length;
+
+  const toggleOrderSelection = (orderId: string) => {
+    setSelectedOrderIds((current) =>
+      current.includes(orderId) ? current.filter((id) => id !== orderId) : [...current, orderId]
+    );
+  };
+
+  const toggleAllOrders = () => {
+    setSelectedOrderIds((current) => current.length === sortedOrders.length ? [] : sortedOrders.map((order) => order.id));
+  };
+
+  const clearSelectedOrders = () => setSelectedOrderIds([]);
+
+  const handleOpenSelectedOrder = () => {
+    if (selectedOrdersCount !== 1) {
+      alert('Selecione apenas um pedido para visualizar.');
+      return;
+    }
+    openOrderModal(selectedOrders[0]);
   };
 
   const resetActionState = () => {
@@ -307,6 +331,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     if (confirm(`Deseja realmente excluir o pedido "${order.title}" permanentemente?`)) {
       try {
         await onDeleteOrder(project.id, order.id);
+        setSelectedOrderIds((current) => current.filter((id) => id !== order.id));
         if (isActionModalOpen?.id === order.id) {
           setIsActionModalOpen(null);
         }
@@ -607,6 +632,14 @@ const renderListStatusBadge = (order: Order) => {
           <table className="w-full min-w-[1180px] text-left table-fixed">
             <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
               <tr>
+                <th className="px-4 py-4 w-[4%]">
+                  <input
+                    type="checkbox"
+                    checked={sortedOrders.length > 0 && selectedOrderIds.length === sortedOrders.length}
+                    onChange={toggleAllOrders}
+                    className="w-4 h-4 cursor-pointer"
+                  />
+                </th>
                 <th className="px-4 py-4 w-[8%]">Data Solic.</th>
                 <th className="px-4 py-4 w-[8%]">Data Desejada</th>
                 <th className="px-4 py-4 w-[11%]">Código</th>
@@ -621,8 +654,16 @@ const renderListStatusBadge = (order: Order) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {orders.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((order) => (
+              {sortedOrders.map((order) => (
                 <tr key={order.id} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => openOrderModal(order)}>
+                  <td className="px-4 py-4" onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedOrderIds.includes(order.id)}
+                      onChange={() => toggleOrderSelection(order.id)}
+                      className="w-4 h-4 cursor-pointer"
+                    />
+                  </td>
                   <td className="px-4 py-4 text-[10px] font-bold text-slate-500 font-mono whitespace-nowrap">{formatOrderDate(order.createdAt)}</td>
                   <td className="px-4 py-4 text-[10px] font-bold text-slate-500 font-mono whitespace-nowrap">{formatOrderDate(order.expectedDate)}</td>
                   <td className="px-4 py-4">
@@ -647,19 +688,29 @@ const renderListStatusBadge = (order: Order) => {
                   <td className="px-4 py-4 text-[10px] font-black uppercase text-slate-400 truncate" title={order.currentSectorName || 'SEM SETOR'}>{order.currentSectorName || 'SEM SETOR'}</td>
                 </tr>
               ))}
-              {orders.length === 0 && <tr><td colSpan={11} className="px-6 py-12 text-center text-slate-300 font-black uppercase text-xs tracking-widest">Nenhum pedido registrado nesta obra.</td></tr>}
+              {orders.length === 0 && <tr><td colSpan={12} className="px-6 py-12 text-center text-slate-300 font-black uppercase text-xs tracking-widest">Nenhum pedido registrado nesta obra.</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
 
       <div className="lg:hidden space-y-4">
-        {orders.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((order) => (
+        {sortedOrders.map((order) => (
           <div key={order.id} className="bg-white border border-slate-200 shadow-sm p-4 space-y-4 cursor-pointer" onClick={() => openOrderModal(order)}>
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="font-black text-slate-900 uppercase text-sm">{order.title}</div>
-                <div className="text-[10px] text-blue-600 font-bold uppercase tracking-tighter">{project.budget.find((macro) => macro.id === order.macroItemId)?.description || 'Item macro não vinculado'}</div>
+              <div className="flex items-start gap-3">
+                <div onClick={(event) => event.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selectedOrderIds.includes(order.id)}
+                    onChange={() => toggleOrderSelection(order.id)}
+                    className="w-4 h-4 mt-1 cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <div className="font-black text-slate-900 uppercase text-sm">{order.title}</div>
+                  <div className="text-[10px] text-blue-600 font-bold uppercase tracking-tighter">{project.budget.find((macro) => macro.id === order.macroItemId)?.description || 'Item macro não vinculado'}</div>
+                </div>
               </div>
               {renderListStatusBadge(order)}
             </div>
@@ -679,6 +730,43 @@ const renderListStatusBadge = (order: Order) => {
         ))}
         {orders.length === 0 && <div className="bg-white border border-slate-200 p-12 text-center text-slate-300 font-black uppercase text-xs tracking-widest">Nenhum pedido registrado nesta obra.</div>}
       </div>
+
+      {selectedOrdersCount > 0 && (
+        <div className="fixed inset-x-0 bottom-5 z-[115] flex justify-center px-4 pointer-events-none">
+          <div className="pointer-events-auto bg-white/95 backdrop-blur-sm border border-slate-200 rounded-2xl shadow-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="px-2">
+              <p className="text-xs font-black text-slate-700">
+                {selectedOrdersCount === 1 ? '1 selecionado(a)' : `${selectedOrdersCount} selecionado(s)`}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleOpenSelectedOrder}
+                className="bg-white border border-slate-300 text-slate-900 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50"
+              >
+                Ver
+              </button>
+              {selectedOrdersCount === 1 && canDeleteOrderDirectly && (
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteOrder(selectedOrders[0])}
+                  className="bg-white border border-rose-300 text-rose-600 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-rose-50"
+                >
+                  Excluir Pedido
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={clearSelectedOrders}
+                className="bg-white border border-slate-300 text-slate-700 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-[110] p-4 sm:p-6">
