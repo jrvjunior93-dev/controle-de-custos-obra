@@ -65,10 +65,23 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
     return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
   };
 
+  const getLegacyLinkedOrder = (cost: ExecutedCost) => {
+    return (project.orders || []).find((order) => {
+      const normalizedCostDescription = String(cost.description || '').trim().toUpperCase();
+      const normalizedOrderDescription = `[PEDIDO] ${String(order.title || '').trim()}`.toUpperCase();
+      const sameDescription = normalizedCostDescription === normalizedOrderDescription;
+      const sameMacro = String(cost.macroItemId || '') === String(order.macroItemId || '');
+      const sameValue = Number(cost.totalValue || 0) === Number(order.value || 0);
+      const sameDetail = String(cost.itemDetail || '').trim() === String(order.description || '').trim();
+      return sameDescription && sameMacro && sameValue && sameDetail;
+    });
+  };
+
   const getOriginOrderLabel = (cost: ExecutedCost) => {
-    if (!cost.originOrderId) return 'Lançamento manual';
-    const order = (project.orders || []).find((item) => item.id === cost.originOrderId);
-    if (!order) return 'Pedido vinculado';
+    const order = cost.originOrderId
+      ? (project.orders || []).find((item) => item.id === cost.originOrderId)
+      : getLegacyLinkedOrder(cost);
+    if (!order) return 'Lançamento manual';
     return order.orderCode ? `Pedido ${order.orderCode}` : `Pedido ${order.title}`;
   };
 

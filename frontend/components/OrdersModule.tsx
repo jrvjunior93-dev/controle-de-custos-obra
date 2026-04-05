@@ -19,6 +19,16 @@ const parseMoneyInput = (value: string) => {
   return digits ? Number(digits) / 100 : undefined;
 };
 
+const isLegacyLinkedOrderCost = (cost: ExecutedCost, order: Order) => {
+  const normalizedCostDescription = String(cost.description || '').trim().toUpperCase();
+  const normalizedOrderDescription = `[PEDIDO] ${String(order.title || '').trim()}`.toUpperCase();
+  const sameDescription = normalizedCostDescription === normalizedOrderDescription;
+  const sameMacro = String(cost.macroItemId || '') === String(order.macroItemId || '');
+  const sameValue = Number(cost.totalValue || 0) === Number(order.value || 0);
+  const sameDetail = String(cost.itemDetail || '').trim() === String(order.description || '').trim();
+  return sameDescription && sameMacro && sameValue && sameDetail;
+};
+
 const formatOrderDate = (value?: string) => value ? new Date(value).toLocaleDateString('pt-BR') : '-';
 
 const exportOrdersToExcel = async (projectName: string, orders: Order[]) => {
@@ -98,7 +108,11 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     }
     return getSectorStatuses(user.sectorId);
   };
-  const getLinkedOrderCost = (order: Order) => (project.costs || []).find((cost) => cost.originOrderId === order.id) || null;
+  const getLinkedOrderCost = (order: Order) => (
+    (project.costs || []).find((cost) => cost.originOrderId === order.id)
+    || (project.costs || []).find((cost) => !cost.originOrderId && isLegacyLinkedOrderCost(cost, order))
+    || null
+  );
   const buildOrderCostRecord = (order: Order, existingCost?: ExecutedCost | null): ExecutedCost => {
     const today = new Date().toISOString().split('T')[0];
     const derivedAttachments = [

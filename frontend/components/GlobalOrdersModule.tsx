@@ -20,6 +20,16 @@ const parseMoneyInput = (value: string) => {
   const digits = value.replace(/\D/g, '');
   return digits ? Number(digits) / 100 : undefined;
 };
+
+const isLegacyLinkedOrderCost = (cost: ExecutedCost, order: Order) => {
+  const normalizedCostDescription = String(cost.description || '').trim().toUpperCase();
+  const normalizedOrderDescription = `[PEDIDO] ${String(order.title || '').trim()}`.toUpperCase();
+  const sameDescription = normalizedCostDescription === normalizedOrderDescription;
+  const sameMacro = String(cost.macroItemId || '') === String(order.macroItemId || '');
+  const sameValue = Number(cost.totalValue || 0) === Number(order.value || 0);
+  const sameDetail = String(cost.itemDetail || '').trim() === String(order.description || '').trim();
+  return sameDescription && sameMacro && sameValue && sameDetail;
+};
 const normalizeDateKey = (value?: string) => {
   if (!value) return '';
   const trimmed = value.trim();
@@ -336,7 +346,11 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const activeProjectForModal = isActionModalOpen ? projects.find((project) => project.id === isActionModalOpen.projectId) : null;
   const canEditMacroItem = (order: Order) => canEditFinancialFields && isOrderActive(order);
   const canEditOrderValueDirectly = (order: Order) => canEditFinancialFields && !!order;
-  const getLinkedOrderCost = (order: Order, project = activeProjectForModal) => (project?.costs || []).find((cost) => cost.originOrderId === order.id) || null;
+  const getLinkedOrderCost = (order: Order, project = activeProjectForModal) => (
+    (project?.costs || []).find((cost) => cost.originOrderId === order.id)
+    || (project?.costs || []).find((cost) => !cost.originOrderId && isLegacyLinkedOrderCost(cost, order))
+    || null
+  );
   const buildOrderCostRecord = (order: Order, project: Project, existingCost?: ExecutedCost | null): ExecutedCost => {
     const today = new Date().toISOString().split('T')[0];
     const derivedAttachments = [
