@@ -260,6 +260,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
   const [isTypeFilterOpen, setIsTypeFilterOpen] = useState(false);
   const [applyOrderCost, setApplyOrderCost] = useState(false);
+  const [hasSavedCostAssignment, setHasSavedCostAssignment] = useState(false);
   const [editableOrderValue, setEditableOrderValue] = useState<number>(0);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -469,7 +470,9 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     resetActionState();
     const currentValue = Number(order.value || 0);
     setEditableOrderValue(currentValue);
-    setApplyOrderCost(!!getLinkedOrderCost(order, projects.find((project) => project.id === order.projectId)));
+    const linkedCostExists = !!getLinkedOrderCost(order, projects.find((project) => project.id === order.projectId));
+    setApplyOrderCost(linkedCostExists);
+    setHasSavedCostAssignment(linkedCostExists);
     setSelectedMacroItemId(order.macroItemId || '');
     setSelectedForwardSectorId(order.currentSectorId || '');
     setSelectedSectorStatus(order.sectorStatus || '');
@@ -860,6 +863,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
         ...activeProjectForModal,
         costs: nextCosts,
       });
+      setHasSavedCostAssignment(applyOrderCost);
       alert(applyOrderCost ? 'Custo vinculado à obra com sucesso.' : 'Vinculação de custo removida com sucesso.');
     } catch (error) {
       console.error('Erro ao atualizar vínculo de custo do pedido:', error);
@@ -1551,10 +1555,13 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                     <label className="text-[9px] font-black text-slate-400 uppercase block">Aplicação no Custo da Obra</label>
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input type="checkbox" checked={applyOrderCost} onChange={(event) => setApplyOrderCost(event.target.checked)} className="w-4 h-4" />
-                      <span className="text-[10px] font-black uppercase text-slate-700">
-                        {applyOrderCost ? 'Valor vinculado ao custo da obra' : 'Não vincular valor ao custo da obra'}
-                      </span>
+                      <span className="text-[10px] font-black uppercase text-slate-700">Vincular valor ao custo da obra</span>
                     </label>
+                    {hasSavedCostAssignment && (
+                      <p className="text-[10px] font-black uppercase text-emerald-600">
+                        Pedido incluído no custo da obra
+                      </p>
+                    )}
                     <button type="button" onClick={() => void handleSaveCostAssignment()} className="w-full bg-slate-900 text-white py-2 font-black uppercase text-[9px] tracking-widest">
                       Salvar Vinculação de Custo
                     </button>

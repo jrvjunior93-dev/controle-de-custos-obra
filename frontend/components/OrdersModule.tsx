@@ -56,6 +56,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const [messageText, setMessageText] = useState('');
   const [messageAttachments, setMessageAttachments] = useState<Attachment[]>([]);
   const [applyOrderCost, setApplyOrderCost] = useState(false);
+  const [hasSavedCostAssignment, setHasSavedCostAssignment] = useState(false);
   const [editableOrderValue, setEditableOrderValue] = useState(0);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const [selectedMacroItemId, setSelectedMacroItemId] = useState('');
@@ -197,7 +198,9 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     resetActionState();
     const currentValue = Number(order.value || 0);
     setEditableOrderValue(currentValue);
-    setApplyOrderCost(!!getLinkedOrderCost(order));
+    const linkedCostExists = !!getLinkedOrderCost(order);
+    setApplyOrderCost(linkedCostExists);
+    setHasSavedCostAssignment(linkedCostExists);
     setSelectedMacroItemId(order.macroItemId || '');
     setSelectedForwardSectorId(order.currentSectorId || '');
     setSelectedSectorStatus(order.sectorStatus || '');
@@ -456,6 +459,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
         ...project,
         costs: nextCosts,
       });
+      setHasSavedCostAssignment(applyOrderCost);
       alert(applyOrderCost ? 'Custo vinculado à obra com sucesso.' : 'Vinculação de custo removida com sucesso.');
     } catch (error) {
       console.error('Erro ao atualizar vínculo de custo do pedido:', error);
@@ -1078,6 +1082,11 @@ const renderListStatusBadge = (order: Order) => {
                       />
                       <span className="text-[10px] font-black uppercase text-slate-700">Vincular valor ao custo da obra</span>
                     </label>
+                    {hasSavedCostAssignment && (
+                      <p className="text-[10px] font-black uppercase text-emerald-600">
+                        Pedido incluído no custo da obra
+                      </p>
+                    )}
                       <button
                         type="button"
                         onClick={() => void handleSaveCostAssignment()}
