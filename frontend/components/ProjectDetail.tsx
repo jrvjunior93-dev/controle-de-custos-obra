@@ -33,9 +33,23 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, 
   const [reportMode, setReportMode] = useState<ReportMode>('CUSTO');
   const [exportStatus, setExportStatus] = useState<ExportStatus>('IDLE');
   const budgetDraftStorageKey = useMemo(() => `csc_brape_budget_draft_${project.id}`, [project.id]);
+  const projectTabStorageKey = useMemo(() => `csc_brape_project_tab_${project.id}`, [project.id]);
   const [budgetDraft, setBudgetDraft] = useState(project.budget || []);
   const canManageProject = isGlobalAdmin(user.role) || (isProjectAdmin(user.role) && user.assignedProjectIds?.includes(project.id));
   const canAccessFullProjectTabs = user.role !== 'ADMIN_OBRA';
+
+  useEffect(() => {
+    const savedTab = sessionStorage.getItem(projectTabStorageKey) as Tab | null;
+    if (savedTab) {
+      setActiveTab(savedTab);
+      return;
+    }
+    setActiveTab('RESUMO');
+  }, [project.id, projectTabStorageKey]);
+
+  useEffect(() => {
+    sessionStorage.setItem(projectTabStorageKey, activeTab);
+  }, [activeTab, projectTabStorageKey]);
 
   useEffect(() => {
     const savedDraft = sessionStorage.getItem(budgetDraftStorageKey);

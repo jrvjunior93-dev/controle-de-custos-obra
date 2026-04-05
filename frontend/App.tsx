@@ -117,6 +117,7 @@ const ScreenFallback: React.FC = () => (
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 const SESSION_KEY = 'csc_brape_session';
 const LAST_ACTIVITY_KEY = 'csc_brape_last_activity';
+const NAVIGATION_KEY = 'csc_brape_navigation';
 
 const App: React.FC = () => {
 
@@ -153,6 +154,19 @@ const App: React.FC = () => {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: '', currentPassword: '', newPassword: '', confirmPassword: '' });
 
+  const persistNavigationState = (nextView: ViewState, nextProjectId: string | null) => {
+    sessionStorage.setItem(NAVIGATION_KEY, JSON.stringify({
+      view: nextView,
+      selectedProjectId: nextProjectId,
+    }));
+  };
+
+  const setNavigationState = (nextView: ViewState, nextProjectId: string | null = selectedProjectId) => {
+    setView(nextView);
+    setSelectedProjectId(nextProjectId);
+    persistNavigationState(nextView, nextProjectId);
+  };
+
   const markSessionActivity = () => {
     sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
   };
@@ -162,6 +176,7 @@ const App: React.FC = () => {
     dbService.clearAuthToken();
     sessionStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(LAST_ACTIVITY_KEY);
+    sessionStorage.removeItem(NAVIGATION_KEY);
     setView('PROJECT_LIST');
     setSelectedProjectId(null);
     setProjects([]);
@@ -283,8 +298,17 @@ const App: React.FC = () => {
         setUser(normalizeUserRecord(refreshedUser));
         sessionStorage.setItem(SESSION_KEY, JSON.stringify({ user: normalizeUserRecord(refreshedUser) }));
         markSessionActivity();
+        const savedNavigationRaw = sessionStorage.getItem(NAVIGATION_KEY);
+        const savedNavigation = savedNavigationRaw ? JSON.parse(savedNavigationRaw) as { view?: ViewState; selectedProjectId?: string | null } : null;
+        const fallbackView: ViewState = !isProjectAdmin(refreshedUser.role) ? 'ORDERS_GLOBAL' : 'PROJECT_LIST';
+        const restoredView = savedNavigation?.view || fallbackView;
+        const restoredProjectId = savedNavigation?.selectedProjectId || null;
 
-        if (!isProjectAdmin(refreshedUser.role)) setView('ORDERS_GLOBAL');
+        if (!isProjectAdmin(refreshedUser.role) && (restoredView === 'PROJECT_LIST' || restoredView === 'PROJECT_DETAIL')) {
+          setNavigationState('ORDERS_GLOBAL', null);
+        } else {
+          setNavigationState(restoredView, restoredProjectId);
+        }
 
         await initData(refreshedUser);
       } catch {
@@ -370,12 +394,10 @@ const App: React.FC = () => {
 
 
     if (!isProjectAdmin(authenticatedUser.role)) {
-
-      setView('ORDERS_GLOBAL');
+      setNavigationState('ORDERS_GLOBAL', null);
 
     } else {
-
-      setView('PROJECT_LIST');
+      setNavigationState('PROJECT_LIST', null);
 
     }
 
@@ -438,8 +460,7 @@ const App: React.FC = () => {
     });
 
     if (selectedProjectId === project.id) {
-      setSelectedProjectId(null);
-      setView('PROJECT_LIST');
+      setNavigationState('PROJECT_LIST', null);
     }
   };
 
@@ -599,7 +620,7 @@ const App: React.FC = () => {
 
       <header className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shadow-lg sticky top-0 z-50 no-print border-b border-slate-800">
 
-        <div className="flex items-center gap-3 cursor-pointer group" onClick={() => canManageProjectPortfolio ? setView('PROJECT_LIST') : setView('ORDERS_GLOBAL')}>
+        <div className="flex items-center gap-3 cursor-pointer group" onClick={() => canManageProjectPortfolio ? setNavigationState('PROJECT_LIST', null) : setNavigationState('ORDERS_GLOBAL', null)}>
 
           <div className="bg-blue-600 p-2 shadow-lg group-hover:bg-blue-500 transition-colors"><i className="fas fa-hard-hat text-xl"></i></div>
 
@@ -637,19 +658,19 @@ const App: React.FC = () => {
 
           {canManageProjectPortfolio && (
 
-            <button onClick={() => setView('PROJECT_LIST')} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'PROJECT_LIST' || view === 'PROJECT_DETAIL' ? 'text-blue-400' : ''}`}>Obras</button>
+            <button onClick={() => setNavigationState('PROJECT_LIST', null)} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'PROJECT_LIST' || view === 'PROJECT_DETAIL' ? 'text-blue-400' : ''}`}>Obras</button>
 
           )}
 
-          <button onClick={() => setView('ORDERS_GLOBAL')} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'ORDERS_GLOBAL' ? 'text-blue-400' : ''}`}>Pedidos</button>
+          <button onClick={() => setNavigationState('ORDERS_GLOBAL', null)} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'ORDERS_GLOBAL' ? 'text-blue-400' : ''}`}>Pedidos</button>
 
           {canManageGlobalData && (
 
             <>
 
-              <button onClick={() => setView('USERS_MANAGEMENT')} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'USERS_MANAGEMENT' ? 'text-blue-400' : ''}`}>Usuarios</button>
+              <button onClick={() => setNavigationState('USERS_MANAGEMENT', null)} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'USERS_MANAGEMENT' ? 'text-blue-400' : ''}`}>Usuarios</button>
 
-              <button onClick={() => setView('SPECIFICATION')} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'SPECIFICATION' ? 'text-blue-400' : ''}`}>Config</button>
+              <button onClick={() => setNavigationState('SPECIFICATION', null)} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'SPECIFICATION' ? 'text-blue-400' : ''}`}>Config</button>
 
             </>
 
@@ -708,14 +729,14 @@ const App: React.FC = () => {
 
         {view === 'PROJECT_LIST' && canManageProjectPortfolio && (
 
-          <ProjectList projects={visibleProjects} onSelect={(id) => { setSelectedProjectId(id); setView('PROJECT_DETAIL'); }} onAdd={async (p) => handleSaveProject({ ...p, id: crypto.randomUUID(), code: String(p.code || '').trim().toUpperCase(), budget: [], costs: [], installments: [], orders: [] })} onDelete={handleDeleteProject} canCreateProject={canManageGlobalData} canDeleteProject={canManageGlobalData} canManageProject={canManageProjectPortfolio} />
+          <ProjectList projects={visibleProjects} onSelect={(id) => setNavigationState('PROJECT_DETAIL', id)} onAdd={async (p) => handleSaveProject({ ...p, id: crypto.randomUUID(), code: String(p.code || '').trim().toUpperCase(), budget: [], costs: [], installments: [], orders: [] })} onDelete={handleDeleteProject} canCreateProject={canManageGlobalData} canDeleteProject={canManageGlobalData} canManageProject={canManageProjectPortfolio} />
 
         )}
 
         <Suspense fallback={<ScreenFallback />}>
           {view === 'PROJECT_DETAIL' && visibleProjects.find((p) => p.id === selectedProjectId) && (
 
-            <ProjectDetail project={visibleProjects.find((p) => p.id === selectedProjectId)!} sectors={sectors} user={user} onUpdate={handleSaveProject} onPersistOrder={handleSyncMemberOrder} onDeleteOrder={handleDeleteMemberOrder} onBack={() => setView('PROJECT_LIST')} />
+            <ProjectDetail project={visibleProjects.find((p) => p.id === selectedProjectId)!} sectors={sectors} user={user} onUpdate={handleSaveProject} onPersistOrder={handleSyncMemberOrder} onDeleteOrder={handleDeleteMemberOrder} onBack={() => setNavigationState('PROJECT_LIST', null)} />
 
           )}
 
