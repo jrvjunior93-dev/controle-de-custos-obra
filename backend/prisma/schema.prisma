@@ -149,12 +149,14 @@ model MacroItem {
 }
 
 model Cost {
-  id            Int              @id @default(autoincrement())
-  projectId     Int              @map("obra_id")
-  macroItemId   Int              @map("item_macro_id")
-  description   String     @map("descricao")
-  itemDetail    String?          @db.Text @map("detalhe_item")
-  unit          String           @map("unidade")
+    id            Int              @id @default(autoincrement())
+    projectId     Int              @map("obra_id")
+    macroItemId   Int              @map("item_macro_id")
+    originOrderId Int?             @map("origem_pedido_id")
+    originInstallmentId Int?       @map("origem_parcela_id")
+    description   String     @map("descricao")
+    itemDetail    String?          @db.Text @map("detalhe_item")
+    unit          String           @map("unidade")
   quantity      Decimal          @db.Decimal(15, 3) @map("quantidade")
   unitValue     Decimal          @db.Decimal(15, 2) @map("valor_unitario")
   totalValue    Decimal          @db.Decimal(15, 2) @map("valor_total")
@@ -166,9 +168,11 @@ model Cost {
   macroItem     MacroItem        @relation(fields: [macroItemId], references: [id])
   attachments   CostAttachment[]
 
-  @@index([projectId])
-  @@index([macroItemId])
-  @@index([occurredAt])
+    @@index([projectId])
+    @@index([macroItemId])
+    @@index([originOrderId])
+    @@index([originInstallmentId])
+    @@index([occurredAt])
 
   @@map("custos")
 }

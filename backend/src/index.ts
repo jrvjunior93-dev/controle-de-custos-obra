@@ -473,6 +473,8 @@ async function mapProjectFromDb(project: any, authUser?: any) {
     costs: await Promise.all((project.costs || []).map(async (cost: any) => ({
       id: String(cost.id),
       macroItemId: String(cost.macroItemId),
+      originOrderId: cost.originOrderId ? String(cost.originOrderId) : undefined,
+      originInstallmentId: cost.originInstallmentId ? String(cost.originInstallmentId) : undefined,
       description: cost.description,
       itemDetail: cost.itemDetail || undefined,
       unit: cost.unit,
@@ -727,6 +729,8 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
       data: {
         projectId: project.id,
         macroItemId: macro.id,
+        originOrderId: cost.originOrderId ? Number(cost.originOrderId) : null,
+        originInstallmentId: cost.originInstallmentId ? Number(cost.originInstallmentId) : null,
         description: String(cost.description || "").trim(),
         itemDetail: toOptionalText(cost.itemDetail),
         unit: String(cost.unit || "un"),
