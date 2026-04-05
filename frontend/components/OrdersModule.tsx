@@ -926,28 +926,38 @@ const renderListStatusBadge = (order: Order) => {
                 </div>
               </div>
             )}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-10 grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-10">
-              <div className="space-y-8">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 bg-slate-100/60">
+              <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-5">
                 <div>
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Descrição da Solicitação</label>
-                  <p className="text-xs font-bold text-slate-700 leading-relaxed bg-slate-50 p-5 border border-slate-100 italic">"{isActionModalOpen.description}"</p>
+                  <p className="text-sm font-bold text-slate-700 leading-relaxed bg-slate-50 p-5 border border-slate-200 italic">"{isActionModalOpen.description || 'Sem descrição informada.'}"</p>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="bg-white border border-slate-100 p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                  <div className="bg-slate-50 border border-slate-200 p-4">
                     <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Código do Pedido</label>
                     <p className="text-[10px] font-black text-slate-900">{isActionModalOpen.orderCode || 'Será gerado pelo backend'}</p>
                   </div>
-                  <div className="bg-white border border-slate-100 p-4">
+                  <div className="bg-slate-50 border border-slate-200 p-4">
                     <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Código Externo</label>
                     <p className="text-[10px] font-black text-slate-900">{isActionModalOpen.externalCode || 'Não informado'}</p>
                   </div>
-                  <div className="bg-white border border-slate-100 p-4 sm:col-span-2">
+                  <div className="bg-slate-50 border border-slate-200 p-4">
+                    <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Valor</label>
+                    <p className="text-[10px] font-black text-slate-900">{formatMoney(isActionModalOpen.value)}</p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 p-4">
                     <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Setor Atual</label>
                     <p className="text-[10px] font-black text-slate-900 uppercase">{isActionModalOpen.currentSectorName || 'SEM SETOR DEFINIDO'}</p>
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-white border border-slate-100 p-4">
+                  <div className="bg-slate-50 border border-slate-200 p-4">
+                    <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Data do Pedido</label>
+                    <p className="text-[10px] font-black text-slate-900">{formatOrderDate(isActionModalOpen.createdAt)}</p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 p-4">
+                    <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Data Desejada</label>
+                    <p className="text-[10px] font-black text-slate-900">{formatOrderDate(isActionModalOpen.expectedDate)}</p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 p-4 sm:col-span-2">
                     <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Apropriação</label>
                     <div className="space-y-3">
                       <p className="text-[10px] font-black text-blue-600 uppercase">{project.budget.find((macro) => macro.id === isActionModalOpen.macroItemId)?.description || 'Item macro não vinculado'}</p>
@@ -967,44 +977,10 @@ const renderListStatusBadge = (order: Order) => {
                       )}
                     </div>
                   </div>
-                  <div className="bg-white border border-slate-100 p-4">
-                    <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Valor Atual</label>
-                    <p className="text-[10px] font-black text-slate-800">{formatMoney(isActionModalOpen.value)}</p>
-                    {canEditFinancialFields && isOrderActive(isActionModalOpen) && (
-                      <div className="mt-3 space-y-3">
-                        <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            className="w-full bg-slate-50 border border-slate-200 pl-12 pr-4 py-3 font-black text-sm"
-                            value={formatMoneyInput(editableOrderValue)}
-                            onChange={(e) => setEditableOrderValue(parseMoneyInput(e.target.value) || 0)}
-                            placeholder="0,00"
-                          />
-                        </div>
-                        <button type="button" onClick={handleSaveOrderValue} className="w-full bg-slate-900 text-white py-2 font-black uppercase text-[9px] tracking-widest">
-                          Salvar Valor
-                        </button>
-                      </div>
-                    )}
-                  </div>
                 </div>
-                {canForwardOrder(isActionModalOpen) && sectors.length > 0 && (
-                  <div className="bg-white border border-slate-100 p-4 space-y-3">
-                    <label className="text-[9px] font-black text-slate-400 uppercase block">Encaminhar para Outro Setor</label>
-                    <select className="w-full bg-slate-50 border border-slate-200 px-3 py-2 font-black text-[10px] uppercase" value={selectedForwardSectorId} onChange={(event) => setSelectedForwardSectorId(event.target.value)}>
-                      <option value="">Selecione...</option>
-                      {sectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.name}</option>)}
-                    </select>
-                    <button type="button" onClick={handleForwardOrder} className="w-full bg-slate-900 text-white py-2 font-black uppercase text-[9px] tracking-widest">
-                      Encaminhar Pedido
-                    </button>
-                  </div>
-                )}
                 {isActionModalOpen.attachments && isActionModalOpen.attachments.length > 0 && (
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Anexos do Pedido</label>
+                  <div className="bg-slate-50 border border-slate-200 p-4 space-y-3">
+                    <label className="text-[9px] font-black text-slate-400 uppercase block">Anexos do Pedido</label>
                     <div className="flex flex-wrap gap-2">
                       {isActionModalOpen.attachments.map((attachment) => (
                         <div key={attachment.id} className="flex items-center gap-2">
@@ -1019,17 +995,32 @@ const renderListStatusBadge = (order: Order) => {
                     </div>
                   </div>
                 )}
-                {getMessagesForDisplay(isActionModalOpen).length > 0 && (
-                  <div className="space-y-4">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Histórico de Mensagens</label>
-                    <div className="space-y-4 max-h-60 overflow-y-auto pr-4">
+                {canForwardOrder(isActionModalOpen) && sectors.length > 0 && (
+                  <div className="bg-slate-50 border border-slate-200 p-4 space-y-3">
+                    <label className="text-[9px] font-black text-slate-400 uppercase block">Encaminhar para Outro Setor</label>
+                    <select className="w-full bg-white border border-slate-200 px-3 py-3 font-black text-[10px] uppercase" value={selectedForwardSectorId} onChange={(event) => setSelectedForwardSectorId(event.target.value)}>
+                      <option value="">Selecione...</option>
+                      {sectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.name}</option>)}
+                    </select>
+                    <button type="button" onClick={handleForwardOrder} className="w-full bg-slate-900 text-white py-3 font-black uppercase text-[9px] tracking-widest">
+                      Encaminhar Pedido
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-6">
+                <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
+                  <h4 className="text-lg font-black text-slate-900">Histórico</h4>
+                  {getMessagesForDisplay(isActionModalOpen).length > 0 ? (
+                    <div className="space-y-4 max-h-[28rem] overflow-y-auto pr-2">
                       {getMessagesForDisplay(isActionModalOpen).map((message) => {
                         const meta = getMessageMeta(isActionModalOpen, message);
                         return (
                         <div key={message.id} className={`p-4 border-l-4 ${meta.classes}`}>
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-[9px] font-black uppercase text-slate-900">{message.userName}</span>
-                            <span className="text-[8px] font-bold text-slate-400">{new Date(message.date).toLocaleString('pt-BR')}</span>
+                          <div className="flex justify-between items-center mb-1 gap-3">
+                            <span className="text-[10px] font-black uppercase text-slate-900">{message.userName}</span>
+                            <span className="text-[9px] font-bold text-slate-400 whitespace-nowrap">{new Date(message.date).toLocaleString('pt-BR')}</span>
                           </div>
                           <div className="mb-2 text-[8px] font-black uppercase tracking-widest text-slate-500">{meta.label}</div>
                           <p className="text-[11px] font-medium text-slate-600">{message.text}</p>
@@ -1055,24 +1046,49 @@ const renderListStatusBadge = (order: Order) => {
                         </div>
                       )})}
                     </div>
-                  </div>
-                )}
-              </div>
+                  ) : (
+                    <div className="bg-slate-50 border border-slate-200 p-5 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      Nenhuma interação registrada.
+                    </div>
+                  )}
+                </div>
 
-              <div className="bg-slate-50 p-8 border-l border-slate-100 space-y-6">
-                {canReopenOrder(isActionModalOpen) && (
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Gerenciar Pedido</h4>
-                    <button onClick={handleReopenOrder} className="w-full bg-emerald-50 text-emerald-700 border border-emerald-200 py-4 font-black uppercase text-[10px] shadow-sm">
-                      Reabrir Pedido
-                    </button>
-                  </div>
-                )}
+                <div className="space-y-6">
+                  {canReopenOrder(isActionModalOpen) && (
+                    <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-3">
+                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Gerenciar Pedido</h4>
+                      <button onClick={handleReopenOrder} className="w-full bg-emerald-50 text-emerald-700 border border-emerald-200 py-4 font-black uppercase text-[10px] shadow-sm">
+                        Reabrir Pedido
+                      </button>
+                    </div>
+                  )}
 
-                {canEditFinancialFields && (
-                  <div className="space-y-4">
-                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Atribuir Custo à Obra</h4>
-                    <div className="bg-white border border-slate-200 p-4 space-y-4 shadow-sm">
+                  <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Valor Atual</h4>
+                    <p className="text-[10px] font-black text-slate-800">{formatMoney(isActionModalOpen.value)}</p>
+                    {canEditFinancialFields && isOrderActive(isActionModalOpen) && (
+                      <div className="mt-3 space-y-3">
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            className="w-full bg-slate-50 border border-slate-200 pl-12 pr-4 py-3 font-black text-sm"
+                            value={formatMoneyInput(editableOrderValue)}
+                            onChange={(e) => setEditableOrderValue(parseMoneyInput(e.target.value) || 0)}
+                            placeholder="0,00"
+                          />
+                        </div>
+                        <button type="button" onClick={handleSaveOrderValue} className="w-full bg-slate-900 text-white py-2 font-black uppercase text-[9px] tracking-widest">
+                          Salvar Valor
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {canEditFinancialFields && (
+                    <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
+                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Atribuir Custo à Obra</h4>
+                      <div className="bg-slate-50 border border-slate-200 p-4 space-y-4">
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input
                         type="checkbox"
@@ -1096,24 +1112,25 @@ const renderListStatusBadge = (order: Order) => {
                       </button>
                     </div>
                   </div>
-                )}
+                  )}
 
-                {canCommentOnOrder(isActionModalOpen) && (
-                  <div className="space-y-4 pt-4 border-t border-slate-200">
+                  {canCommentOnOrder(isActionModalOpen) && (
+                  <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Interações Livres</h4>
                     <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder="Registre uma orientação, alinhamento ou resposta livre..." value={messageText} onChange={(e) => setMessageText(e.target.value)} />
                     <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'MESSAGE')} />
                     {renderAttachmentList(messageAttachments, removeMessageAttachment, 'Nenhum anexo selecionado para esta mensagem.')}
                     <button onClick={() => handleSendMessage(isActionModalOpen)} className="w-full bg-purple-600 text-white py-4 font-black uppercase text-[10px] shadow-xl">Adicionar Interação</button>
                   </div>
-                )}
+                  )}
 
-                {isActionModalOpen.status === 'CANCELADO' && (
+                  {isActionModalOpen.status === 'CANCELADO' && (
                   <div className="bg-rose-50 p-6 border-l-4 border-rose-500">
                     <h4 className="text-[11px] font-black text-rose-700 uppercase mb-2">Pedido Cancelado</h4>
                     <p className="text-xs text-rose-800 font-medium italic">"{isActionModalOpen.cancellationReason || 'Sem motivo informado.'}"</p>
                   </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           </div>
