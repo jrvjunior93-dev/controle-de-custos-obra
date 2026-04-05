@@ -1690,6 +1690,11 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                       />
                       <span className="text-[10px] font-black uppercase text-slate-700">Vincular valor ao custo da obra</span>
                     </label>
+                    {hasSavedCostAssignment && (
+                      <p className="text-[10px] font-black uppercase text-emerald-600">
+                        Pedido incluído no custo da obra
+                      </p>
+                    )}
                     <button
                       type="button"
                       onClick={() => void handleSaveCostAssignment()}
