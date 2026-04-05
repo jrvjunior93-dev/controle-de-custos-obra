@@ -1203,6 +1203,15 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
               >
                 Exportar Excel
               </button>
+              {selectedOrdersCount === 1 && canDeleteOrderDirectly && (
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteOrder(selectedOrders[0])}
+                  className="bg-white border border-slate-300 text-slate-900 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50"
+                >
+                  Excluir Pedido
+                </button>
+              )}
               <button
                 type="button"
                 onClick={clearSelectedOrders}
@@ -1613,7 +1622,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
               </div>
 
               <div className="space-y-6">
-                {(canReopenOrder(isActionModalOpen) || canDeleteOrderDirectly) && (
+                {canReopenOrder(isActionModalOpen) && (
                   <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-3">
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Gerenciar Pedido</h4>
                     {canReopenOrder(isActionModalOpen) && (
@@ -1623,15 +1632,6 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                         className="w-full bg-emerald-50 text-emerald-700 border border-emerald-200 py-4 font-black uppercase text-[10px] shadow-sm"
                       >
                         Reabrir Pedido
-                      </button>
-                    )}
-                    {canDeleteOrderDirectly && (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteOrder(isActionModalOpen)}
-                        className="w-full bg-white border border-slate-300 text-slate-900 py-4 font-black uppercase text-[10px] shadow-sm hover:bg-slate-50"
-                      >
-                        Excluir Pedido
                       </button>
                     )}
                   </div>
