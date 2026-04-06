@@ -53,6 +53,7 @@ const formatOrderDate = (value?: string) => {
 };
 
 const isObraSectorName = (name?: string) => String(name || '').trim().toUpperCase() === 'OBRA';
+const isComprasSectorMember = (user: User) => user.role === 'MEMBRO' && String(user.sectorName || '').trim().toUpperCase() === 'COMPRAS';
 const getStatusColor = (status: OrderStatus) => {
   switch (status) {
     case 'PENDENTE':
@@ -335,7 +336,8 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const canOpenOrderDetails = (order: Order) => isOrderActive(order) || user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canTreatOrder = (order: Order) => canManageAllOrders && isOrderActive(order);
   const canReopenOrder = (order: Order) => canManageAllOrders && (order.status === 'CONCLUIDO' || order.status === 'CANCELADO');
-  const canEditFinancialFields = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
+  const canManageFinancialFields = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
+  const canEditOrderValue = canManageFinancialFields || isComprasSectorMember(user);
   const canDeleteOrderDirectly = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canCommentOnOrder = (order: Order) => isOrderActive(order);
   const canEditSectorStatus = (order: Order) => isOrderActive(order) && (
@@ -344,8 +346,8 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     (!!user.sectorId && (order.currentSectorId === user.sectorId || (order.accessibleSectorIds || []).includes(user.sectorId)))
   );
   const activeProjectForModal = isActionModalOpen ? projects.find((project) => project.id === isActionModalOpen.projectId) : null;
-  const canEditMacroItem = (order: Order) => canEditFinancialFields && isOrderActive(order);
-  const canEditOrderValueDirectly = (order: Order) => canEditFinancialFields && !!order;
+  const canEditMacroItem = (order: Order) => canManageFinancialFields && isOrderActive(order);
+  const canEditOrderValueDirectly = (order: Order) => canEditOrderValue && !!order && isOrderActive(order);
   const getLinkedOrderCost = (order: Order, project = activeProjectForModal) => (
     (project?.costs || []).find((cost) => cost.originOrderId === order.id)
     || (project?.costs || []).find((cost) => !cost.originOrderId && isLegacyLinkedOrderCost(cost, order))
@@ -863,7 +865,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
   const handleSaveCostAssignment = async () => {
     if (!isActionModalOpen || !activeProjectForModal) return;
-    if (!canEditFinancialFields) return alert('Você não pode alterar a vinculação de custo deste pedido.');
+    if (!canManageFinancialFields) return alert('Você não pode alterar a vinculação de custo deste pedido.');
     if (applyOrderCost && !isActionModalOpen.macroItemId) return alert('Selecione um item macro antes de vincular o pedido ao custo.');
 
     const existingCost = getLinkedOrderCost(isActionModalOpen, activeProjectForModal);
@@ -984,8 +986,8 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
     const updated: Order = {
       ...isActionModalOpen,
-      value: canEditFinancialFields ? Number(editableOrderValue || 0) : isActionModalOpen.value,
-      macroItemId: canEditFinancialFields ? (selectedMacroItemId || undefined) : isActionModalOpen.macroItemId,
+      value: canEditOrderValue ? Number(editableOrderValue || 0) : isActionModalOpen.value,
+      macroItemId: canManageFinancialFields ? (selectedMacroItemId || undefined) : isActionModalOpen.macroItemId,
     };
 
     if (actionType === 'COMPLETE') {
@@ -1677,7 +1679,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                     </div>
                   )}
                 </div>
-                {canEditFinancialFields && (
+                {canManageFinancialFields && (
                 <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
                   <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Atribuir Custo à Obra</h4>
                   <div className="bg-slate-50 border border-slate-200 p-4 space-y-4">

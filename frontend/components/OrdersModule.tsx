@@ -29,6 +29,8 @@ const isLegacyLinkedOrderCost = (cost: ExecutedCost, order: Order) => {
   return sameDescription && sameMacro && sameValue && sameDetail;
 };
 
+const isComprasSectorMember = (user: User) => user.role === 'MEMBRO' && String(user.sectorName || '').trim().toUpperCase() === 'COMPRAS';
+
 const formatOrderDate = (value?: string) => value ? new Date(value).toLocaleDateString('pt-BR') : '-';
 
 const exportOrdersToExcel = async (projectName: string, orders: Order[]) => {
@@ -91,7 +93,8 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const canOpenOrderDetails = (order: Order) => isOrderActive(order) || user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canTreatOrder = (order: Order) => canManageProjectOrders && isOrderActive(order);
   const canReopenOrder = (order: Order) => canManageProjectOrders && (order.status === 'CONCLUIDO' || order.status === 'CANCELADO');
-  const canEditFinancialFields = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
+  const canManageFinancialFields = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
+  const canEditOrderValue = canManageFinancialFields || isComprasSectorMember(user);
   const canDeleteOrderDirectly = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canCommentOnOrder = (order: Order) => isOrderActive(order);
   const canForwardOrder = (order: Order) => canManageProjectOrders && isOrderActive(order);
@@ -424,8 +427,8 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
 
     const updatedOrder: Order = {
       ...isActionModalOpen,
-      value: canEditFinancialFields ? Number(editableOrderValue || 0) : isActionModalOpen.value,
-      macroItemId: canEditFinancialFields ? (selectedMacroItemId || undefined) : isActionModalOpen.macroItemId
+      value: canEditOrderValue ? Number(editableOrderValue || 0) : isActionModalOpen.value,
+      macroItemId: canManageFinancialFields ? (selectedMacroItemId || undefined) : isActionModalOpen.macroItemId
     };
 
     if (actionType === 'COMPLETE') {
@@ -459,7 +462,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
 
   const handleSaveCostAssignment = async () => {
     if (!isActionModalOpen) return;
-    if (!canEditFinancialFields) return alert('Você não pode alterar a vinculação de custo deste pedido.');
+    if (!canManageFinancialFields) return alert('Você não pode alterar a vinculação de custo deste pedido.');
     if (applyOrderCost && !isActionModalOpen.macroItemId) return alert('Selecione um item macro antes de vincular o pedido ao custo.');
 
     const existingCost = getLinkedOrderCost(isActionModalOpen);
@@ -507,7 +510,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
 
   const handleSaveOrderValue = async () => {
     if (!isActionModalOpen) return;
-    if (!canEditFinancialFields || !isOrderActive(isActionModalOpen)) return alert('Você não pode alterar o valor deste pedido.');
+    if (!canEditOrderValue || !isOrderActive(isActionModalOpen)) return alert('Você não pode alterar o valor deste pedido.');
     if (Number(editableOrderValue || 0) === Number(isActionModalOpen.value || 0)) return;
     if (!confirm(`Salvar o novo valor do pedido "${isActionModalOpen.title}"?`)) return;
 
@@ -979,12 +982,12 @@ const renderListStatusBadge = (order: Order) => {
                         className="w-full bg-slate-50 border border-slate-200 px-3 py-2 font-black text-[10px] uppercase"
                         value={selectedMacroItemId}
                         onChange={(event) => setSelectedMacroItemId(event.target.value)}
-                        disabled={!canEditFinancialFields || !isOrderActive(isActionModalOpen)}
+                        disabled={!canManageFinancialFields || !isOrderActive(isActionModalOpen)}
                       >
                         <option value="">Selecione...</option>
                         {project.budget.map((macro) => <option key={macro.id} value={macro.id}>{macro.description}</option>)}
                       </select>
-                      {canEditFinancialFields && isOrderActive(isActionModalOpen) && (
+                      {canManageFinancialFields && isOrderActive(isActionModalOpen) && (
                         <button type="button" onClick={handleUpdateMacroItem} className="w-full bg-slate-900 text-white py-2 font-black uppercase text-[9px] tracking-widest">
                           Salvar Item Macro
                         </button>
@@ -1080,7 +1083,7 @@ const renderListStatusBadge = (order: Order) => {
                   <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Valor Atual</h4>
                     <p className="text-[10px] font-black text-slate-800">{formatMoney(isActionModalOpen.value)}</p>
-                    {canEditFinancialFields && isOrderActive(isActionModalOpen) && (
+                    {canEditOrderValue && isOrderActive(isActionModalOpen) && (
                       <div className="mt-3 space-y-3">
                         <div className="relative">
                           <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
@@ -1099,7 +1102,7 @@ const renderListStatusBadge = (order: Order) => {
                       </div>
                     )}
                   </div>
-                  {canEditFinancialFields && (
+                  {canManageFinancialFields && (
                     <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
                       <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Atribuir Custo à Obra</h4>
                       <div className="bg-slate-50 border border-slate-200 p-4 space-y-4">

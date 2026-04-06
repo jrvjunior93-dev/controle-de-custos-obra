@@ -453,6 +453,10 @@ function canUserAccessOrder(order: any, userId: number, role: UserRole, sectorId
   return accessibleSectorIds.includes(sectorId) || order.currentSectorId === sectorId;
 }
 
+function isComprasSectorName(name?: string | null) {
+  return String(name || "").trim().toUpperCase() === "COMPRAS";
+}
+
 async function mapProjectFromDb(project: any, authUser?: any) {
   const scopedOrders = authUser
     ? (project.orders || []).filter((order: any) => canUserAccessOrder(order, authUser.id, authUser.role, authUser.sectorId))
@@ -785,6 +789,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
     ...((orderPayload.accessibleSectorIds || []).map((value: any) => Number(value)).filter(Boolean)),
     ...(existingOrder?.sectorAccess || []).map((item: any) => item.sectorId),
     ...(existingOrder?.currentSectorId ? [existingOrder.currentSectorId] : []),
+    ...(actorUser?.sectorId ? [actorUser.sectorId] : []),
     ...(requestedSectorId ? [requestedSectorId] : []),
   ]));
   const validSectors = sectorIds.length > 0
@@ -880,6 +885,9 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
     authUser.role === UserRole.ADMIN ||
     actorSectorHasAccess
   );
+  const canActorEditOrderValue = authUser.role === UserRole.SUPERADMIN
+    || authUser.role === UserRole.ADMIN
+    || (authUser.role === UserRole.MEMBRO && isComprasSectorName(actorUser?.sector?.name));
 
   if (normalizedSectorStatus && statusSector && !(statusSector.statuses || []).some((item: any) => item.name === normalizedSectorStatus)) {
     const error = new Error("Invalid sector status") as Error & { status?: number };
@@ -933,10 +941,31 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       attachmentListsMatch(requestAttachmentsPayload, existingRequestAttachmentEntities) &&
       ((!completionAttachmentPayload && !completionAttachmentEntity) || (!!completionAttachmentPayload && !!completionAttachmentEntity && attachmentSignatureFromPayload(completionAttachmentPayload) === attachmentSignatureFromStored(completionAttachmentEntity)));
 
+    const valueOnlyAllowed = canActorEditOrderValue &&
+      normalizedTitle === existingOrder.title &&
+      normalizedDescription === existingOrder.description &&
+      normalizedType === String(existingOrder.orderType?.name || '').trim().toUpperCase() &&
+      normalizedExpectedDate === formatDateOnly(existingOrder.expectedDate) &&
+      normalizedStatus === existingOrder.status &&
+      normalizedExternalCode === (existingOrder.externalCode || null) &&
+      (macro?.id || null) === (existingOrder.macroItemId || null) &&
+      (requestedSectorId || null) === (existingOrder.currentSectorId || null) &&
+      requestedAccessibleSectorIds.length === existingAccessibleSectorIds.length &&
+      requestedAccessibleSectorIds.every((value, index) => value === existingAccessibleSectorIds[index]) &&
+      normalizedCompletionNote === (existingOrder.completionNote || null) &&
+      normalizedCancellationReason === (existingOrder.cancellationReason || null) &&
+      normalizedSectorStatus === (existingOrder.sectorStatus || null) &&
+      attachmentListsMatch(requestAttachmentsPayload, existingRequestAttachmentEntities) &&
+      ((!completionAttachmentPayload && !completionAttachmentEntity) || (!!completionAttachmentPayload && !!completionAttachmentEntity && attachmentSignatureFromPayload(completionAttachmentPayload) === attachmentSignatureFromStored(completionAttachmentEntity)));
+
     if (authUser.role === UserRole.MEMBRO && !messagesOnlyAllowed && !sectorStatusOnlyAllowed) {
-      const error = new Error("Forbidden") as Error & { status?: number };
-      error.status = 403;
-      throw error;
+      if (valueOnlyAllowed) {
+        // allowed for COMPRAS members
+      } else {
+        const error = new Error("Forbidden") as Error & { status?: number };
+        error.status = 403;
+        throw error;
+      }
     }
 
     const financialFieldsChanged =
