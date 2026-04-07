@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { Attachment, ExecutedCost, Order, OrderMessage, OrderStatus, Project, Sector, User, canManageAssignedOrders } from '../types';
 import { AttachmentViewerModal } from './AttachmentViewerModal';
 import { canPreviewAttachmentInline, resolveAttachmentForAccess, triggerAttachmentDownload } from '../utils/attachments';
@@ -32,6 +32,10 @@ const isLegacyLinkedOrderCost = (cost: ExecutedCost, order: Order) => {
 const isComprasSectorMember = (user: User) => user.role === 'MEMBRO' && String(user.sectorName || '').trim().toUpperCase() === 'COMPRAS';
 
 const formatOrderDate = (value?: string) => value ? new Date(value).toLocaleDateString('pt-BR') : '-';
+
+const stripLinkedOrderCosts = (costs: ExecutedCost[], order: Order) => (
+  costs.filter((cost) => cost.originOrderId !== order.id && !(!cost.originOrderId && isLegacyLinkedOrderCost(cost, order)))
+);
 
 const exportOrdersToExcel = async (projectName: string, orders: Order[]) => {
   if (orders.length === 0) return;
@@ -115,6 +119,9 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     (project.costs || []).find((cost) => cost.originOrderId === order.id)
     || (project.costs || []).find((cost) => !cost.originOrderId && isLegacyLinkedOrderCost(cost, order))
     || null
+  );
+  const findLatestOrderSnapshot = (order: Order) => (
+    (project.orders || []).find((item) => item.id === order.id || item.orderCode === order.orderCode) || null
   );
   const buildOrderCostRecord = (order: Order, existingCost?: ExecutedCost | null): ExecutedCost => {
     const today = new Date().toISOString().split('T')[0];
@@ -223,6 +230,20 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     setSelectedSectorStatus(order.sectorStatus || '');
     setIsEditingSectorStatus(false);
   };
+  useEffect(() => {
+    if (!isActionModalOpen) return;
+    const latestOrder = findLatestOrderSnapshot(isActionModalOpen);
+    if (!latestOrder || latestOrder === isActionModalOpen) return;
+
+    setIsActionModalOpen(latestOrder);
+    setSelectedSectorStatus(latestOrder.sectorStatus || '');
+    setSelectedMacroItemId(latestOrder.macroItemId || '');
+    setSelectedForwardSectorId(latestOrder.currentSectorId || '');
+    setEditableOrderValue(Number(latestOrder.value || 0));
+    const linkedCostExists = !!getLinkedOrderCost(latestOrder);
+    setApplyOrderCost(linkedCostExists);
+    setHasSavedCostAssignment(linkedCostExists);
+  }, [project, isActionModalOpen]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, target: 'NEW' | 'ACTION' | 'MESSAGE') => {
     const files = event.target.files;
@@ -466,7 +487,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     if (applyOrderCost && !isActionModalOpen.macroItemId) return alert('Selecione um item macro antes de vincular o pedido ao custo.');
 
     const existingCost = getLinkedOrderCost(isActionModalOpen);
-    const costsWithoutOrder = (project.costs || []).filter((cost) => cost.originOrderId !== isActionModalOpen.id);
+    const costsWithoutOrder = stripLinkedOrderCosts(project.costs || [], isActionModalOpen);
     const nextCosts = applyOrderCost
       ? [...costsWithoutOrder, buildOrderCostRecord(isActionModalOpen, existingCost)]
       : costsWithoutOrder;
@@ -530,7 +551,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       const savedOrder = await onPersistOrder(project.id, updatedOrder);
       setIsActionModalOpen(savedOrder);
       if (getLinkedOrderCost(savedOrder)) {
-        const costsWithoutOrder = (project.costs || []).filter((cost) => cost.originOrderId !== savedOrder.id);
+        const costsWithoutOrder = stripLinkedOrderCosts(project.costs || [], savedOrder);
         await onUpdate({
           ...project,
           costs: [...costsWithoutOrder, buildOrderCostRecord(savedOrder, getLinkedOrderCost(savedOrder))],
@@ -542,14 +563,16 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     }
   };
 
-  const handleSaveSectorStatus = () => {
+  const handleSaveSectorStatus = async () => {
     if (!isActionModalOpen) return;
-    if (!canEditSectorStatus(isActionModalOpen)) return alert('Você não pode alterar o status deste setor.');
+    if (!canEditSectorStatus(isActionModalOpen)) return alert('Voce nao pode alterar o status deste setor.');
     const availableStatuses = getEditableSectorStatuses(isActionModalOpen);
-    if (availableStatuses.length === 0) return alert('Não há status configurados para o setor atual.');
-    if (selectedSectorStatus && !availableStatuses.includes(selectedSectorStatus)) return alert('Selecione um status válido.');
+    if (availableStatuses.length === 0) return alert('Nao ha status configurados para o setor atual.');
+    if (selectedSectorStatus && !availableStatuses.includes(selectedSectorStatus)) return alert('Selecione um status valido.');
     if ((selectedSectorStatus || '') === (isActionModalOpen.sectorStatus || '')) return;
-    if (!confirm(`Salvar o status setorial do pedido "${isActionModalOpen.title}"?`)) return;
+    if (!confirm(
+      	`Salvar o status setorial do pedido "${isActionModalOpen.title}"?`
+    )) return;
 
     const updatedOrder: Order = {
       ...isActionModalOpen,
@@ -559,15 +582,21 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
         userId: 'system',
         userName: 'SISTEMA',
         text: selectedSectorStatus
-          ? `${user.name} alterou o status do setor para ${selectedSectorStatus}.`
-          : `${user.name} removeu o status do setor.`,
+          ? 	`${user.name} alterou o status do setor para ${selectedSectorStatus}.`
+          : 	`${user.name} removeu o status do setor.`,
         date: new Date().toISOString()
       }]
     };
-    void (async () => {
+
+    try {
       const savedOrder = await onPersistOrder(project.id, updatedOrder);
       setIsActionModalOpen(savedOrder);
-    })();
+      setSelectedSectorStatus(savedOrder.sectorStatus || '');
+      setIsEditingSectorStatus(false);
+    } catch (error) {
+      console.error('Erro ao salvar status setorial do pedido:', error);
+      alert('Nao foi possivel salvar o status setorial. Tente novamente.');
+    }
   };
 
   const handleForwardOrder = () => {

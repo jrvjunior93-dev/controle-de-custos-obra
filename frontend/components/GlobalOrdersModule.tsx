@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { Attachment, ExecutedCost, Order, OrderStatus, Project, Sector, User, canManageAssignedOrders } from '../types';
 import { AttachmentViewerModal } from './AttachmentViewerModal';
 import { canPreviewAttachmentInline, resolveAttachmentForAccess, triggerAttachmentDownload } from '../utils/attachments';
@@ -353,6 +353,14 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     || (project?.costs || []).find((cost) => !cost.originOrderId && isLegacyLinkedOrderCost(cost, order))
     || null
   );
+  const stripLinkedOrderCosts = (costs: ExecutedCost[], order: Order) => (
+    costs.filter((cost) => cost.originOrderId !== order.id && !(!cost.originOrderId && isLegacyLinkedOrderCost(cost, order)))
+  );
+  const findLatestOrderSnapshot = (order: Order) => {
+    const project = projects.find((item) => item.id === order.projectId);
+    if (!project) return null;
+    return (project.orders || []).find((item) => item.id === order.id || item.orderCode === order.orderCode) || null;
+  };
   const buildOrderCostRecord = (order: Order, project: Project, existingCost?: ExecutedCost | null): ExecutedCost => {
     const today = new Date().toISOString().split('T')[0];
     const derivedAttachments = [
@@ -494,6 +502,20 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setSelectedSectorStatus(order.sectorStatus || '');
     setIsEditingSectorStatus(false);
   };
+  useEffect(() => {
+    if (!isActionModalOpen) return;
+    const latestOrder = findLatestOrderSnapshot(isActionModalOpen);
+    if (!latestOrder || latestOrder === isActionModalOpen) return;
+
+    setIsActionModalOpen(latestOrder);
+    setSelectedSectorStatus(latestOrder.sectorStatus || '');
+    setSelectedMacroItemId(latestOrder.macroItemId || '');
+    setSelectedForwardSectorId(latestOrder.currentSectorId || '');
+    setEditableOrderValue(Number(latestOrder.value || 0));
+    const linkedCostExists = !!getLinkedOrderCost(latestOrder, projects.find((project) => project.id === latestOrder.projectId));
+    setApplyOrderCost(linkedCostExists);
+    setHasSavedCostAssignment(linkedCostExists);
+  }, [projects, isActionModalOpen]);
 
   const persistMemberOrder = async (projectId: string, order: Order) => onPersistMemberOrder(projectId, order);
 
@@ -577,7 +599,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       const text = await file.text();
       const rows = parseCsvRows(text);
       if (rows.length === 0) {
-        alert('Nenhum pedido vÃ¡lido foi encontrado no arquivo.');
+        alert('Nenhum pedido valido foi encontrado no arquivo.');
         return;
       }
 
@@ -869,7 +891,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     if (applyOrderCost && !isActionModalOpen.macroItemId) return alert('Selecione um item macro antes de vincular o pedido ao custo.');
 
     const existingCost = getLinkedOrderCost(isActionModalOpen, activeProjectForModal);
-    const costsWithoutOrder = (activeProjectForModal.costs || []).filter((cost) => cost.originOrderId !== isActionModalOpen.id);
+    const costsWithoutOrder = stripLinkedOrderCosts(activeProjectForModal.costs || [], isActionModalOpen);
     const nextCosts = applyOrderCost
       ? [...costsWithoutOrder, buildOrderCostRecord(isActionModalOpen, activeProjectForModal, existingCost)]
       : costsWithoutOrder;
@@ -887,17 +909,20 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     }
   };
 
-  const handleSaveSectorStatus = () => {
+  const handleSaveSectorStatus = async () => {
     if (!isActionModalOpen) return;
-    if (!canEditSectorStatus(isActionModalOpen)) return alert('Você não pode alterar o status deste setor.');
+    if (!canEditSectorStatus(isActionModalOpen)) return alert('Voce nao pode alterar o status deste setor.');
     const availableStatuses = getEditableSectorStatuses(isActionModalOpen);
-    if (availableStatuses.length === 0) return alert('Não há status configurados para o setor atual.');
-    if (selectedSectorStatus && !availableStatuses.includes(selectedSectorStatus)) return alert('Selecione um status válido.');
+    if (availableStatuses.length === 0) return alert('Nao ha status configurados para o setor atual.');
+    if (selectedSectorStatus && !availableStatuses.includes(selectedSectorStatus)) return alert('Selecione um status valido.');
     if ((selectedSectorStatus || '') === (isActionModalOpen.sectorStatus || '')) return;
-    if (!confirm(`Salvar o status setorial do pedido "${isActionModalOpen.title}"?`)) return;
+    if (!confirm(
+      	`Salvar o status setorial do pedido "${isActionModalOpen.title}"?`
+    )) return;
 
     let updatedOrder: Order | null = null;
-    const updatedProject = handleProjectMutation(isActionModalOpen.projectId, (project) => ({
+    const previousProjects = projects;
+    handleProjectMutation(isActionModalOpen.projectId, (project) => ({
       ...project,
       orders: (project.orders || []).map((item) => {
         if (item.id !== isActionModalOpen.id) return item;
@@ -909,8 +934,8 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
             userId: 'system',
             userName: 'SISTEMA',
             text: selectedSectorStatus
-              ? `${user.name} alterou o status do setor para ${selectedSectorStatus}.`
-              : `${user.name} removeu o status do setor.`,
+              ? 	`${user.name} alterou o status do setor para ${selectedSectorStatus}.`
+              : 	`${user.name} removeu o status do setor.`,
             date: new Date().toISOString()
           }]
         };
@@ -918,12 +943,17 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       })
     }));
 
-    if (updatedOrder) {
-      void (async () => {
-        const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
-        setIsActionModalOpen(savedOrder);
-        setIsEditingSectorStatus(false);
-      })();
+    if (!updatedOrder) return;
+
+    try {
+      const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder);
+      setIsActionModalOpen(savedOrder);
+      setSelectedSectorStatus(savedOrder.sectorStatus || '');
+      setIsEditingSectorStatus(false);
+    } catch (error) {
+      console.error('Erro ao salvar status setorial do pedido:', error);
+      onUpdateProjects(previousProjects);
+      alert('Nao foi possivel salvar o status setorial. Tente novamente.');
     }
   };
 
