@@ -233,6 +233,7 @@ const App: React.FC = () => {
 
       localStorage.setItem('csc_brape_projects', JSON.stringify(nextProjects));
       localStorage.setItem('csc_brape_sectors', JSON.stringify(nextSectors));
+      localStorage.setItem('csc_brape_order_types', JSON.stringify(nextOrderTypes));
       if (canManageGlobalData) {
         localStorage.setItem('csc_brape_users', JSON.stringify(nextUsers));
       } else {
@@ -247,8 +248,15 @@ const App: React.FC = () => {
 
       const savedProjects = localStorage.getItem('csc_brape_projects');
       const savedSectors = localStorage.getItem('csc_brape_sectors');
+      const savedOrderTypes = localStorage.getItem('csc_brape_order_types');
       setProjects(savedProjects ? JSON.parse(savedProjects).map(normalizeProjectRecord) : []);
       setSectors(savedSectors ? JSON.parse(savedSectors).map(normalizeSectorRecord) : []);
+      setOrderTypes(savedOrderTypes ? JSON.parse(savedOrderTypes) : [
+        'COMPRA DE MATERIAL',
+        'CONTRATACAO DE SERVICO',
+        'LOCACAO DE EQUIPAMENTOS',
+        'OUTROS'
+      ]);
 
       if (canManageGlobalData) {
         const savedUsers = localStorage.getItem('csc_brape_users');
@@ -763,6 +771,7 @@ const App: React.FC = () => {
               onUpdateOrderTypes={async (types) => {
                 await dbService.saveOrderTypes(types);
                 setOrderTypes(types);
+                localStorage.setItem('csc_brape_order_types', JSON.stringify(types));
               }}
               onUpdateSectorStatuses={handleSaveSectorStatuses}
             />
