@@ -5,7 +5,7 @@ import { Sector } from '../types';
 interface SpecificationDocProps {
   orderTypes: string[];
   sectors: Sector[];
-  onUpdateOrderTypes: (types: string[]) => void;
+  onUpdateOrderTypes: (types: string[]) => Promise<void> | void;
   onUpdateSectorStatuses: (sectorId: string, statuses: string[]) => Promise<void>;
 }
 
@@ -14,18 +14,18 @@ export const SpecificationDoc: React.FC<SpecificationDocProps> = ({ orderTypes, 
   const [draftStatuses, setDraftStatuses] = useState<Record<string, string>>({});
   const sectorList = useMemo(() => [...sectors].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), [sectors]);
 
-  const addType = () => {
+  const addType = async () => {
     if (newType.trim() && !orderTypes.includes(newType.toUpperCase())) {
       const normalizedType = newType.toUpperCase();
       if (!confirm(`Adicionar o tipo de pedido "${normalizedType}"?`)) return;
-      onUpdateOrderTypes([...orderTypes, normalizedType]);
+      await onUpdateOrderTypes([...orderTypes, normalizedType]);
       setNewType('');
     }
   };
 
-  const removeType = (t: string) => {
+  const removeType = async (t: string) => {
     if (!confirm(`Remover o tipo de pedido "${t}"?`)) return;
-    onUpdateOrderTypes(orderTypes.filter(item => item !== t));
+    await onUpdateOrderTypes(orderTypes.filter(item => item !== t));
   };
 
   const addSectorStatus = async (sector: Sector) => {
@@ -64,14 +64,14 @@ export const SpecificationDoc: React.FC<SpecificationDocProps> = ({ orderTypes, 
                 placeholder="EX: MATERIAL ELÉTRICO"
                 className="flex-1 bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase outline-none focus:border-blue-500"
               />
-              <button onClick={addType} className="bg-slate-900 text-white px-6 py-3 font-black uppercase text-xs shadow-xl"><i className="fas fa-plus"></i></button>
+              <button onClick={() => void addType()} className="bg-slate-900 text-white px-6 py-3 font-black uppercase text-xs shadow-xl"><i className="fas fa-plus"></i></button>
             </div>
 
             <div className="flex flex-wrap gap-2 pt-4">
               {orderTypes.map(t => (
                 <div key={t} className="bg-slate-100 border border-slate-200 px-4 py-2 flex items-center gap-3 group">
                   <span className="text-[10px] font-black text-slate-600 uppercase">{t}</span>
-                  <button onClick={() => removeType(t)} className="text-slate-300 hover:text-rose-500 transition-colors"><i className="fas fa-times-circle"></i></button>
+                  <button onClick={() => void removeType(t)} className="text-slate-300 hover:text-rose-500 transition-colors"><i className="fas fa-times-circle"></i></button>
                 </div>
               ))}
             </div>

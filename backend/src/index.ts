@@ -1397,8 +1397,27 @@ app.put("/order-types", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req
 
   const names = Array.from(new Set(parsed.data.orderTypes.map((name) => name.trim().toUpperCase()).filter(Boolean)));
   await prisma.$transaction(async (tx) => {
-    await tx.orderType.deleteMany({});
-    await tx.orderType.createMany({ data: names.map((name, sortOrder) => ({ name, sortOrder, isActive: true })) });
+    const existingTypes = await tx.orderType.findMany();
+    const existingByName = new Map(existingTypes.map((type) => [type.name.toUpperCase(), type]));
+
+    await tx.orderType.updateMany({
+      data: { isActive: false },
+    });
+
+    for (const [sortOrder, name] of names.entries()) {
+      const existing = existingByName.get(name);
+      if (existing) {
+        await tx.orderType.update({
+          where: { id: existing.id },
+          data: { isActive: true, sortOrder },
+        });
+        continue;
+      }
+
+      await tx.orderType.create({
+        data: { name, sortOrder, isActive: true },
+      });
+    }
   });
 
   res.json({ ok: true });

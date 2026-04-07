@@ -150,12 +150,13 @@ export const dbService = {
 
   async saveOrderTypes(orderTypes: string[]) {
     try {
-      await request("/order-types", {
+      return await request("/order-types", {
         method: "PUT",
         body: JSON.stringify({ orderTypes })
       });
     } catch (e) {
       console.error("Erro ao salvar tipos de pedido:", e);
+      throw e;
     }
   },
 

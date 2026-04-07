@@ -760,7 +760,10 @@ const App: React.FC = () => {
             <SpecificationDoc
               orderTypes={orderTypes}
               sectors={sectors}
-              onUpdateOrderTypes={(types) => { setOrderTypes(types); dbService.saveOrderTypes(types); }}
+              onUpdateOrderTypes={async (types) => {
+                await dbService.saveOrderTypes(types);
+                setOrderTypes(types);
+              }}
               onUpdateSectorStatuses={handleSaveSectorStatuses}
             />
 
