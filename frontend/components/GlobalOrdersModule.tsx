@@ -1719,9 +1719,18 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
                 {canCommentOnOrder(isActionModalOpen) && (
                   <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
-                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Interações Livres</h4>
-                    <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder="Registre uma orientação, alinhamento ou resposta livre..." value={messageText} onChange={(e) => setMessageText(e.target.value)} />
-                    <button onClick={handleSendMessage} className="w-full bg-purple-600 text-white py-4 font-black uppercase text-[10px] shadow-xl">Adicionar Interação</button>
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Enviar Comentarios</h4>
+                    <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder="Escreva um comentario..." value={messageText} onChange={(e) => setMessageText(e.target.value)} />
+                    <button onClick={handleSendMessage} className="w-full bg-purple-600 text-white py-4 font-black uppercase text-[10px] shadow-xl">Enviar Comentario</button>
+                  </div>
+                )}
+
+                {canCommentOnOrder(isActionModalOpen) && (
+                  <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Enviar Anexos</h4>
+                    <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'MESSAGE')} />
+                    {renderAttachmentList(messageAttachments, removeMessageAttachment, 'Nenhum anexo selecionado para esta mensagem.')}
+                    <button onClick={handleSendMessage} className="w-full bg-slate-900 text-white py-4 font-black uppercase text-[10px] shadow-xl">Enviar Arquivos</button>
                   </div>
                 )}
 
@@ -1733,6 +1742,36 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 )}
               </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isActionModalOpen && isSectorStatusModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-[140] p-4">
+          <div className="bg-white w-full max-w-md border border-slate-200 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Alterar Status do Setor</h4>
+                <p className="text-[10px] font-bold text-slate-400 uppercase">{isActionModalOpen.title}</p>
+              </div>
+              <button type="button" onClick={() => setIsSectorStatusModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <select
+              className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase"
+              value={selectedSectorStatus}
+              onChange={(event) => setSelectedSectorStatus(event.target.value)}
+            >
+              <option value="">Sem status setorial</option>
+              {getEditableSectorStatuses(isActionModalOpen).map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+            </select>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setIsSectorStatusModalOpen(false)} className="flex-1 border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-600">Fechar</button>
+              <button type="button" onClick={() => void handleSaveSectorStatus(selectedSectorStatus)} className="flex-1 bg-slate-900 text-white py-3 text-[10px] font-black uppercase tracking-widest">Salvar Status</button>
             </div>
           </div>
         </div>

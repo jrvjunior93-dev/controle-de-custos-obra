@@ -1147,9 +1147,18 @@ const renderListStatusBadge = (order: Order) => {
 
                   {canCommentOnOrder(isActionModalOpen) && (
                   <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
-                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Interações Livres</h4>
-                    <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder="Registre uma orientação, alinhamento ou resposta livre..." value={messageText} onChange={(e) => setMessageText(e.target.value)} />
-                    <button onClick={() => handleSendMessage(isActionModalOpen)} className="w-full bg-purple-600 text-white py-4 font-black uppercase text-[10px] shadow-xl">Adicionar Interação</button>
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Enviar Comentarios</h4>
+                    <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder="Escreva um comentario..." value={messageText} onChange={(e) => setMessageText(e.target.value)} />
+                    <button onClick={() => handleSendMessage(isActionModalOpen)} className="w-full bg-purple-600 text-white py-4 font-black uppercase text-[10px] shadow-xl">Enviar Comentario</button>
+                  </div>
+                  )}
+
+                  {canCommentOnOrder(isActionModalOpen) && (
+                  <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
+                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Enviar Anexos</h4>
+                    <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'MESSAGE')} />
+                    {renderAttachmentList(messageAttachments, removeMessageAttachment, 'Nenhum anexo selecionado para esta mensagem.')}
+                    <button onClick={() => handleSendMessage(isActionModalOpen)} className="w-full bg-slate-900 text-white py-4 font-black uppercase text-[10px] shadow-xl">Enviar Arquivos</button>
                   </div>
                   )}
 
@@ -1167,7 +1176,7 @@ const renderListStatusBadge = (order: Order) => {
       )}
 
       {isActionModalOpen && isSectorStatusModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-[130] p-4">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-[140] p-4">
           <div className="bg-white w-full max-w-md border border-slate-200 shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between gap-4">
               <div>
