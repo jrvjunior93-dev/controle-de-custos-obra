@@ -17,6 +17,59 @@ export interface Attachment {
   uploadDate: string;
 }
 
+export type ProvisioningStatus = 'RASCUNHO' | 'PREVISTO' | 'EM_ANALISE' | 'APROVADO' | 'CANCELADO' | 'REALIZADO';
+
+export interface ProvisioningHistoryItem {
+  id: string;
+  action: string;
+  description: string;
+  statusFrom?: ProvisioningStatus;
+  statusTo?: ProvisioningStatus;
+  userId?: string;
+  userName?: string;
+  createdAt: string;
+  attachments: Attachment[];
+}
+
+export interface ProvisioningCategory {
+  id: string;
+  name: string;
+  description?: string;
+  sortOrder?: number;
+  isActive?: boolean;
+}
+
+export interface ProvisioningRecord {
+  id: string;
+  code: string;
+  projectId: string;
+  projectName: string;
+  categoryId: string;
+  categoryName: string;
+  title: string;
+  description: string;
+  supplier?: string;
+  dueDate: string;
+  forecastValue: number;
+  status: ProvisioningStatus;
+  comment?: string;
+  createdByUserId: string;
+  createdByUserName: string;
+  updatedByUserId?: string;
+  updatedByUserName?: string;
+  approvedByUserId?: string;
+  approvedByUserName?: string;
+  approvedAt?: string;
+  cancelledByUserId?: string;
+  cancelledByUserName?: string;
+  cancelledAt?: string;
+  realizedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  attachments: Attachment[];
+  history: ProvisioningHistoryItem[];
+}
+
 export interface ExecutedCost {
   id: string;
   macroItemId: string;
@@ -104,6 +157,10 @@ export interface User {
   managerId?: string;
   sectorId?: string;
   sectorName?: string;
+  canAccessProvisioning?: boolean;
+  canCreateProvisioning?: boolean;
+  canApproveProvisioning?: boolean;
+  canViewProvisioningDashboard?: boolean;
   assignedProjectIds: string[];
 }
 
@@ -126,4 +183,31 @@ export interface Project {
   orders?: Order[]; 
 }
 
-export type ViewState = 'PROJECT_LIST' | 'PROJECT_DETAIL' | 'SPECIFICATION' | 'USERS_MANAGEMENT' | 'ORDERS_GLOBAL';
+export interface ProvisioningContext {
+  permissions: {
+    canAccess: boolean;
+    canCreate: boolean;
+    canApprove: boolean;
+    canViewDashboard: boolean;
+  };
+  categories: ProvisioningCategory[];
+  projectOptions: Array<{ id: string; code: string; name: string }>;
+}
+
+export interface ProvisioningDashboardData {
+  totalRecords: number;
+  totalForecastValue: number;
+  byStatus: Array<{ status: ProvisioningStatus; count: number; totalValue: number }>;
+  byProject: Array<{ projectId: string; projectName: string; count: number; totalValue: number }>;
+  upcoming: ProvisioningRecord[];
+}
+
+export type ViewState =
+  | 'PROJECT_LIST'
+  | 'PROJECT_DETAIL'
+  | 'SPECIFICATION'
+  | 'USERS_MANAGEMENT'
+  | 'ORDERS_GLOBAL'
+  | 'PROVISIONING_LIST'
+  | 'PROVISIONING_NEW'
+  | 'PROVISIONING_DASHBOARD';

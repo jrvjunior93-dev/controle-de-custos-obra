@@ -196,6 +196,68 @@ export const dbService = {
     });
   },
 
+  async getProvisioningContext() {
+    return request<any>("/provisioning/context");
+  },
+
+  async getProvisioning(projectId?: string, status?: string, search?: string) {
+    const params = new URLSearchParams();
+    if (projectId) params.set("projectId", projectId);
+    if (status) params.set("status", status);
+    if (search) params.set("search", search);
+    return request<any[]>(`/provisioning${params.toString() ? `?${params.toString()}` : ""}`);
+  },
+
+  async getProvisioningDashboard() {
+    return request<any>("/provisioning/dashboard");
+  },
+
+  async getProvisioningCategories() {
+    return request<any[]>("/provisioning/categories");
+  },
+
+  async upsertProvisioningCategory(category: any) {
+    return request<any>(`/provisioning/categories/${category.id || "new"}`, {
+      method: "PUT",
+      body: JSON.stringify({ category })
+    });
+  },
+
+  async createProvisioning(provisioning: any) {
+    return request<any>("/provisioning", {
+      method: "POST",
+      body: JSON.stringify({ provisioning })
+    });
+  },
+
+  async updateProvisioning(provisioning: any) {
+    return request<any>(`/provisioning/${provisioning.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ provisioning })
+    });
+  },
+
+  async updateProvisioningStatus(id: string, status: string, comment?: string) {
+    return request<any>(`/provisioning/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status, comment })
+    });
+  },
+
+  async addProvisioningComment(id: string, comment: string) {
+    return request<any>(`/provisioning/${id}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ comment })
+    });
+  },
+
+  async addProvisioningAttachments(id: string, attachments: any[]) {
+    return request<any>(`/provisioning/${id}/attachments`, {
+      method: "POST",
+      body: JSON.stringify({ attachments })
+    });
+  },
+
   async resolveAttachmentData(attachment: any) {
     return request<{ data: string }>("/attachments/resolve", {
       method: "POST",

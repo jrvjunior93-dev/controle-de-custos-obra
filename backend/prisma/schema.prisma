@@ -34,6 +34,18 @@ enum AttachmentKind {
   PAYMENT_PROOF
   MESSAGE
   COST_DOCUMENT
+  PROVISIONING_ATTACHMENT
+  PROVISIONING_HISTORY_ATTACHMENT
+  PROVISIONING_APPROVAL_ATTACHMENT
+}
+
+enum ProvisioningStatus {
+  RASCUNHO
+  PREVISTO
+  EM_ANALISE
+  APROVADO
+  CANCELADO
+  REALIZADO
 }
 
 model User {
@@ -44,6 +56,10 @@ model User {
   role              UserRole       @map("perfil")
   managerId         Int?           @map("gestor_id")
   sectorId          Int?           @map("setor_id")
+  canAccessProvisioning Boolean    @default(false) @map("pode_acessar_provisionamento")
+  canCreateProvisioning Boolean    @default(false) @map("pode_criar_provisionamento")
+  canApproveProvisioning Boolean   @default(false) @map("pode_aprovar_provisionamento")
+  canViewProvisioningDashboard Boolean @default(false) @map("pode_dashboard_provisionamento")
   isActive          Boolean        @default(true) @map("ativo")
   createdAt         DateTime       @default(now()) @map("criado_em")
   updatedAt         DateTime       @updatedAt @map("atualizado_em")
@@ -54,6 +70,12 @@ model User {
   ordersRequested   Order[]        @relation("RequesterOrders")
   ordersResponsible Order[]        @relation("ResponsibleOrders")
   orderMessages     OrderMessage[]
+  provisioningCreated ProvisioningRecord[] @relation("ProvisioningCreatedBy")
+  provisioningUpdated ProvisioningRecord[] @relation("ProvisioningUpdatedBy")
+  provisioningApproved ProvisioningRecord[] @relation("ProvisioningApprovedBy")
+  provisioningCancelled ProvisioningRecord[] @relation("ProvisioningCancelledBy")
+  provisioningHistories ProvisioningHistory[]
+  provisioningAttachments ProvisioningAttachment[] @relation("ProvisioningAttachmentUploadedBy")
 
   @@index([role, isActive])
   @@index([managerId])
@@ -121,6 +143,8 @@ model Project {
   costs         Cost[]
   installments  Installment[]
   orders        Order[]
+  provisioningSequence ProvisioningSequence?
+  provisioningRecords ProvisioningRecord[]
   assignedUsers UserProject[]
 
   @@index([name])
@@ -370,4 +394,108 @@ model OrderMessageAttachment {
   @@index([orderMessageId])
 
   @@map("pedidos_mensagens_anexos")
+}
+
+model ProvisioningCategory {
+  id          Int                 @id @default(autoincrement())
+  name        String              @unique @map("nome")
+  description String?             @db.Text @map("descricao")
+  sortOrder   Int                 @default(0) @map("ordem")
+  isActive    Boolean             @default(true) @map("ativo")
+  createdAt   DateTime            @default(now()) @map("criado_em")
+  updatedAt   DateTime            @updatedAt @map("atualizado_em")
+  records     ProvisioningRecord[]
+
+  @@index([sortOrder, isActive])
+  @@map("provisionamento_categorias")
+}
+
+model ProvisioningSequence {
+  projectId   Int      @id @map("obra_id")
+  lastNumber  Int      @default(0) @map("ultimo_numero")
+  createdAt   DateTime @default(now()) @map("criado_em")
+  updatedAt   DateTime @updatedAt @map("atualizado_em")
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("provisionamento_sequencias")
+}
+
+model ProvisioningRecord {
+  id              Int                 @id @default(autoincrement())
+  projectId       Int                 @map("obra_id")
+  categoryId      Int                 @map("categoria_id")
+  code            String              @unique @map("codigo")
+  title           String              @map("titulo")
+  description     String              @db.Text @map("descricao")
+  supplier        String?             @map("fornecedor")
+  dueDate         DateTime            @map("data_prevista")
+  forecastValue   Decimal             @db.Decimal(15, 2) @map("valor_previsto")
+  status          ProvisioningStatus  @default(PREVISTO) @map("status")
+  comment         String?             @db.Text @map("comentario")
+  createdByUserId Int                 @map("criado_por_usuario_id")
+  updatedByUserId Int?                @map("atualizado_por_usuario_id")
+  approvedByUserId Int?               @map("aprovado_por_usuario_id")
+  approvedAt      DateTime?           @map("aprovado_em")
+  cancelledByUserId Int?              @map("cancelado_por_usuario_id")
+  cancelledAt     DateTime?           @map("cancelado_em")
+  realizedAt      DateTime?           @map("realizado_em")
+  createdAt       DateTime            @default(now()) @map("criado_em")
+  updatedAt       DateTime            @updatedAt @map("atualizado_em")
+  project         Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  category        ProvisioningCategory @relation(fields: [categoryId], references: [id])
+  createdBy       User                @relation("ProvisioningCreatedBy", fields: [createdByUserId], references: [id])
+  updatedBy       User?               @relation("ProvisioningUpdatedBy", fields: [updatedByUserId], references: [id])
+  approvedBy      User?               @relation("ProvisioningApprovedBy", fields: [approvedByUserId], references: [id])
+  cancelledBy     User?               @relation("ProvisioningCancelledBy", fields: [cancelledByUserId], references: [id])
+  attachments     ProvisioningAttachment[]
+  histories       ProvisioningHistory[]
+
+  @@index([projectId, dueDate])
+  @@index([categoryId, dueDate])
+  @@index([status, dueDate])
+  @@index([createdByUserId, createdAt])
+  @@map("provisionamentos")
+}
+
+model ProvisioningAttachment {
+  id             Int            @id @default(autoincrement())
+  provisioningId Int            @map("provisionamento_id")
+  historyId      Int?           @map("historico_id")
+  kind           AttachmentKind @default(PROVISIONING_ATTACHMENT) @map("tipo")
+  name           String         @map("nome")
+  originalName   String?        @map("nome_original")
+  data           String?        @db.LongText @map("dados")
+  storageProvider String?       @map("provedor_armazenamento")
+  storageBucket  String?        @map("bucket_armazenamento")
+  storageKey     String?        @map("chave_armazenamento")
+  mimeType       String         @map("tipo_mime")
+  size           Int            @map("tamanho")
+  uploadedByUserId Int          @map("usuario_id")
+  uploadedAt     DateTime       @map("enviado_em")
+  provisioning   ProvisioningRecord @relation(fields: [provisioningId], references: [id], onDelete: Cascade)
+  history        ProvisioningHistory? @relation(fields: [historyId], references: [id], onDelete: SetNull)
+  uploadedBy     User           @relation("ProvisioningAttachmentUploadedBy", fields: [uploadedByUserId], references: [id])
+
+  @@index([provisioningId, uploadedAt])
+  @@index([historyId])
+  @@index([uploadedByUserId])
+  @@map("provisionamentos_anexos")
+}
+
+model ProvisioningHistory {
+  id             Int                 @id @default(autoincrement())
+  provisioningId Int                 @map("provisionamento_id")
+  userId         Int?                @map("usuario_id")
+  action         String              @map("acao")
+  description    String              @db.Text @map("descricao")
+  statusFrom     ProvisioningStatus? @map("status_anterior")
+  statusTo       ProvisioningStatus? @map("status_novo")
+  createdAt      DateTime            @default(now()) @map("criado_em")
+  provisioning   ProvisioningRecord  @relation(fields: [provisioningId], references: [id], onDelete: Cascade)
+  user           User?               @relation(fields: [userId], references: [id])
+  attachments    ProvisioningAttachment[]
+
+  @@index([provisioningId, createdAt])
+  @@index([userId])
+  @@map("provisionamentos_historico")
 }

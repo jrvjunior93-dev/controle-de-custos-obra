@@ -37,6 +37,10 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
     role: 'MEMBRO',
     managerId: undefined,
     sectorId: undefined,
+    canAccessProvisioning: false,
+    canCreateProvisioning: false,
+    canApproveProvisioning: false,
+    canViewProvisioningDashboard: false,
     assignedProjectIds: [],
   });
 
@@ -64,6 +68,10 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
       role: 'MEMBRO',
       managerId: undefined,
       sectorId: undefined,
+      canAccessProvisioning: false,
+      canCreateProvisioning: false,
+      canApproveProvisioning: false,
+      canViewProvisioningDashboard: false,
       assignedProjectIds: [],
     });
     setIsModalOpen(true);
@@ -340,6 +348,28 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
                   </div>
                 </div>
               )}
+
+              <div className="space-y-4">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Permissões de Provisionamento</label>
+                <div className="grid grid-cols-2 gap-3 border border-slate-100 p-4 bg-slate-50">
+                  <label className="flex items-center gap-3 cursor-pointer p-3 bg-white border border-slate-200">
+                    <input type="checkbox" checked={formUser.canAccessProvisioning || false} onChange={(e) => setFormUser({ ...formUser, canAccessProvisioning: e.target.checked })} className="w-4 h-4 text-blue-600" />
+                    <span className="text-[10px] font-black uppercase text-slate-700">Acessar Provisionamento</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer p-3 bg-white border border-slate-200">
+                    <input type="checkbox" checked={formUser.canCreateProvisioning || false} onChange={(e) => setFormUser({ ...formUser, canCreateProvisioning: e.target.checked, canAccessProvisioning: e.target.checked ? true : formUser.canAccessProvisioning })} className="w-4 h-4 text-blue-600" />
+                    <span className="text-[10px] font-black uppercase text-slate-700">Criar Provisão</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer p-3 bg-white border border-slate-200">
+                    <input type="checkbox" checked={formUser.canApproveProvisioning || false} onChange={(e) => setFormUser({ ...formUser, canApproveProvisioning: e.target.checked, canAccessProvisioning: e.target.checked ? true : formUser.canAccessProvisioning })} className="w-4 h-4 text-blue-600" />
+                    <span className="text-[10px] font-black uppercase text-slate-700">Aprovar Provisão</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer p-3 bg-white border border-slate-200">
+                    <input type="checkbox" checked={formUser.canViewProvisioningDashboard || false} onChange={(e) => setFormUser({ ...formUser, canViewProvisioningDashboard: e.target.checked, canAccessProvisioning: e.target.checked ? true : formUser.canAccessProvisioning })} className="w-4 h-4 text-blue-600" />
+                    <span className="text-[10px] font-black uppercase text-slate-700">Ver Dashboard</span>
+                  </label>
+                </div>
+              </div>
 
               <div className="flex gap-4 pt-4">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-4 text-slate-400 font-black uppercase text-[10px]">Cancelar</button>

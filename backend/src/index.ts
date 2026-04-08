@@ -9,6 +9,7 @@ import { deleteStoredAttachments, persistAttachment, resolveAttachmentData } fro
 import { extractBudgetData, extractCostData, extractInstallmentData, getGeminiErrorMessage } from "./gemini.js";
 
 const prisma = new PrismaClient();
+const prismaAny = prisma as any;
 const app = express();
 app.disable("x-powered-by");
 
@@ -58,6 +59,44 @@ const resolveAttachmentSchema = z.object({
     storageProvider: z.string().optional(),
     storageBucket: z.string().optional(),
     storageKey: z.string().optional(),
+  })
+});
+const provisioningStatuses = ["RASCUNHO", "PREVISTO", "EM_ANALISE", "APROVADO", "CANCELADO", "REALIZADO"] as const;
+type ProvisioningStatusValue = typeof provisioningStatuses[number];
+const provisioningCategorySchema = z.object({
+  category: z.object({
+    id: z.union([z.string(), z.number()]).optional(),
+    name: z.string().trim().min(2),
+    description: z.string().trim().optional(),
+  })
+});
+const provisioningPayloadSchema = z.object({
+  provisioning: z.object({
+    id: z.union([z.string(), z.number()]).optional(),
+    projectId: z.union([z.string(), z.number()]),
+    categoryId: z.union([z.string(), z.number()]),
+    title: z.string().trim().min(2).max(190),
+    description: z.string().trim().min(2),
+    supplier: z.string().trim().optional(),
+    dueDate: z.string().trim().min(8),
+    forecastValue: z.number().nonnegative(),
+    comment: z.string().trim().optional(),
+    attachments: z.array(z.any()).optional(),
+  })
+});
+const provisioningStatusSchema = z.object({
+  status: z.enum(provisioningStatuses),
+  comment: z.string().trim().optional(),
+});
+const provisioningCommentSchema = z.object({
+  comment: z.string().trim().min(1),
+});
+const provisioningPermissionsSchema = z.object({
+  permissions: z.object({
+    canAccessProvisioning: z.boolean().optional(),
+    canCreateProvisioning: z.boolean().optional(),
+    canApproveProvisioning: z.boolean().optional(),
+    canViewProvisioningDashboard: z.boolean().optional(),
   })
 });
 
@@ -346,6 +385,10 @@ function sanitizeUser(user: any) {
     managerId: user.managerId ? String(user.managerId) : undefined,
     sectorId: user.sectorId ? String(user.sectorId) : undefined,
     sectorName: user.sector?.name || undefined,
+    canAccessProvisioning: Boolean(user.canAccessProvisioning),
+    canCreateProvisioning: Boolean(user.canCreateProvisioning),
+    canApproveProvisioning: Boolean(user.canApproveProvisioning),
+    canViewProvisioningDashboard: Boolean(user.canViewProvisioningDashboard),
     assignedProjectIds: (user.assignedProjects || []).map((item: any) => String(item.projectId))
   };
 }
@@ -455,6 +498,135 @@ function canUserAccessOrder(order: any, userId: number, role: UserRole, sectorId
 
 function isComprasSectorName(name?: string | null) {
   return String(name || "").trim().toUpperCase() === "COMPRAS";
+}
+
+function canAccessProvisioning(user: any) {
+  return Boolean(user?.role === UserRole.SUPERADMIN || user?.canAccessProvisioning);
+}
+
+function canCreateProvisioning(user: any) {
+  return Boolean(user?.role === UserRole.SUPERADMIN || user?.canCreateProvisioning);
+}
+
+function canApproveProvisioning(user: any) {
+  return Boolean(user?.role === UserRole.SUPERADMIN || user?.canApproveProvisioning);
+}
+
+function canViewProvisioningDashboard(user: any) {
+  return Boolean(user?.role === UserRole.SUPERADMIN || user?.canViewProvisioningDashboard);
+}
+
+async function ensureProvisioningAccess(user: any, res: express.Response, mode: "access" | "create" | "approve" | "dashboard" = "access") {
+  if (!user || !user.isActive) {
+    res.status(401).json({ error: "Unauthorized" });
+    return false;
+  }
+
+  const allowed = mode === "dashboard"
+    ? canViewProvisioningDashboard(user)
+    : mode === "approve"
+      ? canApproveProvisioning(user)
+      : mode === "create"
+        ? canCreateProvisioning(user)
+        : canAccessProvisioning(user);
+
+  if (!allowed) {
+    res.status(403).json({ error: "Forbidden" });
+    return false;
+  }
+
+  return true;
+}
+
+function formatProvisioningCode(projectCode: string, sequenceNumber: number) {
+  return `PROV-${projectCode}-${String(sequenceNumber).padStart(4, "0")}`;
+}
+
+async function allocateProvisioningNumber(tx: any, projectId: number) {
+  const existing = await tx.provisioningSequence.findUnique({ where: { projectId } });
+  if (!existing) {
+    await tx.provisioningSequence.create({ data: { projectId, lastNumber: 1 } });
+    return 1;
+  }
+
+  const updated = await tx.provisioningSequence.update({
+    where: { projectId },
+    data: { lastNumber: { increment: 1 } }
+  });
+  return updated.lastNumber;
+}
+
+const provisioningAttachmentSelect = {
+  id: true,
+  kind: true,
+  name: true,
+  originalName: true,
+  storageProvider: true,
+  storageBucket: true,
+  storageKey: true,
+  mimeType: true,
+  size: true,
+  uploadedAt: true,
+} as const;
+
+const provisioningInclude = {
+  project: true,
+  category: true,
+  createdBy: true,
+  updatedBy: true,
+  approvedBy: true,
+  cancelledBy: true,
+  attachments: { select: provisioningAttachmentSelect },
+  histories: {
+    include: {
+      user: true,
+      attachments: { select: provisioningAttachmentSelect },
+    },
+    orderBy: { createdAt: "desc" }
+  }
+} as const;
+
+async function mapProvisioningFromDb(record: any) {
+  return {
+    id: String(record.id),
+    code: record.code,
+    projectId: String(record.projectId),
+    projectName: record.project?.name || "",
+    categoryId: String(record.categoryId),
+    categoryName: record.category?.name || "",
+    title: record.title,
+    description: record.description,
+    supplier: record.supplier || undefined,
+    dueDate: formatDateOnly(record.dueDate),
+    forecastValue: decimalToNumber(record.forecastValue),
+    status: record.status,
+    comment: record.comment || undefined,
+    createdByUserId: String(record.createdByUserId),
+    createdByUserName: record.createdBy?.name || "SISTEMA",
+    updatedByUserId: record.updatedByUserId ? String(record.updatedByUserId) : undefined,
+    updatedByUserName: record.updatedBy?.name || undefined,
+    approvedByUserId: record.approvedByUserId ? String(record.approvedByUserId) : undefined,
+    approvedByUserName: record.approvedBy?.name || undefined,
+    approvedAt: record.approvedAt ? record.approvedAt.toISOString() : undefined,
+    cancelledByUserId: record.cancelledByUserId ? String(record.cancelledByUserId) : undefined,
+    cancelledByUserName: record.cancelledBy?.name || undefined,
+    cancelledAt: record.cancelledAt ? record.cancelledAt.toISOString() : undefined,
+    realizedAt: record.realizedAt ? record.realizedAt.toISOString() : undefined,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
+    attachments: await Promise.all((record.attachments || []).map(mapAttachment)),
+    history: await Promise.all((record.histories || []).map(async (item: any) => ({
+      id: String(item.id),
+      action: item.action,
+      description: item.description,
+      statusFrom: item.statusFrom || undefined,
+      statusTo: item.statusTo || undefined,
+      userId: item.userId ? String(item.userId) : undefined,
+      userName: item.user?.name || "SISTEMA",
+      createdAt: item.createdAt.toISOString(),
+      attachments: await Promise.all((item.attachments || []).map(mapAttachment)),
+    }))),
+  };
 }
 
 async function mapProjectFromDb(project: any, authUser?: any) {
@@ -1059,6 +1231,15 @@ async function upsertUserRecord(tx: any, userId: number | null, userPayload: any
   const requestedRole = normalizeRole(userPayload.role);
   const managerId = userPayload.managerId ? Number(userPayload.managerId) : null;
   const sectorId = userPayload.sectorId ? Number(userPayload.sectorId) : null;
+  const canAccessProvisioning = Boolean(
+    userPayload.canAccessProvisioning ||
+    userPayload.canCreateProvisioning ||
+    userPayload.canApproveProvisioning ||
+    userPayload.canViewProvisioningDashboard
+  );
+  const canCreateProvisioning = Boolean(userPayload.canCreateProvisioning);
+  const canApproveProvisioning = Boolean(userPayload.canApproveProvisioning);
+  const canViewProvisioningDashboard = Boolean(userPayload.canViewProvisioningDashboard);
 
   if ((requestedRole === UserRole.SUPERADMIN || existingUser?.role === UserRole.SUPERADMIN) && actorRole !== UserRole.SUPERADMIN) {
     const error = new Error("Only SUPERADMIN can manage SUPERADMIN users") as Error & { status?: number };
@@ -1133,6 +1314,10 @@ async function upsertUserRecord(tx: any, userId: number | null, userPayload: any
           role: requestedRole,
           managerId: requestedRole === UserRole.SUPERADMIN ? null : managerId,
           sectorId: requestedRole === UserRole.SUPERADMIN ? null : sectorId,
+          canAccessProvisioning,
+          canCreateProvisioning,
+          canApproveProvisioning,
+          canViewProvisioningDashboard,
           isActive: true,
           passwordHash,
         }
@@ -1144,6 +1329,10 @@ async function upsertUserRecord(tx: any, userId: number | null, userPayload: any
           role: requestedRole,
           managerId: requestedRole === UserRole.SUPERADMIN ? null : managerId,
           sectorId: requestedRole === UserRole.SUPERADMIN ? null : sectorId,
+          canAccessProvisioning,
+          canCreateProvisioning,
+          canApproveProvisioning,
+          canViewProvisioningDashboard,
           isActive: true,
           passwordHash,
         }
@@ -1602,6 +1791,453 @@ app.get("/auth/me", requireAuth, async (req: AuthRequest, res) => {
   res.json(sanitizeUser(user));
 });
 
+app.get("/provisioning/context", requireAuth, async (req: AuthRequest, res) => {
+  if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
+  const user = await getScopedAuthUser(Number(req.authUser.id));
+  if (!(await ensureProvisioningAccess(user, res, "access"))) return;
+
+  const activeUser = user!;
+  const projectWhere = GLOBAL_ADMIN_ROLES.includes(activeUser.role) || !shouldUseAssignedProjectScope(activeUser)
+    ? undefined
+    : { id: { in: await getUserProjectScope(Number(activeUser.id)) } };
+  const [categories, projects] = await Promise.all([
+    prismaAny.provisioningCategory.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
+    prisma.project.findMany({ where: projectWhere, orderBy: [{ code: "asc" }, { name: "asc" }] })
+  ]);
+
+  res.json({
+    permissions: {
+      canAccess: canAccessProvisioning(user),
+      canCreate: canCreateProvisioning(user),
+      canApprove: canApproveProvisioning(user),
+      canViewDashboard: canViewProvisioningDashboard(user),
+    },
+    categories: categories.map((item: any) => ({
+      id: String(item.id),
+      name: item.name,
+      description: item.description || undefined,
+      sortOrder: item.sortOrder,
+      isActive: item.isActive,
+    })),
+    projectOptions: projects.map((project: any) => ({
+      id: String(project.id),
+      code: project.code,
+      name: project.name,
+    }))
+  });
+});
+
+app.get("/provisioning/categories", requireAuth, async (req: AuthRequest, res) => {
+  if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
+  const user = await getScopedAuthUser(Number(req.authUser.id));
+  if (!(await ensureProvisioningAccess(user, res, "access"))) return;
+  const categories = await prismaAny.provisioningCategory.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
+  res.json(categories.map((item: any) => ({
+    id: String(item.id),
+    name: item.name,
+    description: item.description || undefined,
+    sortOrder: item.sortOrder,
+    isActive: item.isActive,
+  })));
+});
+
+app.put("/provisioning/categories/:id", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req, res) => {
+  const parsed = provisioningCategorySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+  const categoryId = Number(req.params.id);
+  const last = await prismaAny.provisioningCategory.findFirst({ orderBy: { sortOrder: "desc" } });
+  const saved = Number.isFinite(categoryId) && categoryId > 0
+    ? await prismaAny.provisioningCategory.update({
+        where: { id: categoryId },
+        data: {
+          name: String(parsed.data.category.name).trim().toUpperCase(),
+          description: toOptionalText(parsed.data.category.description),
+          isActive: true,
+        }
+      })
+    : await prismaAny.provisioningCategory.create({
+        data: {
+          name: String(parsed.data.category.name).trim().toUpperCase(),
+          description: toOptionalText(parsed.data.category.description),
+          sortOrder: (last?.sortOrder || 0) + 1,
+          isActive: true,
+        }
+      });
+  res.json({
+    id: String(saved.id),
+    name: saved.name,
+    description: saved.description || undefined,
+    sortOrder: saved.sortOrder,
+    isActive: saved.isActive,
+  });
+});
+
+app.get("/provisioning", requireAuth, async (req: AuthRequest, res) => {
+  if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
+  const user = await getScopedAuthUser(Number(req.authUser.id));
+  if (!(await ensureProvisioningAccess(user, res, "access"))) return;
+
+  const activeUser = user!;
+  const projectScope = GLOBAL_ADMIN_ROLES.includes(activeUser.role) || !shouldUseAssignedProjectScope(activeUser)
+    ? undefined
+    : await getUserProjectScope(Number(activeUser.id));
+  const projectId = Number(req.query.projectId || "");
+  const status = String(req.query.status || "").trim().toUpperCase() as ProvisioningStatusValue;
+  const search = String(req.query.search || "").trim();
+  const where: any = {};
+
+  if (Array.isArray(projectScope)) {
+    where.projectId = { in: projectScope };
+  }
+  if (Number.isFinite(projectId) && projectId > 0) {
+    where.projectId = Array.isArray(projectScope) ? { in: projectScope.filter((id) => id === projectId) } : projectId;
+  }
+  if (status && provisioningStatuses.includes(status)) {
+    where.status = status;
+  }
+  if (search) {
+    where.OR = [
+      { code: { contains: search } },
+      { title: { contains: search } },
+      { description: { contains: search } },
+      { supplier: { contains: search } },
+    ];
+  }
+
+  const rows = await prismaAny.provisioningRecord.findMany({
+    where,
+    include: provisioningInclude,
+    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }]
+  });
+
+  res.json(await Promise.all(rows.map(mapProvisioningFromDb)));
+});
+
+app.get("/provisioning/dashboard", requireAuth, async (req: AuthRequest, res) => {
+  if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
+  const user = await getScopedAuthUser(Number(req.authUser.id));
+  if (!(await ensureProvisioningAccess(user, res, "dashboard"))) return;
+
+  const dashboardUser = user!;
+  const projectScope = GLOBAL_ADMIN_ROLES.includes(dashboardUser.role) || !shouldUseAssignedProjectScope(dashboardUser)
+    ? undefined
+    : await getUserProjectScope(Number(dashboardUser.id));
+  const where = Array.isArray(projectScope) ? { projectId: { in: projectScope } } : undefined;
+  const rows = await prismaAny.provisioningRecord.findMany({
+    where,
+    include: { project: true },
+    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }]
+  });
+
+  const byStatusMap = new Map<ProvisioningStatusValue, { status: ProvisioningStatusValue; count: number; totalValue: number }>();
+  const byProjectMap = new Map<number, { projectId: string; projectName: string; count: number; totalValue: number }>();
+  for (const row of rows) {
+    const statusKey = row.status;
+    const currentStatus = byStatusMap.get(statusKey) || { status: statusKey, count: 0, totalValue: 0 };
+    currentStatus.count += 1;
+    currentStatus.totalValue += decimalToNumber(row.forecastValue);
+    byStatusMap.set(statusKey, currentStatus);
+
+    const currentProject = byProjectMap.get(row.projectId) || {
+      projectId: String(row.projectId),
+      projectName: row.project?.name || "",
+      count: 0,
+      totalValue: 0,
+    };
+    currentProject.count += 1;
+    currentProject.totalValue += decimalToNumber(row.forecastValue);
+    byProjectMap.set(row.projectId, currentProject);
+  }
+
+  const upcomingRows = rows.slice(0, 10);
+  const upcomingDetailed = await prismaAny.provisioningRecord.findMany({
+    where: { id: { in: upcomingRows.map((item: any) => item.id) } },
+    include: provisioningInclude,
+    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }]
+  });
+
+  res.json({
+    totalRecords: rows.length,
+    totalForecastValue: rows.reduce((sum: number, item: any) => sum + decimalToNumber(item.forecastValue), 0),
+    byStatus: Array.from(byStatusMap.values()),
+    byProject: Array.from(byProjectMap.values()).sort((a, b) => b.totalValue - a.totalValue),
+    upcoming: await Promise.all(upcomingDetailed.map(mapProvisioningFromDb)),
+  });
+});
+
+app.get("/provisioning/:id", requireAuth, async (req: AuthRequest, res) => {
+  if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
+  const user = await getScopedAuthUser(Number(req.authUser.id));
+  if (!(await ensureProvisioningAccess(user, res, "access"))) return;
+  const provisioningId = Number(req.params.id);
+  if (!Number.isFinite(provisioningId)) return res.status(400).json({ error: "Invalid provisioning id" });
+
+  const record = await prismaAny.provisioningRecord.findUnique({
+    where: { id: provisioningId },
+    include: provisioningInclude,
+  });
+  if (!record) return res.status(404).json({ error: "Provisioning not found" });
+  if (!(await canAccessProject(req.authUser, record.projectId))) return res.status(403).json({ error: "Forbidden" });
+
+  res.json(await mapProvisioningFromDb(record));
+});
+
+app.post("/provisioning", requireAuth, async (req: AuthRequest, res) => {
+  const parsed = provisioningPayloadSchema.safeParse(req.body);
+  if (!parsed.success || !req.authUser) return res.status(400).json({ error: "Invalid payload" });
+  const user = await getScopedAuthUser(Number(req.authUser.id));
+  if (!(await ensureProvisioningAccess(user, res, "create"))) return;
+
+  const projectId = Number(parsed.data.provisioning.projectId);
+  if (!(await canAccessProject(req.authUser, projectId))) return res.status(403).json({ error: "Forbidden" });
+
+  const saved = await prisma.$transaction(async (tx: any) => {
+    const project = await tx.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new Error("Project not found");
+    const categoryId = Number(parsed.data.provisioning.categoryId);
+    const category = await tx.provisioningCategory.findUnique({ where: { id: categoryId } });
+    if (!category || !category.isActive) throw new Error("Category not found");
+    const sequence = await allocateProvisioningNumber(tx, project.id);
+    const code = formatProvisioningCode(project.code, sequence);
+    const created = await tx.provisioningRecord.create({
+      data: {
+        projectId: project.id,
+        categoryId: category.id,
+        code,
+        title: String(parsed.data.provisioning.title).trim(),
+        description: String(parsed.data.provisioning.description).trim(),
+        supplier: toOptionalText(parsed.data.provisioning.supplier),
+        dueDate: parseDateOnly(parsed.data.provisioning.dueDate),
+        forecastValue: Number(parsed.data.provisioning.forecastValue || 0),
+        comment: toOptionalText(parsed.data.provisioning.comment),
+        status: "PREVISTO",
+        createdByUserId: Number(user!.id),
+        updatedByUserId: Number(user!.id),
+      },
+    });
+    await tx.provisioningHistory.create({
+      data: {
+        provisioningId: created.id,
+        userId: Number(user!.id),
+        action: "CRIACAO",
+        description: "Provisionamento criado.",
+        statusTo: "PREVISTO",
+      }
+    });
+    const attachments = await toAttachments(parsed.data.provisioning.attachments || [], "PROVISIONING_ATTACHMENT" as AttachmentKind);
+    for (const attachment of attachments) {
+      await tx.provisioningAttachment.create({
+        data: {
+          provisioningId: created.id,
+          kind: attachment.kind,
+          name: attachment.name,
+          originalName: attachment.originalName,
+          data: attachment.data,
+          storageProvider: attachment.storageProvider,
+          storageBucket: attachment.storageBucket,
+          storageKey: attachment.storageKey,
+          mimeType: attachment.mimeType,
+          size: attachment.size,
+          uploadedByUserId: Number(user!.id),
+          uploadedAt: attachment.uploadedAt,
+        }
+      });
+    }
+    return tx.provisioningRecord.findUnique({
+      where: { id: created.id },
+      include: provisioningInclude,
+    });
+  });
+
+  res.json(await mapProvisioningFromDb(saved!));
+});
+
+app.put("/provisioning/:id", requireAuth, async (req: AuthRequest, res) => {
+  const parsed = provisioningPayloadSchema.safeParse(req.body);
+  if (!parsed.success || !req.authUser) return res.status(400).json({ error: "Invalid payload" });
+  const user = await getScopedAuthUser(Number(req.authUser.id));
+  if (!(await ensureProvisioningAccess(user, res, "create"))) return;
+  const provisioningId = Number(req.params.id);
+  if (!Number.isFinite(provisioningId)) return res.status(400).json({ error: "Invalid provisioning id" });
+
+  const existing = await prismaAny.provisioningRecord.findUnique({ where: { id: provisioningId }, include: provisioningInclude });
+  if (!existing) return res.status(404).json({ error: "Provisioning not found" });
+  if (!(await canAccessProject(req.authUser, existing.projectId))) return res.status(403).json({ error: "Forbidden" });
+
+  const saved = await prisma.$transaction(async (tx: any) => {
+    const categoryId = Number(parsed.data.provisioning.categoryId);
+    const category = await tx.provisioningCategory.findUnique({ where: { id: categoryId } });
+    if (!category || !category.isActive) throw new Error("Category not found");
+    await tx.provisioningHistory.create({
+      data: {
+        provisioningId: existing.id,
+        userId: Number(user!.id),
+        action: "ATUALIZACAO",
+        description: "Provisionamento atualizado.",
+        statusFrom: existing.status,
+        statusTo: existing.status,
+      }
+    });
+    return tx.provisioningRecord.update({
+      where: { id: existing.id },
+      data: {
+        categoryId: category.id,
+        title: String(parsed.data.provisioning.title).trim(),
+        description: String(parsed.data.provisioning.description).trim(),
+        supplier: toOptionalText(parsed.data.provisioning.supplier),
+        dueDate: parseDateOnly(parsed.data.provisioning.dueDate),
+        forecastValue: Number(parsed.data.provisioning.forecastValue || 0),
+        comment: toOptionalText(parsed.data.provisioning.comment),
+        updatedByUserId: Number(user!.id),
+      },
+      include: provisioningInclude,
+    });
+  });
+
+  res.json(await mapProvisioningFromDb(saved));
+});
+
+app.patch("/provisioning/:id/status", requireAuth, async (req: AuthRequest, res) => {
+  const parsed = provisioningStatusSchema.safeParse(req.body);
+  if (!parsed.success || !req.authUser) return res.status(400).json({ error: "Invalid payload" });
+  const user = await getScopedAuthUser(Number(req.authUser.id));
+  if (!(await ensureProvisioningAccess(user, res, "approve"))) return;
+  const provisioningId = Number(req.params.id);
+  if (!Number.isFinite(provisioningId)) return res.status(400).json({ error: "Invalid provisioning id" });
+
+  const existing = await prismaAny.provisioningRecord.findUnique({ where: { id: provisioningId }, include: provisioningInclude });
+  if (!existing) return res.status(404).json({ error: "Provisioning not found" });
+  if (!(await canAccessProject(req.authUser, existing.projectId))) return res.status(403).json({ error: "Forbidden" });
+
+  const saved = await prisma.$transaction(async (tx: any) => {
+    await tx.provisioningHistory.create({
+      data: {
+        provisioningId: existing.id,
+        userId: Number(user!.id),
+        action: "STATUS",
+        description: parsed.data.comment
+          ? `Status alterado para ${parsed.data.status}. ${parsed.data.comment}`
+          : `Status alterado para ${parsed.data.status}.`,
+        statusFrom: existing.status,
+        statusTo: parsed.data.status,
+      }
+    });
+    return tx.provisioningRecord.update({
+      where: { id: existing.id },
+      data: {
+        status: parsed.data.status,
+        updatedByUserId: Number(user!.id),
+        approvedByUserId: parsed.data.status === "APROVADO" ? Number(user!.id) : existing.approvedByUserId,
+        approvedAt: parsed.data.status === "APROVADO" ? new Date() : existing.approvedAt,
+        cancelledByUserId: parsed.data.status === "CANCELADO" ? Number(user!.id) : existing.cancelledByUserId,
+        cancelledAt: parsed.data.status === "CANCELADO" ? new Date() : existing.cancelledAt,
+        realizedAt: parsed.data.status === "REALIZADO" ? new Date() : existing.realizedAt,
+      },
+      include: provisioningInclude,
+    });
+  });
+
+  res.json(await mapProvisioningFromDb(saved));
+});
+
+app.post("/provisioning/:id/comments", requireAuth, async (req: AuthRequest, res) => {
+  const parsed = provisioningCommentSchema.safeParse(req.body);
+  if (!parsed.success || !req.authUser) return res.status(400).json({ error: "Invalid payload" });
+  const user = await getScopedAuthUser(Number(req.authUser.id));
+  if (!(await ensureProvisioningAccess(user, res, "access"))) return;
+  const provisioningId = Number(req.params.id);
+  if (!Number.isFinite(provisioningId)) return res.status(400).json({ error: "Invalid provisioning id" });
+
+  const existing = await prismaAny.provisioningRecord.findUnique({ where: { id: provisioningId } });
+  if (!existing) return res.status(404).json({ error: "Provisioning not found" });
+  if (!(await canAccessProject(req.authUser, existing.projectId))) return res.status(403).json({ error: "Forbidden" });
+
+  const history = await prismaAny.provisioningHistory.create({
+    data: {
+      provisioningId,
+      userId: Number(user!.id),
+      action: "COMENTARIO",
+      description: parsed.data.comment,
+    },
+    include: {
+      user: true,
+      attachments: { select: provisioningAttachmentSelect }
+    }
+  });
+
+  res.json({
+    id: String(history.id),
+    action: history.action,
+    description: history.description,
+    createdAt: history.createdAt.toISOString(),
+    userId: history.userId ? String(history.userId) : undefined,
+    userName: history.user?.name || "SISTEMA",
+    attachments: [],
+  });
+});
+
+app.post("/provisioning/:id/attachments", requireAuth, async (req: AuthRequest, res) => {
+  const schema = z.object({ attachments: z.array(z.any()).min(1) });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success || !req.authUser) return res.status(400).json({ error: "Invalid payload" });
+  const user = await getScopedAuthUser(Number(req.authUser.id));
+  if (!(await ensureProvisioningAccess(user, res, "access"))) return;
+  const provisioningId = Number(req.params.id);
+  if (!Number.isFinite(provisioningId)) return res.status(400).json({ error: "Invalid provisioning id" });
+
+  const existing = await prismaAny.provisioningRecord.findUnique({ where: { id: provisioningId } });
+  if (!existing) return res.status(404).json({ error: "Provisioning not found" });
+  if (!(await canAccessProject(req.authUser, existing.projectId))) return res.status(403).json({ error: "Forbidden" });
+
+  const history = await prisma.$transaction(async (tx: any) => {
+    const createdHistory = await tx.provisioningHistory.create({
+      data: {
+        provisioningId,
+        userId: Number(user!.id),
+        action: "ANEXO",
+        description: `${parsed.data.attachments.length} arquivo(s) enviado(s).`,
+      }
+    });
+    const attachments = await toAttachments(parsed.data.attachments, "PROVISIONING_HISTORY_ATTACHMENT" as AttachmentKind);
+    for (const attachment of attachments) {
+      await tx.provisioningAttachment.create({
+        data: {
+          provisioningId,
+          historyId: createdHistory.id,
+          kind: attachment.kind,
+          name: attachment.name,
+          originalName: attachment.originalName,
+          data: attachment.data,
+          storageProvider: attachment.storageProvider,
+          storageBucket: attachment.storageBucket,
+          storageKey: attachment.storageKey,
+          mimeType: attachment.mimeType,
+          size: attachment.size,
+          uploadedByUserId: Number(user!.id),
+          uploadedAt: attachment.uploadedAt,
+        }
+      });
+    }
+    return tx.provisioningHistory.findUnique({
+      where: { id: createdHistory.id },
+      include: {
+        user: true,
+        attachments: { select: provisioningAttachmentSelect }
+      }
+    });
+  });
+
+  res.json({
+    id: String(history!.id),
+    action: history!.action,
+    description: history!.description,
+    createdAt: history!.createdAt.toISOString(),
+    userId: history!.userId ? String(history!.userId) : undefined,
+    userName: history!.user?.name || "SISTEMA",
+    attachments: await Promise.all((history!.attachments || []).map(mapAttachment)),
+  });
+});
+
 app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
   const parsed = resolveAttachmentSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid attachment payload" });
@@ -1688,23 +2324,42 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
             storageKey: costAttachment.storageKey || undefined,
           };
         } else {
-          const installmentAttachment = await prisma.installmentAttachment.findUnique({
+          const provisioningAttachment = await prismaAny.provisioningAttachment.findUnique({
             where: { id: attachmentId },
-            include: { installment: { select: { projectId: true } } }
+            include: { provisioning: { select: { projectId: true } } }
           });
 
           if (
-            installmentAttachment &&
-            matchesRequestedStorage(installmentAttachment) &&
-            await canAccessProject(req.authUser, installmentAttachment.installment.projectId)
+            provisioningAttachment &&
+            matchesRequestedStorage(provisioningAttachment) &&
+            await canAccessProject(req.authUser, provisioningAttachment.provisioning.projectId)
           ) {
             resolvedSource = {
-              data: installmentAttachment.data || "",
-              mimeType: installmentAttachment.mimeType,
-              storageProvider: installmentAttachment.storageProvider || undefined,
-              storageBucket: installmentAttachment.storageBucket || undefined,
-              storageKey: installmentAttachment.storageKey || undefined,
+              data: provisioningAttachment.data || "",
+              mimeType: provisioningAttachment.mimeType,
+              storageProvider: provisioningAttachment.storageProvider || undefined,
+              storageBucket: provisioningAttachment.storageBucket || undefined,
+              storageKey: provisioningAttachment.storageKey || undefined,
             };
+          } else {
+            const installmentAttachment = await prisma.installmentAttachment.findUnique({
+              where: { id: attachmentId },
+              include: { installment: { select: { projectId: true } } }
+            });
+
+            if (
+              installmentAttachment &&
+              matchesRequestedStorage(installmentAttachment) &&
+              await canAccessProject(req.authUser, installmentAttachment.installment.projectId)
+            ) {
+              resolvedSource = {
+                data: installmentAttachment.data || "",
+                mimeType: installmentAttachment.mimeType,
+                storageProvider: installmentAttachment.storageProvider || undefined,
+                storageBucket: installmentAttachment.storageBucket || undefined,
+                storageKey: installmentAttachment.storageKey || undefined,
+              };
+            }
           }
         }
       }

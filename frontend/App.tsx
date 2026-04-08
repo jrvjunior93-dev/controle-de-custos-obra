@@ -13,6 +13,9 @@ const ProjectDetail = lazy(() => import('./components/ProjectDetail').then((modu
 const SpecificationDoc = lazy(() => import('./components/SpecificationDoc').then((module) => ({ default: module.SpecificationDoc })));
 const UsersManagement = lazy(() => import('./components/UsersManagement').then((module) => ({ default: module.UsersManagement })));
 const GlobalOrdersModule = lazy(() => import('./components/GlobalOrdersModule').then((module) => ({ default: module.GlobalOrdersModule })));
+const ProvisioningModule = lazy(() => import('./components/ProvisioningModule').then((module) => ({ default: module.ProvisioningModule })));
+const NewProvisioningModule = lazy(() => import('./components/NewProvisioningModule').then((module) => ({ default: module.NewProvisioningModule })));
+const ProvisioningDashboard = lazy(() => import('./components/ProvisioningDashboard').then((module) => ({ default: module.ProvisioningDashboard })));
 
 
 
@@ -614,6 +617,9 @@ const App: React.FC = () => {
 
   const canManageGlobalData = isGlobalAdmin(user.role);
   const canManageProjectPortfolio = isProjectAdmin(user.role) || user.role === 'ADMIN_OBRA';
+  const canAccessProvisioning = Boolean(user.canAccessProvisioning || user.role === 'SUPERADMIN');
+  const canCreateProvisioning = Boolean(user.canCreateProvisioning || user.role === 'SUPERADMIN');
+  const canViewProvisioningDashboard = Boolean(user.canViewProvisioningDashboard || user.role === 'SUPERADMIN');
   const usesAssignedProjectScope = !canManageGlobalData && (!user.sectorName || isObraSectorName(user.sectorName));
   const visibleProjects = canManageGlobalData
     ? projects
@@ -671,6 +677,18 @@ const App: React.FC = () => {
           )}
 
           <button onClick={() => setNavigationState('ORDERS_GLOBAL', null)} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'ORDERS_GLOBAL' ? 'text-blue-400' : ''}`}>Pedidos</button>
+
+          {canAccessProvisioning && (
+            <button onClick={() => setNavigationState('PROVISIONING_LIST', null)} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'PROVISIONING_LIST' ? 'text-blue-400' : ''}`}>Provisionamento</button>
+          )}
+
+          {canCreateProvisioning && (
+            <button onClick={() => setNavigationState('PROVISIONING_NEW', null)} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'PROVISIONING_NEW' ? 'text-blue-400' : ''}`}>Nova Provisao</button>
+          )}
+
+          {canViewProvisioningDashboard && (
+            <button onClick={() => setNavigationState('PROVISIONING_DASHBOARD', null)} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'PROVISIONING_DASHBOARD' ? 'text-blue-400' : ''}`}>Dashboard Provisionamento</button>
+          )}
 
           {canManageGlobalData && (
 
@@ -754,6 +772,24 @@ const App: React.FC = () => {
               const updatedMap = new Map(updatedProjects.map((project) => [project.id, project]));
               setProjects((currentProjects) => currentProjects.map((project) => updatedMap.get(project.id) || project));
             }} onPersistProject={handleSaveProject} onPersistMemberOrder={handleSyncMemberOrder} onDeleteMemberOrder={handleDeleteMemberOrder} orderTypes={orderTypes} />
+
+          )}
+
+          {view === 'PROVISIONING_LIST' && canAccessProvisioning && (
+
+            <ProvisioningModule user={user} />
+
+          )}
+
+          {view === 'PROVISIONING_NEW' && canCreateProvisioning && (
+
+            <NewProvisioningModule user={user} onCreated={() => setNavigationState('PROVISIONING_LIST', null)} />
+
+          )}
+
+          {view === 'PROVISIONING_DASHBOARD' && canViewProvisioningDashboard && (
+
+            <ProvisioningDashboard />
 
           )}
 
