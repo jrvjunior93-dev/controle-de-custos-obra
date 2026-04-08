@@ -970,9 +970,11 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   };
 
   const handleSendMessage = async () => {
-    if (!isActionModalOpen || !messageText.trim()) return alert('Escreva a interação que deseja registrar.');
+    if (!isActionModalOpen || (!messageText.trim() && messageAttachments.length === 0)) {
+      return alert('Escreva um comentario ou selecione ao menos um arquivo para enviar.');
+    }
     if (!canCommentOnOrder(isActionModalOpen)) return alert('Este pedido não aceita mais interações.');
-    if (!confirm(`Adicionar interação ao pedido "${isActionModalOpen.title}"?`)) return;
+    if (!confirm(`Registrar envio no pedido "${isActionModalOpen.title}"?`)) return;
 
     let updatedOrder: Order | null = null;
     const updatedProject = handleProjectMutation(isActionModalOpen.projectId, (project) => ({
@@ -1001,8 +1003,10 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
         setIsActionModalOpen(savedOrder);
       }
 
+      const sentOnlyAttachments = !messageText.trim() && messageAttachments.length > 0;
       setMessageText('');
       setMessageAttachments([]);
+      alert(sentOnlyAttachments ? 'Arquivo enviado com sucesso.' : 'Comentario enviado com sucesso.');
     } catch (error) {
       console.error('Erro ao salvar interação do pedido:', error);
       onUpdateProjects(previousProjects);

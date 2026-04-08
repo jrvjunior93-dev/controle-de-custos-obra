@@ -416,13 +416,15 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
 
   const handleSendMessage = async (order: Order) => {
     if (!canCommentOnOrder(order)) return alert('Este pedido não aceita mais interações.');
-    if (!messageText.trim()) return alert('Escreva sua interação.');
-    if (!confirm(`Confirmar envio da interação para o pedido "${order.title}"?`)) return;
+    if (!messageText.trim() && messageAttachments.length === 0) {
+      return alert('Escreva um comentario ou selecione ao menos um arquivo para enviar.');
+    }
+    if (!confirm(`Registrar envio no pedido "${order.title}"?`)) return;
     const msg: OrderMessage = {
       id: crypto.randomUUID(),
       userId: user.id,
       userName: user.name,
-      text: messageText.trim(),
+      text: messageText.trim() || 'Arquivos enviados.',
       date: new Date().toISOString(),
       attachments: messageAttachments.length > 0 ? messageAttachments : undefined
     };
@@ -433,8 +435,10 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     try {
       const savedOrder = await onPersistOrder(project.id, updated);
       setIsActionModalOpen(savedOrder);
+      const sentOnlyAttachments = !messageText.trim() && messageAttachments.length > 0;
       setMessageText('');
       setMessageAttachments([]);
+      alert(sentOnlyAttachments ? 'Arquivo enviado com sucesso.' : 'Comentario enviado com sucesso.');
     } catch (error) {
       console.error('Erro ao salvar interação do pedido:', error);
       alert('Não foi possível salvar a interação. Tente novamente.');
