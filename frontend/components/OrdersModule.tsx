@@ -79,6 +79,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const [selectedForwardSectorId, setSelectedForwardSectorId] = useState('');
   const [selectedSectorStatus, setSelectedSectorStatus] = useState('');
   const [isEditingSectorStatus, setIsEditingSectorStatus] = useState(false);
+  const [isSectorStatusModalOpen, setIsSectorStatusModalOpen] = useState(false);
   const [newOrder, setNewOrder] = useState<Partial<Order>>({
     title: '',
     type: '',
@@ -229,6 +230,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     setSelectedForwardSectorId(order.currentSectorId || '');
     setSelectedSectorStatus(order.sectorStatus || '');
     setIsEditingSectorStatus(false);
+    setIsSectorStatusModalOpen(false);
   };
   useEffect(() => {
     if (!isActionModalOpen) return;
@@ -563,27 +565,27 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     }
   };
 
-  const handleSaveSectorStatus = async () => {
+  const handleSaveSectorStatus = async (nextStatus = selectedSectorStatus) => {
     if (!isActionModalOpen) return;
     if (!canEditSectorStatus(isActionModalOpen)) return alert('Voce nao pode alterar o status deste setor.');
     const availableStatuses = getEditableSectorStatuses(isActionModalOpen);
     if (availableStatuses.length === 0) return alert('Nao ha status configurados para o setor atual.');
-    if (selectedSectorStatus && !availableStatuses.includes(selectedSectorStatus)) return alert('Selecione um status valido.');
-    if ((selectedSectorStatus || '') === (isActionModalOpen.sectorStatus || '')) return;
+    if (nextStatus && !availableStatuses.includes(nextStatus)) return alert('Selecione um status valido.');
+    if ((nextStatus || '') === (isActionModalOpen.sectorStatus || '')) return;
     if (!confirm(
       	`Salvar o status setorial do pedido "${isActionModalOpen.title}"?`
     )) return;
 
     const updatedOrder: Order = {
       ...isActionModalOpen,
-      sectorStatus: selectedSectorStatus || undefined,
+      sectorStatus: nextStatus || undefined,
       messages: [...(isActionModalOpen.messages || []), {
         id: crypto.randomUUID(),
         userId: 'system',
         userName: 'SISTEMA',
-        text: selectedSectorStatus
-          ? 	`${user.name} alterou o status do setor para ${selectedSectorStatus}.`
-          : 	`${user.name} removeu o status do setor.`,
+        text: nextStatus
+          ? `${user.name} alterou o status do setor para ${nextStatus}.`
+          : `${user.name} removeu o status do setor.`,
         date: new Date().toISOString()
       }]
     };
@@ -593,6 +595,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       setIsActionModalOpen(savedOrder);
       setSelectedSectorStatus(savedOrder.sectorStatus || '');
       setIsEditingSectorStatus(false);
+      setIsSectorStatusModalOpen(false);
     } catch (error) {
       console.error('Erro ao salvar status setorial do pedido:', error);
       alert('Nao foi possivel salvar o status setorial. Tente novamente.');
@@ -938,7 +941,7 @@ const renderListStatusBadge = (order: Order) => {
                     {canEditSectorStatus(isActionModalOpen) && (
                       <button
                         type="button"
-                        onClick={() => setIsEditingSectorStatus((current) => !current)}
+                        onClick={() => { setSelectedSectorStatus(isActionModalOpen.sectorStatus || ''); setIsSectorStatusModalOpen(true); }}
                         className="w-7 h-7 border border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:border-slate-300"
                         title="Editar status do setor"
                       >
@@ -954,24 +957,6 @@ const renderListStatusBadge = (order: Order) => {
                 <button onClick={() => setIsActionModalOpen(null)} className="text-slate-400 hover:text-slate-600 px-2"><i className="fas fa-times text-xl"></i></button>
               </div>
             </div>
-            {isEditingSectorStatus && (getEditableSectorStatuses(isActionModalOpen).length > 0 || isActionModalOpen.sectorStatus) && (
-              <div className="px-5 sm:px-8 py-4 border-b border-slate-100 bg-white">
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <select
-                    className="flex-1 bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase"
-                    value={selectedSectorStatus}
-                    onChange={(event) => setSelectedSectorStatus(event.target.value)}
-                    disabled={!canEditSectorStatus(isActionModalOpen)}
-                  >
-                    <option value="">Sem status setorial</option>
-                    {getEditableSectorStatuses(isActionModalOpen).map((status) => <option key={status} value={status}>{status}</option>)}
-                  </select>
-                  <button type="button" onClick={handleSaveSectorStatus} className="bg-slate-900 text-white px-5 py-3 text-[10px] font-black uppercase tracking-widest shadow-sm">
-                    Salvar Status
-                  </button>
-                </div>
-              </div>
-            )}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 bg-slate-100/60">
               <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-5">
                 <div>
@@ -1164,8 +1149,6 @@ const renderListStatusBadge = (order: Order) => {
                   <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Interações Livres</h4>
                     <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder="Registre uma orientação, alinhamento ou resposta livre..." value={messageText} onChange={(e) => setMessageText(e.target.value)} />
-                    <input type="file" multiple className="text-[10px] font-bold" onChange={(e) => void handleFileUpload(e, 'MESSAGE')} />
-                    {renderAttachmentList(messageAttachments, removeMessageAttachment, 'Nenhum anexo selecionado para esta mensagem.')}
                     <button onClick={() => handleSendMessage(isActionModalOpen)} className="w-full bg-purple-600 text-white py-4 font-black uppercase text-[10px] shadow-xl">Adicionar Interação</button>
                   </div>
                   )}
@@ -1178,6 +1161,36 @@ const renderListStatusBadge = (order: Order) => {
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isActionModalOpen && isSectorStatusModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-[130] p-4">
+          <div className="bg-white w-full max-w-md border border-slate-200 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Alterar Status do Setor</h4>
+                <p className="text-[10px] font-bold text-slate-400 uppercase">{isActionModalOpen.title}</p>
+              </div>
+              <button type="button" onClick={() => setIsSectorStatusModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <select
+              className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase"
+              value={selectedSectorStatus}
+              onChange={(event) => setSelectedSectorStatus(event.target.value)}
+            >
+              <option value="">Sem status setorial</option>
+              {getEditableSectorStatuses(isActionModalOpen).map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+            </select>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setIsSectorStatusModalOpen(false)} className="flex-1 border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-600">Fechar</button>
+              <button type="button" onClick={() => void handleSaveSectorStatus(selectedSectorStatus)} className="flex-1 bg-slate-900 text-white py-3 text-[10px] font-black uppercase tracking-widest">Salvar Status</button>
             </div>
           </div>
         </div>
