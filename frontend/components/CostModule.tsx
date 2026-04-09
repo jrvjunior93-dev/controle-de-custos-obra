@@ -21,12 +21,40 @@ const parseMoneyInput = (value: string) => {
 
 export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canManageCosts }) => {
   const [costs, setCosts] = useState<ExecutedCost[]>(project.costs || []);
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
+    dates: 150,
+    orderCode: 150,
+    supplier: 240,
+    origin: 190,
+    reference: 210,
+    total: 140,
+    actions: 110,
+  });
+  const [resizingColumn, setResizingColumn] = useState<{ key: string; startX: number; startWidth: number } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   useEffect(() => {
     setCosts(project.costs || []);
   }, [project.costs]);
+
+  useEffect(() => {
+    if (!resizingColumn) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const nextWidth = Math.max(90, resizingColumn.startWidth + (event.clientX - resizingColumn.startX));
+      setColumnWidths((current) => ({ ...current, [resizingColumn.key]: nextWidth }));
+    };
+
+    const handleMouseUp = () => setResizingColumn(null);
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingColumn]);
   
   // FUNÇÃO CORRIGIDA: Pega data local SEM fuso horário UTC
   const getTodayLocal = () => {
@@ -92,6 +120,35 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
       : getLegacyLinkedOrder(cost);
     return order?.orderCode || cost.manualOrderCode || '-';
   };
+
+  const getColumnStyle = (key: string) => ({
+    width: `${columnWidths[key] || 140}px`,
+    minWidth: `${columnWidths[key] || 140}px`,
+  });
+
+  const startColumnResize = (key: string, event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setResizingColumn({
+      key,
+      startX: event.clientX,
+      startWidth: columnWidths[key] || 140,
+    });
+  };
+
+  const renderColumnHeader = (key: string, label: string, className = '') => (
+    <th className={`px-6 py-4 relative ${className}`} style={getColumnStyle(key)}>
+      <div className="pr-3">{label}</div>
+      <button
+        type="button"
+        onMouseDown={(event) => startColumnResize(key, event)}
+        className="absolute top-0 right-0 h-full w-3 cursor-col-resize group"
+        aria-label={`Redimensionar coluna ${label}`}
+      >
+        <span className="absolute right-1 top-1/2 h-6 w-px -translate-y-1/2 bg-slate-200 group-hover:bg-blue-400" />
+      </button>
+    </th>
+  );
 
   const generateUniqueCode = () => {
     const d = new Date();
@@ -205,45 +262,46 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <table className="w-full text-left">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[1190px] text-left table-fixed">
           <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-black tracking-widest border-b border-slate-200">
             <tr>
-              <th className="px-6 py-4">Datas (Doc/Lanc)</th>
-              <th className="px-6 py-4">Código do Pedido</th>
-              <th className="px-6 py-4">Fornecedor</th>
-              <th className="px-6 py-4">Origem</th>
-              <th className="px-6 py-4">Código Ref.</th>
-              <th className="px-6 py-4 text-right">Total</th>
-              <th className="px-6 py-4 w-28 text-center">{canManageCosts ? 'Ações' : ''}</th>
+              {renderColumnHeader('dates', 'Datas (Doc/Lanc)')}
+              {renderColumnHeader('orderCode', 'Código do Pedido')}
+              {renderColumnHeader('supplier', 'Fornecedor')}
+              {renderColumnHeader('origin', 'Origem')}
+              {renderColumnHeader('reference', 'Código Ref.')}
+              {renderColumnHeader('total', 'Total', 'text-right')}
+              {renderColumnHeader('actions', canManageCosts ? 'Ações' : '', 'text-center')}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {[...costs].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(cost => (
               <tr key={cost.id} className="hover:bg-slate-50/50 transition-colors">
-                <td className="px-6 py-4 text-xs font-black text-slate-500 font-mono">
+                <td className="px-6 py-4 text-xs font-black text-slate-500 font-mono" style={getColumnStyle('dates')}>
                   <div className="text-slate-800">{cost.date ? new Date(cost.date + 'T12:00:00').toLocaleDateString('pt-BR') : '--/--/----'}</div>
                   <div className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">Lanc: {new Date(cost.entryDate + 'T12:00:00').toLocaleDateString('pt-BR')}</div>
                 </td>
-                <td className="px-6 py-4 text-xs font-black text-slate-800 uppercase whitespace-nowrap">
+                <td className="px-6 py-4 text-xs font-black text-slate-800 uppercase whitespace-nowrap" style={getColumnStyle('orderCode')}>
                   {getOriginOrderCode(cost)}
                 </td>
-                <td className="px-6 py-4">
+                <td className="px-6 py-4" style={getColumnStyle('supplier')}>
                   <div className="font-black text-slate-800 uppercase text-xs truncate max-w-[200px]">{cost.description}</div>
                 </td>
-                <td className="px-6 py-4">
+                <td className="px-6 py-4" style={getColumnStyle('origin')}>
                   <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wide ${cost.originOrderId ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
                     {getOriginOrderLabel(cost)}
                   </span>
                 </td>
-                <td className="px-6 py-4">
+                <td className="px-6 py-4" style={getColumnStyle('reference')}>
                   <div className="flex flex-col gap-1">
                     {cost.attachments.map(att => (
                       <span key={att.id} className="text-[9px] font-black text-blue-600 uppercase truncate max-w-[150px]">{att.name}</span>
                     ))}
                   </div>
                 </td>
-                <td className="px-6 py-4 text-right font-black text-slate-900 font-mono text-sm">R$ {formatCurrency(cost.totalValue)}</td>
-                <td className="px-6 py-4 text-center">
+                <td className="px-6 py-4 text-right font-black text-slate-900 font-mono text-sm" style={getColumnStyle('total')}>R$ {formatCurrency(cost.totalValue)}</td>
+                <td className="px-6 py-4 text-center" style={getColumnStyle('actions')}>
                   {canManageCosts && (
                     <div className="flex justify-center gap-1">
                       <button onClick={() => { setCurrentCost(cost); setIsEditing(true); setIsModalOpen(true); }} className="p-2 text-slate-400 hover:text-blue-600 transition-colors">
@@ -267,6 +325,7 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {!canManageCosts && (
