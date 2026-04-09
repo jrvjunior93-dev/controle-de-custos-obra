@@ -31,7 +31,39 @@ const isLegacyLinkedOrderCost = (cost: ExecutedCost, order: Order) => {
 
 const isComprasSectorMember = (user: User) => user.role === 'MEMBRO' && String(user.sectorName || '').trim().toUpperCase() === 'COMPRAS';
 
-const formatOrderDate = (value?: string) => value ? new Date(value).toLocaleDateString('pt-BR') : '-';
+const normalizeDateKey = (value?: string) => {
+  if (!value) return '';
+  const trimmed = value.trim();
+  const isoMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) return isoMatch[1];
+  const brMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (brMatch) return `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatOrderDate = (value?: string) => {
+  const key = normalizeDateKey(value);
+  if (!key) return '-';
+  const [year, month, day] = key.split('-');
+  return `${day}/${month}/${year}`;
+};
+
+const matchesDesiredDateRange = (expectedDate?: string, startDate?: string, endDate?: string) => {
+  const targetDateKey = normalizeDateKey(expectedDate);
+  const startDateKey = normalizeDateKey(startDate);
+  const endDateKey = normalizeDateKey(endDate);
+
+  if (startDateKey && (!targetDateKey || targetDateKey < startDateKey)) return false;
+  if (endDateKey && (!targetDateKey || targetDateKey > endDateKey)) return false;
+  return true;
+};
+
+const getEffectiveOrderStatusLabel = (order: Order) => order.sectorStatus || 'Sem status setorial';
 
 const stripLinkedOrderCosts = (costs: ExecutedCost[], order: Order) => (
   costs.filter((cost) => cost.originOrderId !== order.id && !(!cost.originOrderId && isLegacyLinkedOrderCost(cost, order)))
@@ -66,6 +98,15 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isActionModalOpen, setIsActionModalOpen] = useState<Order | null>(null);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [filterSearch, setFilterSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string[]>([]);
+  const [filterType, setFilterType] = useState<string[]>([]);
+  const [filterMinValue, setFilterMinValue] = useState('');
+  const [filterMaxValue, setFilterMaxValue] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+  const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
+  const [isTypeFilterOpen, setIsTypeFilterOpen] = useState(false);
   const [actionType, setActionType] = useState<'COMPLETE' | 'CANCEL' | 'NONE'>('NONE');
   const [actionText, setActionText] = useState('');
   const [actionAttachments, setActionAttachments] = useState<Attachment[]>([]);
@@ -175,9 +216,58 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
 
     return baseMessages.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   };
-  const sortedOrders = orders.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const filteredOrders = orders.filter((order) => {
+    const searchTerm = filterSearch.toLowerCase();
+    const normalizedValue = Number(order.value || 0);
+    const minValue = filterMinValue ? Number(filterMinValue) : null;
+    const maxValue = filterMaxValue ? Number(filterMaxValue) : null;
+    const effectiveStatus = getEffectiveOrderStatusLabel(order);
+
+    const matchSearch = !searchTerm
+      || order.title.toLowerCase().includes(searchTerm)
+      || (order.description || '').toLowerCase().includes(searchTerm)
+      || (order.orderCode || '').toLowerCase().includes(searchTerm)
+      || (order.externalCode || '').toLowerCase().includes(searchTerm);
+    const matchStatus = filterStatus.length === 0 || filterStatus.includes(effectiveStatus);
+    const matchType = filterType.length === 0 || filterType.includes(order.type);
+    const matchMinValue = minValue == null || normalizedValue >= minValue;
+    const matchMaxValue = maxValue == null || normalizedValue <= maxValue;
+    const matchDesiredDateRange = matchesDesiredDateRange(order.expectedDate, filterStartDate, filterEndDate);
+
+    return matchSearch && matchStatus && matchType && matchMinValue && matchMaxValue && matchDesiredDateRange;
+  }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const sortedOrders = filteredOrders;
   const selectedOrders = sortedOrders.filter((order) => selectedOrderIds.includes(order.id));
   const selectedOrdersCount = selectedOrders.length;
+  const allFilteredSelected = sortedOrders.length > 0 && sortedOrders.every((order) => selectedOrderIds.includes(order.id));
+
+  const clearFilters = () => {
+    setFilterSearch('');
+    setFilterStatus([]);
+    setFilterType([]);
+    setFilterMinValue('');
+    setFilterMaxValue('');
+    setFilterStartDate('');
+    setFilterEndDate('');
+  };
+
+  const toggleFilterValue = (current: string[], value: string, setter: React.Dispatch<React.SetStateAction<string[]>>) => {
+    setter(current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
+  };
+
+  const statusFilterItems = [
+    { value: 'Sem status setorial', label: 'Sem status setorial' },
+    ...Array.from(new Set(sectors.flatMap((sector) => sector.statuses || []).filter(Boolean))).map((status) => ({
+      value: status,
+      label: status,
+    })),
+  ];
+  const typeFilterItems = Array.from(new Set(orders.map((order) => order.type).filter(Boolean))).map((type) => ({ value: type, label: type }));
+  const formatFilterLabel = (selectedValues: string[], allLabel: string, items: { value: string; label: string }[]) => {
+    if (selectedValues.length === 0) return allLabel;
+    if (selectedValues.length === 1) return items.find((item) => item.value === selectedValues[0])?.label || allLabel;
+    return `${selectedValues.length} selecionados`;
+  };
 
   const toggleOrderSelection = (orderId: string) => {
     setSelectedOrderIds((current) =>
@@ -186,7 +276,12 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   };
 
   const toggleAllOrders = () => {
-    setSelectedOrderIds((current) => current.length === sortedOrders.length ? [] : sortedOrders.map((order) => order.id));
+    setSelectedOrderIds((current) => {
+      if (allFilteredSelected) {
+        return current.filter((id) => !sortedOrders.some((order) => order.id === id));
+      }
+      return Array.from(new Set([...current, ...sortedOrders.map((order) => order.id)]));
+    });
   };
 
   const clearSelectedOrders = () => setSelectedOrderIds([]);
@@ -688,17 +783,16 @@ const getStatusColor = (status: OrderStatus) => {
 };
 
 const renderListStatusBadge = (order: Order) => {
-  if (order.sectorStatus) {
-    return (
-      <span className="inline-flex text-[8px] font-black uppercase px-2 py-1 rounded-none whitespace-nowrap bg-blue-50 text-blue-700 border border-blue-200">
-        {order.sectorStatus}
-      </span>
-    );
-  }
-
   return (
-    <span title={order.status.replace('_', ' ')} className={`inline-flex text-[8px] font-black uppercase px-2 py-1 rounded-none whitespace-nowrap ${getStatusColor(order.status)}`}>
-      {order.status.replace('_', ' ')}
+    <span
+      title={getEffectiveOrderStatusLabel(order)}
+      className={`inline-flex text-[8px] font-black uppercase px-2 py-1 rounded-none whitespace-nowrap border ${
+        order.sectorStatus
+          ? 'bg-blue-50 text-blue-700 border-blue-200'
+          : 'bg-slate-50 text-slate-600 border-slate-200'
+      }`}
+    >
+      {getEffectiveOrderStatusLabel(order)}
     </span>
   );
 };
@@ -713,6 +807,49 @@ const renderListStatusBadge = (order: Order) => {
         {!canManageProjectOrders && <button onClick={() => setIsModalOpen(true)} className="bg-slate-900 hover:bg-black text-white px-10 py-4 rounded-none font-black uppercase text-xs tracking-widest shadow-xl transition-all active:scale-95">Novo Pedido</button>}
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 bg-white p-6 border border-slate-200">
+        <input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Filtrar por título..." className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
+        <div className="relative">
+          <button type="button" onClick={() => { setIsStatusFilterOpen((current) => !current); setIsTypeFilterOpen(false); }} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 text-left text-[10px] font-black uppercase flex items-center justify-between">
+            <span>{formatFilterLabel(filterStatus, 'Status (Todos)', statusFilterItems)}</span>
+            <i className={`fas fa-chevron-${isStatusFilterOpen ? 'up' : 'down'} text-slate-400`}></i>
+          </button>
+          {isStatusFilterOpen && (
+            <div className="absolute z-20 mt-2 w-full bg-white border border-slate-200 shadow-xl p-2 max-h-64 overflow-y-auto">
+              {statusFilterItems.map((item) => (
+                <label key={item.value} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                  <input type="checkbox" checked={filterStatus.includes(item.value)} onChange={() => toggleFilterValue(filterStatus, item.value, setFilterStatus)} />
+                  <span className="text-[10px] font-black uppercase text-slate-700">{item.label}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="relative">
+          <button type="button" onClick={() => { setIsTypeFilterOpen((current) => !current); setIsStatusFilterOpen(false); }} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 text-left text-[10px] font-black uppercase flex items-center justify-between">
+            <span>{formatFilterLabel(filterType, 'Tipo do Pedido (Todos)', typeFilterItems)}</span>
+            <i className={`fas fa-chevron-${isTypeFilterOpen ? 'up' : 'down'} text-slate-400`}></i>
+          </button>
+          {isTypeFilterOpen && (
+            <div className="absolute z-20 mt-2 w-full bg-white border border-slate-200 shadow-xl p-2 max-h-64 overflow-y-auto">
+              {typeFilterItems.map((item) => (
+                <label key={item.value} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                  <input type="checkbox" checked={filterType.includes(item.value)} onChange={() => toggleFilterValue(filterType, item.value, setFilterType)} />
+                  <span className="text-[10px] font-black uppercase text-slate-700">{item.label}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        <button type="button" onClick={clearFilters} className="bg-white border border-slate-300 text-slate-700 px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-slate-50">
+          Limpar Filtros
+        </button>
+        <input type="number" min="0" step="0.01" value={filterMinValue} onChange={(e) => setFilterMinValue(e.target.value)} placeholder="Valor mínimo" className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
+        <input type="number" min="0" step="0.01" value={filterMaxValue} onChange={(e) => setFilterMaxValue(e.target.value)} placeholder="Valor máximo" className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
+        <input type="date" value={filterStartDate} onChange={(e) => setFilterStartDate(e.target.value)} title="Data desejada inicial" className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
+        <input type="date" value={filterEndDate} onChange={(e) => setFilterEndDate(e.target.value)} title="Data desejada final" className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
+      </div>
+
       <div className="hidden lg:block bg-white border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1180px] text-left table-fixed">
@@ -721,7 +858,7 @@ const renderListStatusBadge = (order: Order) => {
                 <th className="px-4 py-4 w-[4%]">
                   <input
                     type="checkbox"
-                    checked={sortedOrders.length > 0 && selectedOrderIds.length === sortedOrders.length}
+                    checked={allFilteredSelected}
                     onChange={toggleAllOrders}
                     className="w-4 h-4 cursor-pointer"
                   />
@@ -774,7 +911,7 @@ const renderListStatusBadge = (order: Order) => {
                   <td className="px-4 py-4 text-[10px] font-black uppercase text-slate-400 truncate" title={order.currentSectorName || 'SEM SETOR'}>{order.currentSectorName || 'SEM SETOR'}</td>
                 </tr>
               ))}
-              {orders.length === 0 && <tr><td colSpan={12} className="px-6 py-12 text-center text-slate-300 font-black uppercase text-xs tracking-widest">Nenhum pedido registrado nesta obra.</td></tr>}
+              {sortedOrders.length === 0 && <tr><td colSpan={12} className="px-6 py-12 text-center text-slate-300 font-black uppercase text-xs tracking-widest">Nenhum pedido encontrado com os filtros atuais.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -814,7 +951,7 @@ const renderListStatusBadge = (order: Order) => {
             </div>
           </div>
         ))}
-        {orders.length === 0 && <div className="bg-white border border-slate-200 p-12 text-center text-slate-300 font-black uppercase text-xs tracking-widest">Nenhum pedido registrado nesta obra.</div>}
+        {sortedOrders.length === 0 && <div className="bg-white border border-slate-200 p-12 text-center text-slate-300 font-black uppercase text-xs tracking-widest">Nenhum pedido encontrado com os filtros atuais.</div>}
       </div>
 
       {selectedOrdersCount > 0 && (

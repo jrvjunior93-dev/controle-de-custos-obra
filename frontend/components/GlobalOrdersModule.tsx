@@ -71,22 +71,19 @@ const getStatusColor = (status: OrderStatus) => {
   }
 };
 
-const renderListStatusBadge = (order: Order) => {
-  if (order.sectorStatus) {
-    return (
-      <span className="inline-flex text-[8px] font-black uppercase px-2 py-1 border whitespace-nowrap bg-blue-50 text-blue-700 border-blue-200">
-        {order.sectorStatus}
-      </span>
-    );
-  }
+const getEffectiveOrderStatusLabel = (order: Order) => order.sectorStatus || 'Sem status setorial';
 
+const renderListStatusBadge = (order: Order) => {
   return (
-    <span title={order.status.replace('_', ' ')} className={`inline-flex text-[8px] font-black uppercase px-2 py-1 border whitespace-nowrap ${
-      order.status === 'CONCLUIDO' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-      order.status === 'PENDENTE' ? 'bg-amber-50 text-amber-600 border-amber-100' :
-      'bg-slate-50 text-slate-600 border-slate-100'}`}
+    <span
+      title={getEffectiveOrderStatusLabel(order)}
+      className={`inline-flex text-[8px] font-black uppercase px-2 py-1 border whitespace-nowrap ${
+        order.sectorStatus
+          ? 'bg-blue-50 text-blue-700 border-blue-200'
+          : 'bg-slate-50 text-slate-600 border-slate-200'
+      }`}
     >
-      {order.status.replace('_', ' ')}
+      {getEffectiveOrderStatusLabel(order)}
     </span>
   );
 };
@@ -319,7 +316,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     const maxValue = filterMaxValue ? Number(filterMaxValue) : null;
 
     const matchSearch = !searchTerm || order.title.toLowerCase().includes(searchTerm) || (order.description || '').toLowerCase().includes(searchTerm);
-    const matchStatus = filterStatus.length === 0 || filterStatus.includes(order.status);
+    const matchStatus = filterStatus.length === 0 || filterStatus.includes(getEffectiveOrderStatusLabel(order));
     const matchProject = filterProject.length === 0 || filterProject.includes(order.projectId);
     const matchType = filterType.length === 0 || filterType.includes(order.type);
     const matchMinValue = minValue == null || normalizedValue >= minValue;
@@ -676,11 +673,11 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
   const projectFilterItems = assignedProjects.map((project) => ({ value: project.id, label: project.name }));
   const statusFilterItems = [
-    { value: 'PENDENTE', label: 'Pendente' },
-    { value: 'EM_ANALISE', label: 'Em Análise' },
-    { value: 'AGUARDANDO_INFORMACAO', label: 'Info Solicitada' },
-    { value: 'CONCLUIDO', label: 'Concluído' },
-    { value: 'CANCELADO', label: 'Cancelado' },
+    { value: 'Sem status setorial', label: 'Sem status setorial' },
+    ...Array.from(new Set(sectors.flatMap((sector) => sector.statuses || []).filter(Boolean))).map((status) => ({
+      value: status,
+      label: status,
+    })),
   ];
   const typeFilterItems = orderTypes.map((type) => ({ value: type, label: type }));
   const selectedOrders = filteredOrders.filter((order) => selectedOrderIds.includes(order.id));
