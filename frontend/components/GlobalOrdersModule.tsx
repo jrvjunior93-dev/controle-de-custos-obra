@@ -10,6 +10,7 @@ interface GlobalOrdersModuleProps {
   onUpdateProjects: (all: Project[]) => void;
   onPersistProject: (project: Project) => Promise<void>;
   onPersistMemberOrder: (projectId: string, order: Order) => Promise<Order>;
+  onUpdateMemberOrderSectorStatus: (projectId: string, orderId: string, sectorStatus?: string) => Promise<Order>;
   onAddMemberOrderMessage: (projectId: string, orderId: string, message: Partial<OrderMessage>) => Promise<OrderMessage>;
   onDeleteMemberOrder: (projectId: string, orderId: string) => Promise<void>;
   orderTypes: string[];
@@ -23,13 +24,14 @@ const parseMoneyInput = (value: string) => {
 };
 
 const isLegacyLinkedOrderCost = (cost: ExecutedCost, order: Order) => {
+  const sameOrderCode = String(cost.manualOrderCode || '').trim().toUpperCase() !== '' && String(cost.manualOrderCode || '').trim().toUpperCase() === String(order.orderCode || '').trim().toUpperCase();
   const normalizedCostDescription = String(cost.description || '').trim().toUpperCase();
   const normalizedOrderDescription = `[PEDIDO] ${String(order.title || '').trim()}`.toUpperCase();
   const sameDescription = normalizedCostDescription === normalizedOrderDescription;
   const sameMacro = String(cost.macroItemId || '') === String(order.macroItemId || '');
   const sameValue = Number(cost.totalValue || 0) === Number(order.value || 0);
   const sameDetail = String(cost.itemDetail || '').trim() === String(order.description || '').trim();
-  return sameDescription && sameMacro && sameValue && sameDetail;
+  return sameOrderCode || (sameDescription && sameMacro && sameValue && sameDetail);
 };
 const normalizeDateKey = (value?: string) => {
   if (!value) return '';
@@ -256,7 +258,7 @@ const exportOrdersToExcel = async (orders: Order[]) => {
   XLSX.writeFile(workbook, `pedidos_selecionados_${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
 
-export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects, sectors, user, onUpdateProjects, onPersistProject, onPersistMemberOrder, onAddMemberOrderMessage, onDeleteMemberOrder, orderTypes }) => {
+export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects, sectors, user, onUpdateProjects, onPersistProject, onPersistMemberOrder, onUpdateMemberOrderSectorStatus, onAddMemberOrderMessage, onDeleteMemberOrder, orderTypes }) => {
   const canManageAllOrders = canManageAssignedOrders(user.role);
   const canImportOrders = user.role === 'SUPERADMIN';
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
@@ -1008,41 +1010,15 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       	`Salvar o status setorial do pedido "${isActionModalOpen.title}"?`
     )) return;
 
-    let updatedOrder: Order | null = null;
-    const previousProjects = projects;
-    handleProjectMutation(isActionModalOpen.projectId, (project) => ({
-      ...project,
-      orders: (project.orders || []).map((item) => {
-        if (item.id !== isActionModalOpen.id) return item;
-        updatedOrder = {
-          ...item,
-          sectorStatus: nextStatus || undefined,
-          messages: [...(item.messages || []), {
-            id: crypto.randomUUID(),
-            userId: 'system',
-            userName: 'SISTEMA',
-            text: nextStatus
-              ? `${user.name} alterou o status do setor para ${nextStatus}.`
-              : `${user.name} removeu o status do setor.`,
-            date: new Date().toISOString()
-          }]
-        };
-        return updatedOrder;
-      })
-    }));
-
-    if (!updatedOrder) return;
-
     try {
-      const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder);
+      const savedOrder = await onUpdateMemberOrderSectorStatus(isActionModalOpen.projectId, isActionModalOpen.id, nextStatus || undefined);
       setIsActionModalOpen(savedOrder);
       setSelectedSectorStatus(savedOrder.sectorStatus || '');
       setIsEditingSectorStatus(false);
       setIsSectorStatusModalOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar status setorial do pedido:', error);
-      onUpdateProjects(previousProjects);
-      alert('Nao foi possivel salvar o status setorial. Tente novamente.');
+      alert(error?.message || 'Nao foi possivel salvar o status setorial. Tente novamente.');
     }
   };
 

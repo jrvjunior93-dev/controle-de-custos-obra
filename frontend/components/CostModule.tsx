@@ -19,16 +19,27 @@ const parseMoneyInput = (value: string) => {
   return digits ? Number(digits) / 100 : 0;
 };
 
+const COSTS_COLUMN_WIDTHS_KEY = 'csc_brape_costs_column_widths';
+
 export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canManageCosts }) => {
   const [costs, setCosts] = useState<ExecutedCost[]>(project.costs || []);
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
-    dates: 150,
-    orderCode: 150,
-    supplier: 240,
-    origin: 190,
-    reference: 210,
-    total: 140,
-    actions: 110,
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    const defaults = {
+      dates: 150,
+      orderCode: 150,
+      supplier: 240,
+      origin: 190,
+      reference: 210,
+      total: 140,
+      actions: 110,
+    };
+    if (typeof window === 'undefined') return defaults;
+    try {
+      const saved = window.localStorage.getItem(COSTS_COLUMN_WIDTHS_KEY);
+      return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
+    } catch {
+      return defaults;
+    }
   });
   const [resizingColumn, setResizingColumn] = useState<{ key: string; startX: number; startWidth: number } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -55,6 +66,11 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [resizingColumn]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(COSTS_COLUMN_WIDTHS_KEY, JSON.stringify(columnWidths));
+  }, [columnWidths]);
   
   // FUNÇÃO CORRIGIDA: Pega data local SEM fuso horário UTC
   const getTodayLocal = () => {
@@ -96,13 +112,14 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
 
   const getLegacyLinkedOrder = (cost: ExecutedCost) => {
     return (project.orders || []).find((order) => {
+      const sameOrderCode = String(cost.manualOrderCode || '').trim().toUpperCase() !== '' && String(cost.manualOrderCode || '').trim().toUpperCase() === String(order.orderCode || '').trim().toUpperCase();
       const normalizedCostDescription = String(cost.description || '').trim().toUpperCase();
       const normalizedOrderDescription = `[PEDIDO] ${String(order.title || '').trim()}`.toUpperCase();
       const sameDescription = normalizedCostDescription === normalizedOrderDescription;
       const sameMacro = String(cost.macroItemId || '') === String(order.macroItemId || '');
       const sameValue = Number(cost.totalValue || 0) === Number(order.value || 0);
       const sameDetail = String(cost.itemDetail || '').trim() === String(order.description || '').trim();
-      return sameDescription && sameMacro && sameValue && sameDetail;
+      return sameOrderCode || (sameDescription && sameMacro && sameValue && sameDetail);
     });
   };
 

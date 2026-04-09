@@ -85,6 +85,13 @@ export const dbService = {
     });
   },
 
+  async updateProjectOrderSectorStatus(projectId: string, orderId: string, sectorStatus?: string) {
+    return request<any>(`/projects/${projectId}/orders/${orderId}/sector-status`, {
+      method: "PATCH",
+      body: JSON.stringify({ sectorStatus })
+    });
+  },
+
   async deleteProjectOrder(projectId: string, orderId: string) {
     return request<{ ok: boolean }>(`/projects/${projectId}/orders/${orderId}`, {
       method: "DELETE"

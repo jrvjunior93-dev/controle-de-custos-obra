@@ -9,6 +9,7 @@ interface OrdersModuleProps {
   user: User;
   onUpdate: (project: Project) => Promise<void> | void;
   onPersistOrder: (projectId: string, order: Order) => Promise<Order>;
+  onUpdateOrderSectorStatus: (projectId: string, orderId: string, sectorStatus?: string) => Promise<Order>;
   onAddOrderMessage: (projectId: string, orderId: string, message: Partial<OrderMessage>) => Promise<OrderMessage>;
   onDeleteOrder: (projectId: string, orderId: string) => Promise<void>;
 }
@@ -21,13 +22,14 @@ const parseMoneyInput = (value: string) => {
 };
 
 const isLegacyLinkedOrderCost = (cost: ExecutedCost, order: Order) => {
+  const sameOrderCode = String(cost.manualOrderCode || '').trim().toUpperCase() !== '' && String(cost.manualOrderCode || '').trim().toUpperCase() === String(order.orderCode || '').trim().toUpperCase();
   const normalizedCostDescription = String(cost.description || '').trim().toUpperCase();
   const normalizedOrderDescription = `[PEDIDO] ${String(order.title || '').trim()}`.toUpperCase();
   const sameDescription = normalizedCostDescription === normalizedOrderDescription;
   const sameMacro = String(cost.macroItemId || '') === String(order.macroItemId || '');
   const sameValue = Number(cost.totalValue || 0) === Number(order.value || 0);
   const sameDetail = String(cost.itemDetail || '').trim() === String(order.description || '').trim();
-  return sameDescription && sameMacro && sameValue && sameDetail;
+  return sameOrderCode || (sameDescription && sameMacro && sameValue && sameDetail);
 };
 
 const isComprasSectorMember = (user: User) => user.role === 'MEMBRO' && String(user.sectorName || '').trim().toUpperCase() === 'COMPRAS';
@@ -103,7 +105,7 @@ const exportOrdersToExcel = async (projectName: string, orders: Order[]) => {
 
 const PROJECT_ORDERS_COLUMN_WIDTHS_KEY = 'csc_brape_project_orders_column_widths';
 
-export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, user, onUpdate, onPersistOrder, onAddOrderMessage, onDeleteOrder }) => {
+export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, user, onUpdate, onPersistOrder, onUpdateOrderSectorStatus, onAddOrderMessage, onDeleteOrder }) => {
   const canManageProjectOrders = user.role === 'SUPERADMIN' || (canManageAssignedOrders(user.role) && user.assignedProjectIds?.includes(project.id));
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     const defaults = {
@@ -766,29 +768,15 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       	`Salvar o status setorial do pedido "${isActionModalOpen.title}"?`
     )) return;
 
-    const updatedOrder: Order = {
-      ...isActionModalOpen,
-      sectorStatus: nextStatus || undefined,
-      messages: [...(isActionModalOpen.messages || []), {
-        id: crypto.randomUUID(),
-        userId: 'system',
-        userName: 'SISTEMA',
-        text: nextStatus
-          ? `${user.name} alterou o status do setor para ${nextStatus}.`
-          : `${user.name} removeu o status do setor.`,
-        date: new Date().toISOString()
-      }]
-    };
-
     try {
-      const savedOrder = await onPersistOrder(project.id, updatedOrder);
+      const savedOrder = await onUpdateOrderSectorStatus(project.id, isActionModalOpen.id, nextStatus || undefined);
       setIsActionModalOpen(savedOrder);
       setSelectedSectorStatus(savedOrder.sectorStatus || '');
       setIsEditingSectorStatus(false);
       setIsSectorStatusModalOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar status setorial do pedido:', error);
-      alert('Nao foi possivel salvar o status setorial. Tente novamente.');
+      alert(error?.message || 'Nao foi possivel salvar o status setorial. Tente novamente.');
     }
   };
 

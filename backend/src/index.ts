@@ -105,6 +105,9 @@ const orderMessageSchema = z.object({
     attachments: z.array(z.any()).optional(),
   })
 });
+const orderSectorStatusSchema = z.object({
+  sectorStatus: z.string().trim().optional(),
+});
 
 type AuthUser = { id: string; role: UserRole };
 type AuthRequest = express.Request & { authUser?: AuthUser };
@@ -1494,6 +1497,99 @@ app.post("/projects/:projectId/orders/:orderId/messages", requireAuth, async (re
     });
   } catch (error: any) {
     res.status(error?.status || 500).json({ error: error?.message || "Unable to save order message" });
+  }
+});
+
+app.patch("/projects/:projectId/orders/:orderId/sector-status", requireAuth, async (req: AuthRequest, res) => {
+  if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
+  const projectId = Number(req.params.projectId);
+  const orderId = Number(req.params.orderId);
+  if (!Number.isFinite(projectId) || !Number.isFinite(orderId) || !(await canAccessProject(req.authUser, projectId))) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const parsed = orderSectorStatusSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  try {
+    const actorUser = await prisma.user.findUnique({
+      where: { id: Number(req.authUser.id) },
+      include: { sector: true }
+    });
+    if (!actorUser || !actorUser.isActive) return res.status(401).json({ error: "Unauthorized" });
+
+    const order = await prisma.order.findFirst({
+      where: { id: orderId, projectId },
+      include: {
+        orderType: true,
+        currentSector: true,
+        sectorAccess: { include: { sector: true } },
+        requester: true,
+        responsible: true,
+        attachments: true,
+        messages: { include: { user: true, attachments: true } }
+      }
+    });
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    const accessibleSectorIds = Array.from(new Set((order.sectorAccess || []).map((item: any) => item.sectorId)));
+    const actorSectorHasAccess = !!actorUser.sectorId && (
+      accessibleSectorIds.includes(actorUser.sectorId) || order.currentSectorId === actorUser.sectorId
+    );
+    const canActorEditSectorStatus =
+      req.authUser.role === UserRole.SUPERADMIN ||
+      req.authUser.role === UserRole.ADMIN ||
+      actorSectorHasAccess;
+    if (!canActorEditSectorStatus) return res.status(403).json({ error: "Forbidden" });
+    if (order.status === OrderStatus.CONCLUIDO || order.status === OrderStatus.CANCELADO) {
+      return res.status(400).json({ error: "Este pedido não aceita alteração de status setorial." });
+    }
+
+    const statusSectorId =
+      req.authUser.role === UserRole.SUPERADMIN || req.authUser.role === UserRole.ADMIN
+        ? (actorUser.sectorId || order.currentSectorId || null)
+        : (actorUser.sectorId || null);
+    const statusSector = statusSectorId
+      ? await prisma.sector.findUnique({
+          where: { id: statusSectorId },
+          include: { statuses: { where: { isActive: true }, orderBy: { sortOrder: "asc" } } }
+        })
+      : null;
+    const normalizedSectorStatus = String(parsed.data.sectorStatus || "").trim().toUpperCase() || null;
+    if (normalizedSectorStatus && statusSector && !(statusSector.statuses || []).some((item: any) => item.name === normalizedSectorStatus)) {
+      return res.status(400).json({ error: "Invalid sector status" });
+    }
+
+    const updated = await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        sectorStatus: normalizedSectorStatus,
+        messages: {
+          create: {
+            userId: null,
+            body: normalizedSectorStatus
+              ? `${actorUser.name} alterou o status do setor para ${normalizedSectorStatus}.`
+              : `${actorUser.name} removeu o status do setor.`,
+            isSystem: true,
+            createdAt: new Date(),
+          }
+        }
+      },
+      include: {
+        orderType: true,
+        currentSector: true,
+        sectorAccess: { include: { sector: true } },
+        requester: true,
+        responsible: true,
+        attachments: true,
+        messages: { include: { user: true, attachments: true } }
+      }
+    });
+
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    res.json(await mapOrderFromDb(updated, project?.name || ""));
+  } catch (error: any) {
+    res.status(error?.status || 500).json({ error: error?.message || "Unable to save order sector status" });
   }
 });
 
