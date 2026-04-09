@@ -9,6 +9,7 @@ interface OrdersModuleProps {
   user: User;
   onUpdate: (project: Project) => Promise<void> | void;
   onPersistOrder: (projectId: string, order: Order) => Promise<Order>;
+  onAddOrderMessage: (projectId: string, orderId: string, message: Partial<OrderMessage>) => Promise<OrderMessage>;
   onDeleteOrder: (projectId: string, orderId: string) => Promise<void>;
 }
 
@@ -100,21 +101,32 @@ const exportOrdersToExcel = async (projectName: string, orders: Order[]) => {
   XLSX.writeFile(workbook, `pedidos_${projectName.replace(/[^A-Za-z0-9_-]+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
 
-export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, user, onUpdate, onPersistOrder, onDeleteOrder }) => {
+const PROJECT_ORDERS_COLUMN_WIDTHS_KEY = 'csc_brape_project_orders_column_widths';
+
+export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, user, onUpdate, onPersistOrder, onAddOrderMessage, onDeleteOrder }) => {
   const canManageProjectOrders = user.role === 'SUPERADMIN' || (canManageAssignedOrders(user.role) && user.assignedProjectIds?.includes(project.id));
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
-    select: 60,
-    createdAt: 110,
-    expectedDate: 110,
-    orderCode: 150,
-    project: 150,
-    title: 180,
-    description: 230,
-    type: 140,
-    value: 130,
-    status: 170,
-    requester: 140,
-    sector: 160,
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    const defaults = {
+      select: 60,
+      createdAt: 110,
+      expectedDate: 110,
+      orderCode: 150,
+      project: 150,
+      title: 180,
+      description: 230,
+      type: 140,
+      value: 130,
+      status: 170,
+      requester: 140,
+      sector: 160,
+    };
+    if (typeof window === 'undefined') return defaults;
+    try {
+      const saved = window.localStorage.getItem(PROJECT_ORDERS_COLUMN_WIDTHS_KEY);
+      return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
+    } catch {
+      return defaults;
+    }
   });
   const [resizingColumn, setResizingColumn] = useState<{ key: string; startX: number; startWidth: number } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -309,6 +321,11 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [resizingColumn]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(PROJECT_ORDERS_COLUMN_WIDTHS_KEY, JSON.stringify(columnWidths));
+  }, [columnWidths]);
 
   const getColumnStyle = (key: string) => ({
     width: `${columnWidths[key] || 120}px`,
@@ -587,28 +604,30 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       return alert('Escreva um comentario ou selecione ao menos um arquivo para enviar.');
     }
     if (!confirm(`Registrar envio no pedido "${order.title}"?`)) return;
-    const msg: OrderMessage = {
-      id: crypto.randomUUID(),
-      userId: user.id,
-      userName: user.name,
-      text: messageText.trim() || 'Arquivos enviados.',
-      date: new Date().toISOString(),
-      attachments: messageAttachments.length > 0 ? messageAttachments : undefined
-    };
-    const updated = {
-      ...order,
-      messages: [...(order.messages || []), msg]
-    };
     try {
-      const savedOrder = await onPersistOrder(project.id, updated);
+      const savedMessage = await onAddOrderMessage(project.id, order.id, {
+        userId: user.id,
+        userName: user.name,
+        text: messageText.trim() || 'Arquivos enviados.',
+        date: new Date().toISOString(),
+        attachments: messageAttachments.length > 0 ? messageAttachments : undefined
+      });
+      const savedOrder = {
+        ...order,
+        messages: [...(order.messages || []), savedMessage]
+      };
       setIsActionModalOpen(savedOrder);
+      onUpdate({
+        ...project,
+        orders: (project.orders || []).map((item) => item.id === order.id ? savedOrder : item)
+      });
       const sentOnlyAttachments = !messageText.trim() && messageAttachments.length > 0;
       setMessageText('');
       setMessageAttachments([]);
       alert(sentOnlyAttachments ? 'Arquivo enviado com sucesso.' : 'Comentario enviado com sucesso.');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar interação do pedido:', error);
-      alert('Não foi possível salvar a interação. Tente novamente.');
+      alert(error?.message || 'Não foi possível salvar a interação. Tente novamente.');
     }
   };
 

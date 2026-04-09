@@ -99,6 +99,12 @@ const provisioningPermissionsSchema = z.object({
     canViewProvisioningDashboard: z.boolean().optional(),
   })
 });
+const orderMessageSchema = z.object({
+  message: z.object({
+    text: z.string().trim().min(1),
+    attachments: z.array(z.any()).optional(),
+  })
+});
 
 type AuthUser = { id: string; role: UserRole };
 type AuthRequest = express.Request & { authUser?: AuthUser };
@@ -1425,6 +1431,69 @@ app.put("/projects/:projectId/orders/:orderId", requireAuth, async (req: AuthReq
     res.json(savedOrder);
   } catch (error: any) {
     res.status(error?.status || 500).json({ error: error?.message || "Unable to save order" });
+  }
+});
+
+app.post("/projects/:projectId/orders/:orderId/messages", requireAuth, async (req: AuthRequest, res) => {
+  if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
+  const projectId = Number(req.params.projectId);
+  const orderId = Number(req.params.orderId);
+  if (!Number.isFinite(projectId) || !Number.isFinite(orderId) || !(await canAccessProject(req.authUser, projectId))) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const parsed = orderMessageSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  try {
+    const actorUser = await prisma.user.findUnique({
+      where: { id: Number(req.authUser.id) },
+      include: { sector: true }
+    });
+    if (!actorUser || !actorUser.isActive) return res.status(401).json({ error: "Unauthorized" });
+
+    const order = await prisma.order.findFirst({
+      where: { id: orderId, projectId },
+      include: {
+        sectorAccess: true,
+        messages: { include: { attachments: true, user: true } },
+      }
+    });
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    if (!canUserAccessOrder(order, Number(req.authUser.id), req.authUser.role, actorUser.sectorId || undefined)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    if (order.status === OrderStatus.CONCLUIDO || order.status === OrderStatus.CANCELADO) {
+      return res.status(400).json({ error: "Este pedido não aceita mais interações." });
+    }
+
+    const createdMessage = await prisma.orderMessage.create({
+      data: {
+        orderId: order.id,
+        userId: Number(req.authUser.id),
+        body: String(parsed.data.message.text || "").trim(),
+        isSystem: false,
+        createdAt: new Date(),
+        attachments: {
+          create: await toAttachments(parsed.data.message.attachments || [], AttachmentKind.MESSAGE)
+        }
+      },
+      include: {
+        user: true,
+        attachments: true,
+      }
+    });
+
+    res.json({
+      id: String(createdMessage.id),
+      userId: createdMessage.userId ? String(createdMessage.userId) : SYSTEM_USER_ID,
+      userName: createdMessage.user?.name || "SISTEMA",
+      text: createdMessage.body,
+      date: createdMessage.createdAt.toISOString(),
+      attachments: await Promise.all((createdMessage.attachments || []).map(mapAttachment)),
+    });
+  } catch (error: any) {
+    res.status(error?.status || 500).json({ error: error?.message || "Unable to save order message" });
   }
 });
 

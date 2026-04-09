@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
-import { Attachment, ExecutedCost, Order, OrderStatus, Project, Sector, User, canManageAssignedOrders } from '../types';
+import { Attachment, ExecutedCost, Order, OrderMessage, OrderStatus, Project, Sector, User, canManageAssignedOrders } from '../types';
 import { AttachmentViewerModal } from './AttachmentViewerModal';
 import { canPreviewAttachmentInline, resolveAttachmentForAccess, triggerAttachmentDownload } from '../utils/attachments';
 
@@ -10,6 +10,7 @@ interface GlobalOrdersModuleProps {
   onUpdateProjects: (all: Project[]) => void;
   onPersistProject: (project: Project) => Promise<void>;
   onPersistMemberOrder: (projectId: string, order: Order) => Promise<Order>;
+  onAddMemberOrderMessage: (projectId: string, orderId: string, message: Partial<OrderMessage>) => Promise<OrderMessage>;
   onDeleteMemberOrder: (projectId: string, orderId: string) => Promise<void>;
   orderTypes: string[];
 }
@@ -229,6 +230,8 @@ const buildImportSummary = (result: { imported?: any[]; skipped?: any[] }) => {
   return lines.join('\n');
 };
 
+const GLOBAL_ORDERS_COLUMN_WIDTHS_KEY = 'csc_brape_global_orders_column_widths';
+
 const exportOrdersToExcel = async (orders: Order[]) => {
   if (orders.length === 0) return;
   const XLSX = await import('xlsx');
@@ -253,20 +256,29 @@ const exportOrdersToExcel = async (orders: Order[]) => {
   XLSX.writeFile(workbook, `pedidos_selecionados_${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
 
-export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects, sectors, user, onUpdateProjects, onPersistProject, onPersistMemberOrder, onDeleteMemberOrder, orderTypes }) => {
+export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects, sectors, user, onUpdateProjects, onPersistProject, onPersistMemberOrder, onAddMemberOrderMessage, onDeleteMemberOrder, orderTypes }) => {
   const canManageAllOrders = canManageAssignedOrders(user.role);
   const canImportOrders = user.role === 'SUPERADMIN';
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
-    select: 60,
-    createdAt: 110,
-    expectedDate: 110,
-    orderCode: 160,
-    project: 170,
-    title: 180,
-    description: 230,
-    type: 170,
-    value: 140,
-    status: 170,
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    const defaults = {
+      select: 60,
+      createdAt: 110,
+      expectedDate: 110,
+      orderCode: 160,
+      project: 170,
+      title: 180,
+      description: 230,
+      type: 170,
+      value: 140,
+      status: 170,
+    };
+    if (typeof window === 'undefined') return defaults;
+    try {
+      const saved = window.localStorage.getItem(GLOBAL_ORDERS_COLUMN_WIDTHS_KEY);
+      return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
+    } catch {
+      return defaults;
+    }
   });
   const [resizingColumn, setResizingColumn] = useState<{ key: string; startX: number; startWidth: number } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -366,6 +378,11 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [resizingColumn]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(GLOBAL_ORDERS_COLUMN_WIDTHS_KEY, JSON.stringify(columnWidths));
+  }, [columnWidths]);
 
   const usesAssignedProjectScope = !canManageAllOrders && (!user.sectorName || isObraSectorName(user.sectorName));
   const assignedProjects = canManageAllOrders || !usesAssignedProjectScope ? projects : projects.filter((project) => user.assignedProjectIds?.includes(project.id));
@@ -1044,42 +1061,30 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     }
     if (!canCommentOnOrder(isActionModalOpen)) return alert('Este pedido não aceita mais interações.');
     if (!confirm(`Registrar envio no pedido "${isActionModalOpen.title}"?`)) return;
-
-    let updatedOrder: Order | null = null;
-    const updatedProject = handleProjectMutation(isActionModalOpen.projectId, (project) => ({
-      ...project,
-      orders: (project.orders || []).map((item) => {
-        if (item.id !== isActionModalOpen.id) return item;
-        updatedOrder = {
-          ...item,
-          messages: [...(item.messages || []), {
-            id: crypto.randomUUID(),
-            userId: user.id,
-            userName: user.name,
-            text: messageText.trim() || 'Arquivos enviados.',
-            date: new Date().toISOString(),
-            attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
-          }]
-        };
-        return updatedOrder;
-      })
-    }));
-
-    const previousProjects = projects;
     try {
-      if (updatedOrder) {
-        const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder);
-        setIsActionModalOpen(savedOrder);
-      }
-
+      const savedMessage = await onAddMemberOrderMessage(isActionModalOpen.projectId, isActionModalOpen.id, {
+        userId: user.id,
+        userName: user.name,
+        text: messageText.trim() || 'Arquivos enviados.',
+        date: new Date().toISOString(),
+        attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
+      });
+      const savedOrder = {
+        ...isActionModalOpen,
+        messages: [...(isActionModalOpen.messages || []), savedMessage],
+      };
+      onUpdateProjects(projects.map((project) => project.id === isActionModalOpen.projectId ? {
+        ...project,
+        orders: (project.orders || []).map((item) => item.id === isActionModalOpen.id ? savedOrder : item)
+      } : project));
+      setIsActionModalOpen(savedOrder);
       const sentOnlyAttachments = !messageText.trim() && messageAttachments.length > 0;
       setMessageText('');
       setMessageAttachments([]);
       alert(sentOnlyAttachments ? 'Arquivo enviado com sucesso.' : 'Comentario enviado com sucesso.');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar interação do pedido:', error);
-      onUpdateProjects(previousProjects);
-      alert('Não foi possível salvar a interação. Tente novamente.');
+      alert(error?.message || 'Não foi possível salvar a interação. Tente novamente.');
     }
   };
 

@@ -22,7 +22,12 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `Request failed: ${res.status}`);
+    try {
+      const parsed = JSON.parse(text);
+      throw new Error(parsed?.error || parsed?.message || `Request failed: ${res.status}`);
+    } catch {
+      throw new Error(text || `Request failed: ${res.status}`);
+    }
   }
 
   return res.json();
@@ -70,6 +75,13 @@ export const dbService = {
     return request<any>(`/projects/${projectId}/orders/${order.id}`, {
       method: "PUT",
       body: JSON.stringify({ order })
+    });
+  },
+
+  async addProjectOrderMessage(projectId: string, orderId: string, message: any) {
+    return request<any>(`/projects/${projectId}/orders/${orderId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ message })
     });
   },
 

@@ -4,7 +4,7 @@ import { ProjectList } from './components/ProjectList';
 
 import { Login } from './components/Login';
 
-import { Project, Sector, ViewState, User, isGlobalAdmin, isProjectAdmin } from './types';
+import { OrderMessage, Project, Sector, ViewState, User, isGlobalAdmin, isProjectAdmin } from './types';
 import { normalizePtText } from './utils/text';
 
 import { dbService } from './apiClient';
@@ -591,6 +591,21 @@ const App: React.FC = () => {
     return normalizedOrder;
   };
 
+  const handleAddMemberOrderMessage = async (projectId: string, orderId: string, message: any): Promise<OrderMessage> => {
+    const savedMessage = await dbService.addProjectOrderMessage(projectId, orderId, message);
+    const normalizedMessage = {
+      ...savedMessage,
+      userName: normalizePtText(savedMessage.userName),
+      text: normalizePtText(savedMessage.text),
+      attachments: (savedMessage.attachments || []).map((attachment: any) => ({
+        ...attachment,
+        name: normalizePtText(attachment.name),
+        originalName: attachment.originalName ? normalizePtText(attachment.originalName) : undefined,
+      })),
+    };
+    return normalizedMessage;
+  };
+
   const handleDeleteMemberOrder = async (projectId: string, orderId: string) => {
     await dbService.deleteProjectOrder(projectId, orderId);
     setProjects((currentProjects) => currentProjects.map((project) => project.id === projectId ? { ...project, orders: (project.orders || []).filter((item) => item.id !== orderId) } : project));
@@ -763,7 +778,7 @@ const App: React.FC = () => {
         <Suspense fallback={<ScreenFallback />}>
           {view === 'PROJECT_DETAIL' && visibleProjects.find((p) => p.id === selectedProjectId) && (
 
-            <ProjectDetail project={visibleProjects.find((p) => p.id === selectedProjectId)!} sectors={sectors} user={user} onUpdate={handleSaveProject} onPersistOrder={handleSyncMemberOrder} onDeleteOrder={handleDeleteMemberOrder} onBack={() => setNavigationState('PROJECT_LIST', null)} />
+            <ProjectDetail project={visibleProjects.find((p) => p.id === selectedProjectId)!} sectors={sectors} user={user} onUpdate={handleSaveProject} onPersistOrder={handleSyncMemberOrder} onAddOrderMessage={handleAddMemberOrderMessage} onDeleteOrder={handleDeleteMemberOrder} onBack={() => setNavigationState('PROJECT_LIST', null)} />
 
           )}
 
@@ -772,7 +787,7 @@ const App: React.FC = () => {
             <GlobalOrdersModule projects={orderVisibleProjects} sectors={sectors} user={user} onUpdateProjects={(updatedProjects) => {
               const updatedMap = new Map(updatedProjects.map((project) => [project.id, project]));
               setProjects((currentProjects) => currentProjects.map((project) => updatedMap.get(project.id) || project));
-            }} onPersistProject={handleSaveProject} onPersistMemberOrder={handleSyncMemberOrder} onDeleteMemberOrder={handleDeleteMemberOrder} orderTypes={orderTypes} />
+            }} onPersistProject={handleSaveProject} onPersistMemberOrder={handleSyncMemberOrder} onAddMemberOrderMessage={handleAddMemberOrderMessage} onDeleteMemberOrder={handleDeleteMemberOrder} orderTypes={orderTypes} />
 
           )}
 
