@@ -515,6 +515,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     if (!isActionModalOpen) return;
     const latestOrder = findLatestOrderSnapshot(isActionModalOpen);
     if (!latestOrder || latestOrder === isActionModalOpen) return;
+    if ((latestOrder.messages || []).length < (isActionModalOpen.messages || []).length) return;
 
     setIsActionModalOpen(latestOrder);
     setSelectedSectorStatus(latestOrder.sectorStatus || '');
@@ -1505,7 +1506,6 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
             <div className="p-5 sm:p-8 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-4">
               <div>
                 <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <span className={`text-[9px] font-black uppercase px-2 py-1 ${getStatusColor(isActionModalOpen.status)} block w-fit`}>{isActionModalOpen.status.replace('_', ' ')}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-[9px] font-black uppercase px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 block w-fit">
                       {isActionModalOpen.sectorStatus || 'Sem status setorial'}
