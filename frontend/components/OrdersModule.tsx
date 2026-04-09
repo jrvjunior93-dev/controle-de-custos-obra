@@ -809,7 +809,7 @@ const renderListStatusBadge = (order: Order) => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 bg-white p-6 border border-slate-200">
-        <input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Filtrar por título..." className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
+        <input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Filtrar por código do pedido..." className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
         <div className="relative">
           <button type="button" onClick={() => { setIsStatusFilterOpen((current) => !current); setIsTypeFilterOpen(false); }} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 text-left text-[10px] font-black uppercase flex items-center justify-between">
             <span>{formatFilterLabel(filterStatus, 'Status (Todos)', statusFilterItems)}</span>
