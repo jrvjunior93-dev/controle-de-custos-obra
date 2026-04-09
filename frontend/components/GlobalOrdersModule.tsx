@@ -52,6 +52,13 @@ const formatOrderDate = (value?: string) => {
   return `${day}/${month}/${year}`;
 };
 
+const getOrderCodeSearchTokens = (order: Order) => {
+  const fullCode = String(order.orderCode || '').trim().toLowerCase();
+  if (!fullCode) return [];
+  const suffix = fullCode.includes('-') ? fullCode.split('-').pop() || '' : '';
+  return [fullCode, suffix].filter(Boolean);
+};
+
 const isObraSectorName = (name?: string) => String(name || '').trim().toUpperCase() === 'OBRA';
 const isComprasSectorMember = (user: User) => user.role === 'MEMBRO' && String(user.sectorName || '').trim().toUpperCase() === 'COMPRAS';
 const getStatusColor = (status: OrderStatus) => {
@@ -315,7 +322,10 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     const minValue = filterMinValue ? Number(filterMinValue) : null;
     const maxValue = filterMaxValue ? Number(filterMaxValue) : null;
 
-    const matchSearch = !searchTerm || order.title.toLowerCase().includes(searchTerm) || (order.description || '').toLowerCase().includes(searchTerm);
+    const matchSearch = !searchTerm
+      || getOrderCodeSearchTokens(order).some((token) => token.includes(searchTerm))
+      || order.title.toLowerCase().includes(searchTerm)
+      || (order.description || '').toLowerCase().includes(searchTerm);
     const matchStatus = filterStatus.length === 0 || filterStatus.includes(getEffectiveOrderStatusLabel(order));
     const matchProject = filterProject.length === 0 || filterProject.includes(order.projectId);
     const matchType = filterType.length === 0 || filterType.includes(order.type);

@@ -53,6 +53,13 @@ const formatOrderDate = (value?: string) => {
   return `${day}/${month}/${year}`;
 };
 
+const getOrderCodeSearchTokens = (order: Order) => {
+  const fullCode = String(order.orderCode || '').trim().toLowerCase();
+  if (!fullCode) return [];
+  const suffix = fullCode.includes('-') ? fullCode.split('-').pop() || '' : '';
+  return [fullCode, suffix].filter(Boolean);
+};
+
 const matchesDesiredDateRange = (expectedDate?: string, startDate?: string, endDate?: string) => {
   const targetDateKey = normalizeDateKey(expectedDate);
   const startDateKey = normalizeDateKey(startDate);
@@ -224,6 +231,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     const effectiveStatus = getEffectiveOrderStatusLabel(order);
 
     const matchSearch = !searchTerm
+      || getOrderCodeSearchTokens(order).some((token) => token.includes(searchTerm))
       || order.title.toLowerCase().includes(searchTerm)
       || (order.description || '').toLowerCase().includes(searchTerm)
       || (order.orderCode || '').toLowerCase().includes(searchTerm)
