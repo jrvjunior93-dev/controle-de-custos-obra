@@ -470,6 +470,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       expectedDate: newOrder.expectedDate || '',
       value: Number(newOrder.value || 0),
       status: 'PENDENTE',
+      sectorStatus: 'PENDENTE',
       requesterId: user.id,
       requesterName: user.name,
       attachments: newOrder.attachments || [],

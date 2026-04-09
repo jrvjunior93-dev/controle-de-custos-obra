@@ -1029,6 +1029,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
   );
 
   const normalizedSectorStatus = String(orderPayload.sectorStatus || "").trim().toUpperCase() || null;
+  const createdSectorStatus = existingOrder ? normalizedSectorStatus : (normalizedSectorStatus || "PENDENTE");
   const normalizedTitle = String(orderPayload.title || '').trim();
   const normalizedDescription = String(orderPayload.description || '').trim();
   const normalizedType = String(orderPayload.type || '').trim().toUpperCase();
@@ -1181,7 +1182,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       description: String(orderPayload.description || '').trim(),
       expectedDate: parseDateOnly(orderPayload.expectedDate),
       status: Object.values(OrderStatus).includes(orderPayload.status) ? orderPayload.status : OrderStatus.PENDENTE,
-      sectorStatus: normalizedSectorStatus,
+      sectorStatus: createdSectorStatus,
       completionNote: toOptionalText(orderPayload.completionNote),
       cancellationReason: toOptionalText(orderPayload.cancellationReason),
       requestedValue: orderPayload.value ?? null,
