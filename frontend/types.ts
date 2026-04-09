@@ -75,6 +75,7 @@ export interface ExecutedCost {
   macroItemId: string;
   description: string; 
   itemDetail?: string; 
+  manualOrderCode?: string;
   unit: string;
   quantity: number;
   unitValue: number;

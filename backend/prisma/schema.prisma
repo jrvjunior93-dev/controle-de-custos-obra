@@ -178,6 +178,7 @@ model Cost {
     macroItemId   Int              @map("item_macro_id")
     originOrderId Int?             @map("origem_pedido_id")
     originInstallmentId Int?       @map("origem_parcela_id")
+    manualOrderCode String?        @map("codigo_pedido_manual")
     description   String     @map("descricao")
     itemDetail    String?          @db.Text @map("detalhe_item")
     unit          String           @map("unidade")

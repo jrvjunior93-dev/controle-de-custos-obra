@@ -55,6 +55,7 @@ const normalizeProjectRecord = (project: Project): Project => ({
     ...cost,
     description: normalizePtText(cost.description),
     itemDetail: cost.itemDetail ? normalizePtText(cost.itemDetail) : undefined,
+    manualOrderCode: cost.manualOrderCode ? String(cost.manualOrderCode).trim().toUpperCase() : undefined,
     attachments: (cost.attachments || []).map((attachment) => ({
       ...attachment,
       name: normalizePtText(attachment.name),

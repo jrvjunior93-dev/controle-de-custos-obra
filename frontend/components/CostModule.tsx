@@ -38,6 +38,7 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
     id: '',
     description: '',
     macroItemId: '',
+    manualOrderCode: '',
     unit: 'un',
     quantity: 1,
     unitValue: 0,
@@ -89,7 +90,7 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
     const order = cost.originOrderId
       ? (project.orders || []).find((item) => item.id === cost.originOrderId)
       : getLegacyLinkedOrder(cost);
-    return order?.orderCode || '-';
+    return order?.orderCode || cost.manualOrderCode || '-';
   };
 
   const generateUniqueCode = () => {
@@ -177,6 +178,7 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
     const costToSave = { 
       ...currentCost, 
       id: isEditing ? currentCost.id : crypto.randomUUID(),
+      manualOrderCode: currentCost.originOrderId ? undefined : String(currentCost.manualOrderCode || '').trim().toUpperCase(),
       entryDate: currentCost.entryDate || getTodayLocal()
     } as ExecutedCost;
     
@@ -185,7 +187,7 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
     onSave(newCosts);
     setIsModalOpen(false);
     setIsEditing(false);
-    setCurrentCost({ description: '', macroItemId: '', unit: 'un', quantity: 1, unitValue: 0, totalValue: 0, date: '', entryDate: getTodayLocal(), attachments: [] });
+    setCurrentCost({ description: '', macroItemId: '', manualOrderCode: '', unit: 'un', quantity: 1, unitValue: 0, totalValue: 0, date: '', entryDate: getTodayLocal(), attachments: [] });
   };
 
   return (
@@ -315,6 +317,12 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fornecedor</label>
                       <input required className="w-full border border-slate-200 rounded-xl px-4 py-3 font-black text-slate-800 text-xs shadow-sm uppercase" value={currentCost.description} onChange={e => setCurrentCost({...currentCost, description: e.target.value})} />
                     </div>
+                    {!currentCost.originOrderId && (
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Código do Pedido</label>
+                        <input className="w-full border border-slate-200 rounded-xl px-4 py-3 font-black text-slate-800 text-xs shadow-sm uppercase" value={currentCost.manualOrderCode || ''} onChange={e => setCurrentCost({ ...currentCost, manualOrderCode: e.target.value })} placeholder="OBRA7-1" />
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-black text-blue-600 uppercase">Data Doc (IA)</label>
