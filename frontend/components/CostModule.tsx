@@ -248,7 +248,7 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="w-full max-w-none mx-auto space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Custos Executados</h3>

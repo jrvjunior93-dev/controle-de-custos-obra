@@ -870,7 +870,7 @@ const renderListStatusBadge = (order: Order) => {
 };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="w-full max-w-none mx-auto space-y-6">
       <div className="flex flex-wrap justify-between items-end gap-4 bg-white p-5 sm:p-8 rounded-none border border-slate-200 shadow-sm">
         <div>
           <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Pedidos de Obra</h3>

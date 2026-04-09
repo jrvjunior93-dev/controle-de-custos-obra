@@ -1210,7 +1210,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-8 space-y-6 relative">
+    <div className="w-full max-w-none mx-auto p-8 space-y-6 relative">
       <div className="bg-white p-8 border border-slate-200 shadow-xl flex flex-wrap justify-between items-end gap-4">
         <div>
           <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Central de Pedidos</h3>
