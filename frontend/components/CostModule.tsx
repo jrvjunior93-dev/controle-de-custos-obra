@@ -85,6 +85,13 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
     return order.orderCode ? `Pedido ${order.orderCode}` : `Pedido ${order.title}`;
   };
 
+  const getOriginOrderCode = (cost: ExecutedCost) => {
+    const order = cost.originOrderId
+      ? (project.orders || []).find((item) => item.id === cost.originOrderId)
+      : getLegacyLinkedOrder(cost);
+    return order?.orderCode || '-';
+  };
+
   const generateUniqueCode = () => {
     const d = new Date();
     const datePart = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
@@ -200,6 +207,7 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
           <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-black tracking-widest border-b border-slate-200">
             <tr>
               <th className="px-6 py-4">Datas (Doc/Lanc)</th>
+              <th className="px-6 py-4">Código do Pedido</th>
               <th className="px-6 py-4">Fornecedor</th>
               <th className="px-6 py-4">Origem</th>
               <th className="px-6 py-4">Código Ref.</th>
@@ -213,6 +221,9 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
                 <td className="px-6 py-4 text-xs font-black text-slate-500 font-mono">
                   <div className="text-slate-800">{cost.date ? new Date(cost.date + 'T12:00:00').toLocaleDateString('pt-BR') : '--/--/----'}</div>
                   <div className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">Lanc: {new Date(cost.entryDate + 'T12:00:00').toLocaleDateString('pt-BR')}</div>
+                </td>
+                <td className="px-6 py-4 text-xs font-black text-slate-800 uppercase whitespace-nowrap">
+                  {getOriginOrderCode(cost)}
                 </td>
                 <td className="px-6 py-4">
                   <div className="font-black text-slate-800 uppercase text-xs truncate max-w-[200px]">{cost.description}</div>
