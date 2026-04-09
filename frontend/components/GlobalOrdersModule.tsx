@@ -256,6 +256,19 @@ const exportOrdersToExcel = async (orders: Order[]) => {
 export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects, sectors, user, onUpdateProjects, onPersistProject, onPersistMemberOrder, onDeleteMemberOrder, orderTypes }) => {
   const canManageAllOrders = canManageAssignedOrders(user.role);
   const canImportOrders = user.role === 'SUPERADMIN';
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
+    select: 60,
+    createdAt: 110,
+    expectedDate: 110,
+    orderCode: 160,
+    project: 170,
+    title: 180,
+    description: 230,
+    type: 170,
+    value: 140,
+    status: 170,
+  });
+  const [resizingColumn, setResizingColumn] = useState<{ key: string; startX: number; startWidth: number } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isActionModalOpen, setIsActionModalOpen] = useState<Order | null>(null);
   const [actionType, setActionType] = useState<'COMPLETE' | 'CANCEL' | 'NONE'>('NONE');
@@ -335,6 +348,24 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
     return matchSearch && matchStatus && matchProject && matchType && matchMinValue && matchMaxValue && matchDesiredDateRange;
   }).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [rawOrders, filterSearch, filterStatus, filterProject, filterType, filterMinValue, filterMaxValue, filterStartDate, filterEndDate]);
+
+  useEffect(() => {
+    if (!resizingColumn) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const nextWidth = Math.max(70, resizingColumn.startWidth + (event.clientX - resizingColumn.startX));
+      setColumnWidths((current) => ({ ...current, [resizingColumn.key]: nextWidth }));
+    };
+
+    const handleMouseUp = () => setResizingColumn(null);
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingColumn]);
 
   const usesAssignedProjectScope = !canManageAllOrders && (!user.sectorName || isObraSectorName(user.sectorName));
   const assignedProjects = canManageAllOrders || !usesAssignedProjectScope ? projects : projects.filter((project) => user.assignedProjectIds?.includes(project.id));
@@ -696,6 +727,35 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const selectedOrdersCount = selectedOrders.length;
   const allFilteredOrderIds = filteredOrders.map((order) => order.id);
   const allFilteredSelected = filteredOrders.length > 0 && allFilteredOrderIds.every((id) => selectedOrderIds.includes(id));
+
+  const getColumnStyle = (key: string) => ({
+    width: `${columnWidths[key] || 120}px`,
+    minWidth: `${columnWidths[key] || 120}px`,
+  });
+
+  const startColumnResize = (key: string, event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setResizingColumn({
+      key,
+      startX: event.clientX,
+      startWidth: columnWidths[key] || 120,
+    });
+  };
+
+  const renderColumnHeader = (key: string, label: string, className = '') => (
+    <th className={`px-4 py-5 relative ${className}`} style={getColumnStyle(key)}>
+      <div className="pr-3">{label}</div>
+      <button
+        type="button"
+        onMouseDown={(event) => startColumnResize(key, event)}
+        className="absolute top-0 right-0 h-full w-3 cursor-col-resize group"
+        aria-label={`Redimensionar coluna ${label}`}
+      >
+        <span className="absolute right-1 top-1/2 h-6 w-px -translate-y-1/2 bg-slate-200 group-hover:bg-blue-400" />
+      </button>
+    </th>
+  );
 
   const clearSelectedOrders = () => {
     setSelectedOrderIds([]);
@@ -1291,7 +1351,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
           <table className="w-full min-w-[1180px] text-left table-fixed">
             <thead className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200">
               <tr>
-                <th className="px-4 py-5 w-[4%]">
+                <th className="px-4 py-5 relative" style={getColumnStyle('select')}>
                   <div className="flex items-center justify-center">
                     <input
                       type="checkbox"
@@ -1300,16 +1360,24 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                       title={allFilteredSelected ? 'Limpar seleção' : 'Selecionar todos'}
                     />
                   </div>
+                  <button
+                    type="button"
+                    onMouseDown={(event) => startColumnResize('select', event)}
+                    className="absolute top-0 right-0 h-full w-3 cursor-col-resize group"
+                    aria-label="Redimensionar coluna de seleção"
+                  >
+                    <span className="absolute right-1 top-1/2 h-6 w-px -translate-y-1/2 bg-slate-200 group-hover:bg-blue-400" />
+                  </button>
                 </th>
-                <th className="px-4 py-5 w-[8%]">Data do Pedido</th>
-                <th className="px-4 py-5 w-[8%]">Data Desejada</th>
-                <th className="px-4 py-5 w-[12%]">Código do Pedido</th>
-                <th className="px-5 py-5 w-[11%]">Obra / Origem</th>
-                <th className="px-5 py-5 w-[12%]">Título do Pedido</th>
-                <th className="px-5 py-5 w-[15%]">Descrição</th>
-                <th className="px-4 py-5 w-[13%]">Tipo do Pedido</th>
-                <th className="px-4 py-5 w-[10%]">Valor do Pedido</th>
-                <th className="px-4 py-5 w-[11%]">Status Atual</th>
+                {renderColumnHeader('createdAt', 'Data do Pedido')}
+                {renderColumnHeader('expectedDate', 'Data Desejada')}
+                {renderColumnHeader('orderCode', 'Código do Pedido')}
+                {renderColumnHeader('project', 'Obra / Origem', 'px-5')}
+                {renderColumnHeader('title', 'Título do Pedido', 'px-5')}
+                {renderColumnHeader('description', 'Descrição', 'px-5')}
+                {renderColumnHeader('type', 'Tipo do Pedido')}
+                {renderColumnHeader('value', 'Valor do Pedido')}
+                {renderColumnHeader('status', 'Status Atual')}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1321,39 +1389,39 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                   className={`${isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'} transition-colors cursor-pointer`}
                   onClick={() => handleToggleOrderSelection(order)}
                 >
-                  <td className="px-4 py-6" onClick={(event) => event.stopPropagation()}>
+                  <td className="px-4 py-6" style={getColumnStyle('select')} onClick={(event) => event.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => handleToggleOrderSelection(order)}
                     />
                   </td>
-                  <td className="px-4 py-6 text-[10px] font-bold text-slate-500 font-mono whitespace-nowrap">{formatOrderDate(order.createdAt)}</td>
-                  <td className="px-4 py-6 text-[10px] font-bold text-slate-500 font-mono whitespace-nowrap">{formatOrderDate(order.expectedDate)}</td>
-                  <td className="px-4 py-6">
+                  <td className="px-4 py-6 text-[10px] font-bold text-slate-500 font-mono whitespace-nowrap" style={getColumnStyle('createdAt')}>{formatOrderDate(order.createdAt)}</td>
+                  <td className="px-4 py-6 text-[10px] font-bold text-slate-500 font-mono whitespace-nowrap" style={getColumnStyle('expectedDate')}>{formatOrderDate(order.expectedDate)}</td>
+                  <td className="px-4 py-6" style={getColumnStyle('orderCode')}>
                     <div className="font-black text-slate-900 uppercase text-xs whitespace-nowrap" title={order.orderCode || 'Código pendente'}>{order.orderCode || 'Código pendente'}</div>
                     {order.externalCode && <div className="text-[9px] text-amber-600 font-bold uppercase whitespace-nowrap truncate" title={`Legado: ${order.externalCode}`}>Legado: {order.externalCode}</div>}
                   </td>
-                  <td className="px-5 py-6">
+                  <td className="px-5 py-6" style={getColumnStyle('project')}>
                     <div className="font-black text-slate-900 uppercase text-xs truncate" title={order.projectName}>{order.projectName}</div>
                     <div className="text-[9px] text-slate-400 font-bold uppercase truncate" title={order.requesterName}>{order.requesterName}</div>
                   </td>
-                  <td className="px-5 py-6">
+                  <td className="px-5 py-6" style={getColumnStyle('title')}>
                     <div className="font-black text-slate-900 uppercase text-xs truncate" title={order.title}>{order.title}</div>
                     <div className="text-[9px] text-slate-500 font-bold uppercase mt-1 truncate" title={(projects.find((project) => project.id === order.projectId)?.budget || []).find((macro) => macro.id === order.macroItemId)?.description || 'Item macro não vinculado'}>
                       {(projects.find((project) => project.id === order.projectId)?.budget || []).find((macro) => macro.id === order.macroItemId)?.description || 'Item macro não vinculado'}
                     </div>
                   </td>
-                  <td className="px-5 py-6">
+                  <td className="px-5 py-6" style={getColumnStyle('description')}>
                     <div className="text-[10px] text-slate-600 font-bold leading-relaxed line-clamp-3" title={order.description || '-'}>{order.description || '-'}</div>
                   </td>
-                  <td className="px-4 py-6">
+                  <td className="px-4 py-6" style={getColumnStyle('type')}>
                     <div className="text-[10px] text-blue-600 font-black uppercase tracking-tight truncate" title={order.type}>{order.type}</div>
                   </td>
-                  <td className="px-4 py-6">
+                  <td className="px-4 py-6" style={getColumnStyle('value')}>
                     <div className="text-[10px] text-slate-700 font-black whitespace-nowrap">R$ {(order.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                   </td>
-                  <td className="px-4 py-6">
+                  <td className="px-4 py-6" style={getColumnStyle('status')}>
                     {renderListStatusBadge(order)}
                   </td>
                 </tr>
