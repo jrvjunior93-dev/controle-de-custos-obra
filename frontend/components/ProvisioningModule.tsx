@@ -11,6 +11,7 @@ interface ProvisioningModuleProps {
 const formatMoney = (value?: number) => `R$ ${(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const formatDate = (value?: string) => value ? new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR') : '-';
 const provisioningStatuses: ProvisioningStatus[] = ['PREVISTO', 'EM_ANALISE', 'APROVADO', 'CANCELADO', 'REALIZADO'];
+const priorityOptions = ['', 'BAIXA', 'MEDIA', 'ALTA', 'CRITICA'];
 
 const statusBadgeClass = (status: ProvisioningStatus) => {
   switch (status) {
@@ -29,13 +30,33 @@ const statusBadgeClass = (status: ProvisioningStatus) => {
   }
 };
 
-export const ProvisioningModule: React.FC<ProvisioningModuleProps> = ({ user }) => {
+const priorityBadgeClass = (priority?: string) => {
+  switch (String(priority || '').toUpperCase()) {
+    case 'CRITICA':
+      return 'bg-rose-50 text-rose-700 border-rose-200';
+    case 'ALTA':
+      return 'bg-orange-50 text-orange-700 border-orange-200';
+    case 'MEDIA':
+      return 'bg-amber-50 text-amber-700 border-amber-200';
+    case 'BAIXA':
+      return 'bg-blue-50 text-blue-700 border-blue-200';
+    default:
+      return 'bg-slate-50 text-slate-500 border-slate-200';
+  }
+};
+
+const formatPriority = (priority?: string) => {
+  const value = String(priority || '').trim().toUpperCase();
+  return value || 'SEM PRIORIDADE';
+};
+
+export const ProvisioningModule: React.FC<ProvisioningModuleProps> = () => {
   const [context, setContext] = useState<ProvisioningContext | null>(null);
   const [items, setItems] = useState<ProvisioningRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<ProvisioningRecord | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
-  const [filters, setFilters] = useState({ projectId: '', status: '', search: '' });
+  const [filters, setFilters] = useState({ projectId: '', status: '', priority: '', search: '' });
   const [comment, setComment] = useState('');
   const [files, setFiles] = useState<Attachment[]>([]);
   const [statusModalOpen, setStatusModalOpen] = useState(false);
@@ -46,7 +67,7 @@ export const ProvisioningModule: React.FC<ProvisioningModuleProps> = ({ user }) 
       setLoading(true);
       const [contextData, rows] = await Promise.all([
         dbService.getProvisioningContext(),
-        dbService.getProvisioning(filters.projectId || undefined, filters.status || undefined, filters.search || undefined),
+        dbService.getProvisioning(filters.projectId || undefined, filters.status || undefined, filters.search || undefined, filters.priority || undefined),
       ]);
       setContext(contextData);
       setItems(rows || []);
@@ -64,12 +85,29 @@ export const ProvisioningModule: React.FC<ProvisioningModuleProps> = ({ user }) 
 
   useEffect(() => {
     void load();
-  }, [filters.projectId, filters.status, filters.search]);
+  }, [filters.projectId, filters.status, filters.priority, filters.search]);
 
   const sortedHistory = useMemo(
     () => [...(selected?.history || [])].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
     [selected]
   );
+
+  const summary = useMemo(() => {
+    const now = new Date();
+    const sevenDaysAhead = new Date();
+    sevenDaysAhead.setDate(now.getDate() + 7);
+
+    return {
+      totalRecords: items.length,
+      totalForecast: items.reduce((acc, item) => acc + Number(item.forecastValue || 0), 0),
+      criticalCount: items.filter((item) => String(item.priority || '').toUpperCase() === 'CRITICA').length,
+      upcomingCount: items.filter((item) => {
+        if (!item.dueDate) return false;
+        const date = new Date(`${item.dueDate}T12:00:00`);
+        return date >= now && date <= sevenDaysAhead;
+      }).length,
+    };
+  }, [items]);
 
   const toAttachmentPayloads = async (fileList: FileList | null) => {
     const pending = Array.from(fileList || []);
@@ -97,9 +135,9 @@ export const ProvisioningModule: React.FC<ProvisioningModuleProps> = ({ user }) 
       setComment('');
       alert('Comentario enviado com sucesso.');
       await load();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert('Nao foi possivel enviar o comentario.');
+      alert(error?.message || 'Nao foi possivel enviar o comentario.');
     }
   };
 
@@ -110,9 +148,9 @@ export const ProvisioningModule: React.FC<ProvisioningModuleProps> = ({ user }) 
       setFiles([]);
       alert('Arquivo enviado com sucesso.');
       await load();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert('Nao foi possivel enviar os arquivos.');
+      alert(error?.message || 'Nao foi possivel enviar os arquivos.');
     }
   };
 
@@ -124,9 +162,9 @@ export const ProvisioningModule: React.FC<ProvisioningModuleProps> = ({ user }) 
       setStatusModalOpen(false);
       alert('Status atualizado com sucesso.');
       await load();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert('Nao foi possivel atualizar o status.');
+      alert(error?.message || 'Nao foi possivel atualizar o status.');
     }
   };
 
@@ -158,10 +196,10 @@ export const ProvisioningModule: React.FC<ProvisioningModuleProps> = ({ user }) 
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <h2 className="text-3xl font-black uppercase tracking-tighter text-slate-900">Provisionamento</h2>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-2">Modulo isolado de provisoes financeiras.</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-2">Acompanhamento gerencial de provisoes financeiras por obra.</p>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           <select value={filters.projectId} onChange={(e) => setFilters((current) => ({ ...current, projectId: e.target.value }))} className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-black uppercase outline-none focus:border-blue-500">
             <option value="">Todas as obras</option>
             {(context?.projectOptions || []).map((project) => (
@@ -172,49 +210,81 @@ export const ProvisioningModule: React.FC<ProvisioningModuleProps> = ({ user }) 
             <option value="">Todos os status</option>
             {provisioningStatuses.map((status) => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
           </select>
-          <input value={filters.search} onChange={(e) => setFilters((current) => ({ ...current, search: e.target.value }))} placeholder="Buscar codigo, titulo, fornecedor" className="md:col-span-2 bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-black outline-none focus:border-blue-500" />
+          <select value={filters.priority} onChange={(e) => setFilters((current) => ({ ...current, priority: e.target.value }))} className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-black uppercase outline-none focus:border-blue-500">
+            {priorityOptions.map((priority) => <option key={priority || 'EMPTY'} value={priority}>{formatPriority(priority)}</option>)}
+          </select>
+          <input value={filters.search} onChange={(e) => setFilters((current) => ({ ...current, search: e.target.value }))} placeholder="Buscar codigo, item macro, descricao ou fornecedor" className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-black outline-none focus:border-blue-500" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+        <div className="bg-white border border-slate-200 shadow-sm p-6">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Registros no filtro</p>
+          <p className="mt-3 text-3xl font-black text-slate-900">{summary.totalRecords}</p>
+        </div>
+        <div className="bg-white border border-slate-200 shadow-sm p-6">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Valor previsto</p>
+          <p className="mt-3 text-3xl font-black text-slate-900">{formatMoney(summary.totalForecast)}</p>
+        </div>
+        <div className="bg-white border border-slate-200 shadow-sm p-6">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Criticas</p>
+          <p className="mt-3 text-3xl font-black text-slate-900">{summary.criticalCount}</p>
+        </div>
+        <div className="bg-white border border-slate-200 shadow-sm p-6">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Proximas 7 dias</p>
+          <p className="mt-3 text-3xl font-black text-slate-900">{summary.upcomingCount}</p>
         </div>
       </div>
 
       <div className="bg-white border border-slate-200 shadow-sm overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
-            <tr>
-              <th className="px-6 py-4">Codigo</th>
-              <th className="px-6 py-4">Obra</th>
-              <th className="px-6 py-4">Titulo</th>
-              <th className="px-6 py-4">Categoria</th>
-              <th className="px-6 py-4">Data Prevista</th>
-              <th className="px-6 py-4">Valor</th>
-              <th className="px-6 py-4">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {items.map((item) => (
-              <tr key={item.id} onClick={() => setSelected(item)} className="cursor-pointer hover:bg-slate-50 transition-colors">
-                <td className="px-6 py-4 text-xs font-black uppercase text-slate-800">{item.code}</td>
-                <td className="px-6 py-4 text-[10px] font-bold uppercase text-slate-500">{item.projectName}</td>
-                <td className="px-6 py-4">
-                  <div className="text-xs font-black uppercase text-slate-800">{item.title}</div>
-                  <div className="text-[10px] font-bold uppercase text-slate-400 mt-1">{item.createdByUserName}</div>
-                </td>
-                <td className="px-6 py-4 text-[10px] font-bold uppercase text-slate-500">{item.categoryName}</td>
-                <td className="px-6 py-4 text-[10px] font-bold uppercase text-slate-500">{formatDate(item.dueDate)}</td>
-                <td className="px-6 py-4 text-xs font-black uppercase text-slate-800">{formatMoney(item.forecastValue)}</td>
-                <td className="px-6 py-4">
-                  <span className={`inline-flex px-3 py-1 border text-[9px] font-black uppercase ${statusBadgeClass(item.status)}`}>
-                    {item.status.replaceAll('_', ' ')}
-                  </span>
-                </td>
-              </tr>
-            ))}
-            {items.length === 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1100px] text-left">
+            <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
               <tr>
-                <td colSpan={7} className="px-6 py-10 text-center text-[10px] font-bold uppercase tracking-widest text-slate-400">Nenhum provisionamento encontrado.</td>
+                <th className="px-6 py-4">Codigo</th>
+                <th className="px-6 py-4">Obra</th>
+                <th className="px-6 py-4">Item Macro</th>
+                <th className="px-6 py-4">Descricao</th>
+                <th className="px-6 py-4">Data Prevista</th>
+                <th className="px-6 py-4">Valor</th>
+                <th className="px-6 py-4">Prioridade</th>
+                <th className="px-6 py-4">Status</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {items.map((item) => (
+                <tr key={item.id} onClick={() => setSelected(item)} className="cursor-pointer hover:bg-slate-50 transition-colors">
+                  <td className="px-6 py-4 text-xs font-black uppercase text-slate-800">{item.code}</td>
+                  <td className="px-6 py-4 text-[10px] font-bold uppercase text-slate-500">{item.projectName}</td>
+                  <td className="px-6 py-4">
+                    <div className="text-xs font-black uppercase text-slate-800">{item.itemMacro}</div>
+                    <div className="text-[10px] font-bold uppercase text-slate-400 mt-1">{item.createdByUserName}</div>
+                  </td>
+                  <td className="px-6 py-4 text-[11px] text-slate-600 max-w-[360px]">
+                    <div className="line-clamp-2">{item.description}</div>
+                  </td>
+                  <td className="px-6 py-4 text-[10px] font-bold uppercase text-slate-500">{formatDate(item.dueDate)}</td>
+                  <td className="px-6 py-4 text-xs font-black uppercase text-slate-800">{formatMoney(item.forecastValue)}</td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex px-3 py-1 border text-[9px] font-black uppercase ${priorityBadgeClass(item.priority)}`}>
+                      {formatPriority(item.priority)}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex px-3 py-1 border text-[9px] font-black uppercase ${statusBadgeClass(item.status)}`}>
+                      {item.status.replaceAll('_', ' ')}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {items.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-6 py-10 text-center text-[10px] font-bold uppercase tracking-widest text-slate-400">Nenhum provisionamento encontrado.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {selected && (
@@ -222,15 +292,17 @@ export const ProvisioningModule: React.FC<ProvisioningModuleProps> = ({ user }) 
           <div className="bg-white w-full max-w-6xl border border-slate-200 shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="p-8 border-b border-slate-200 flex items-start justify-between gap-6">
               <div className="space-y-3">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className={`inline-flex px-3 py-1 border text-[9px] font-black uppercase ${statusBadgeClass(selected.status)}`}>{selected.status.replaceAll('_', ' ')}</span>
+                  <span className={`inline-flex px-3 py-1 border text-[9px] font-black uppercase ${priorityBadgeClass(selected.priority)}`}>{formatPriority(selected.priority)}</span>
                   {context?.permissions?.canApprove && (
                     <button type="button" onClick={() => { setSelectedStatus(selected.status); setStatusModalOpen(true); }} className="w-9 h-9 border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 transition-colors">
                       <i className="fas fa-pen"></i>
                     </button>
                   )}
                 </div>
-                <h3 className="text-3xl font-black uppercase tracking-tighter text-slate-900">{selected.title}</h3>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{selected.code}</p>
+                <h3 className="text-3xl font-black uppercase tracking-tighter text-slate-900">{selected.itemMacro}</h3>
                 <p className="text-xs font-bold uppercase text-slate-400">Por {selected.createdByUserName} em {new Date(selected.createdAt).toLocaleString('pt-BR')}</p>
               </div>
               <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700 transition-colors"><i className="fas fa-times text-2xl"></i></button>
@@ -247,8 +319,8 @@ export const ProvisioningModule: React.FC<ProvisioningModuleProps> = ({ user }) 
                       <p className="text-xs font-black uppercase text-slate-800 mt-2">{selected.projectName}</p>
                     </div>
                     <div className="bg-white border border-slate-200 p-4">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Categoria</p>
-                      <p className="text-xs font-black uppercase text-slate-800 mt-2">{selected.categoryName}</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Item Macro</p>
+                      <p className="text-xs font-black uppercase text-slate-800 mt-2">{selected.itemMacro}</p>
                     </div>
                     <div className="bg-white border border-slate-200 p-4">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Fornecedor</p>
@@ -257,6 +329,14 @@ export const ProvisioningModule: React.FC<ProvisioningModuleProps> = ({ user }) 
                     <div className="bg-white border border-slate-200 p-4">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Valor</p>
                       <p className="text-xs font-black uppercase text-slate-800 mt-2">{formatMoney(selected.forecastValue)}</p>
+                    </div>
+                    <div className="bg-white border border-slate-200 p-4">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Data Prevista</p>
+                      <p className="text-xs font-black uppercase text-slate-800 mt-2">{formatDate(selected.dueDate)}</p>
+                    </div>
+                    <div className="bg-white border border-slate-200 p-4">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Status</p>
+                      <p className="text-xs font-black uppercase text-slate-800 mt-2">{selected.status.replaceAll('_', ' ')}</p>
                     </div>
                   </div>
                 </div>

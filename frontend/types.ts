@@ -47,10 +47,12 @@ export interface ProvisioningRecord {
   categoryId: string;
   categoryName: string;
   title: string;
+  itemMacro: string;
   description: string;
   supplier?: string;
   dueDate: string;
   forecastValue: number;
+  priority?: string;
   status: ProvisioningStatus;
   comment?: string;
   createdByUserId: string;

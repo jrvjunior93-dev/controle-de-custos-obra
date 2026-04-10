@@ -74,12 +74,14 @@ const provisioningPayloadSchema = z.object({
   provisioning: z.object({
     id: z.union([z.string(), z.number()]).optional(),
     projectId: z.union([z.string(), z.number()]),
-    categoryId: z.union([z.string(), z.number()]),
-    title: z.string().trim().min(2).max(190),
+    categoryId: z.union([z.string(), z.number()]).optional(),
+    itemMacro: z.string().trim().min(2).max(190),
     description: z.string().trim().min(2),
     supplier: z.string().trim().optional(),
     dueDate: z.string().trim().min(8),
     forecastValue: z.number().nonnegative(),
+    priority: z.string().trim().optional(),
+    status: z.enum(["PREVISTO", "EM_ANALISE"]).optional(),
     comment: z.string().trim().optional(),
     attachments: z.array(z.any()).optional(),
   })
@@ -525,6 +527,23 @@ function canViewProvisioningDashboard(user: any) {
   return Boolean(user?.role === UserRole.SUPERADMIN || user?.canViewProvisioningDashboard);
 }
 
+async function ensureProvisioningDefaultCategory(tx: any) {
+  let category = await tx.provisioningCategory.findFirst({
+    where: { isActive: true },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+  });
+  if (category) return category;
+
+  return tx.provisioningCategory.create({
+    data: {
+      name: "GERAL",
+      description: "Categoria padrao do provisionamento.",
+      sortOrder: 0,
+      isActive: true,
+    }
+  });
+}
+
 async function ensureProvisioningAccess(user: any, res: express.Response, mode: "access" | "create" | "approve" | "dashboard" = "access") {
   if (!user || !user.isActive) {
     res.status(401).json({ error: "Unauthorized" });
@@ -604,10 +623,12 @@ async function mapProvisioningFromDb(record: any) {
     categoryId: String(record.categoryId),
     categoryName: record.category?.name || "",
     title: record.title,
+    itemMacro: record.itemMacro,
     description: record.description,
     supplier: record.supplier || undefined,
     dueDate: formatDateOnly(record.dueDate),
     forecastValue: decimalToNumber(record.forecastValue),
+    priority: record.priority || undefined,
     status: record.status,
     comment: record.comment || undefined,
     createdByUserId: String(record.createdByUserId),
@@ -2051,6 +2072,7 @@ app.get("/provisioning", requireAuth, async (req: AuthRequest, res) => {
     : await getUserProjectScope(Number(activeUser.id));
   const projectId = Number(req.query.projectId || "");
   const status = String(req.query.status || "").trim().toUpperCase() as ProvisioningStatusValue;
+  const priority = String(req.query.priority || "").trim().toUpperCase();
   const search = String(req.query.search || "").trim();
   const where: any = {};
 
@@ -2063,10 +2085,14 @@ app.get("/provisioning", requireAuth, async (req: AuthRequest, res) => {
   if (status && provisioningStatuses.includes(status)) {
     where.status = status;
   }
+  if (priority) {
+    where.priority = priority;
+  }
   if (search) {
     where.OR = [
       { code: { contains: search } },
       { title: { contains: search } },
+      { itemMacro: { contains: search } },
       { description: { contains: search } },
       { supplier: { contains: search } },
     ];
@@ -2090,7 +2116,15 @@ app.get("/provisioning/dashboard", requireAuth, async (req: AuthRequest, res) =>
   const projectScope = GLOBAL_ADMIN_ROLES.includes(dashboardUser.role) || !shouldUseAssignedProjectScope(dashboardUser)
     ? undefined
     : await getUserProjectScope(Number(dashboardUser.id));
-  const where = Array.isArray(projectScope) ? { projectId: { in: projectScope } } : undefined;
+  const projectId = Number(req.query.projectId || "");
+  const status = String(req.query.status || "").trim().toUpperCase() as ProvisioningStatusValue;
+  const priority = String(req.query.priority || "").trim().toUpperCase();
+  const where: any = Array.isArray(projectScope) ? { projectId: { in: projectScope } } : {};
+  if (Number.isFinite(projectId) && projectId > 0) {
+    where.projectId = Array.isArray(projectScope) ? { in: projectScope.filter((id) => id === projectId) } : projectId;
+  }
+  if (status && provisioningStatuses.includes(status)) where.status = status;
+  if (priority) where.priority = priority;
   const rows = await prismaAny.provisioningRecord.findMany({
     where,
     include: { project: true },
@@ -2163,22 +2197,30 @@ app.post("/provisioning", requireAuth, async (req: AuthRequest, res) => {
     const project = await tx.project.findUnique({ where: { id: projectId } });
     if (!project) throw new Error("Project not found");
     const categoryId = Number(parsed.data.provisioning.categoryId);
-    const category = await tx.provisioningCategory.findUnique({ where: { id: categoryId } });
+    const category = Number.isFinite(categoryId) && categoryId > 0
+      ? await tx.provisioningCategory.findFirst({ where: { id: categoryId, isActive: true } })
+      : await ensureProvisioningDefaultCategory(tx);
     if (!category || !category.isActive) throw new Error("Category not found");
     const sequence = await allocateProvisioningNumber(tx, project.id);
     const code = formatProvisioningCode(project.code, sequence);
+    const itemMacro = String(parsed.data.provisioning.itemMacro).trim().toUpperCase();
+    const derivedTitle = truncateText(itemMacro, 190);
+    const priority = toOptionalText(String(parsed.data.provisioning.priority || "").trim().toUpperCase());
+    const initialStatus = parsed.data.provisioning.status === "EM_ANALISE" ? "EM_ANALISE" : "PREVISTO";
     const created = await tx.provisioningRecord.create({
       data: {
         projectId: project.id,
         categoryId: category.id,
         code,
-        title: String(parsed.data.provisioning.title).trim(),
+        title: derivedTitle,
+        itemMacro,
         description: String(parsed.data.provisioning.description).trim(),
         supplier: toOptionalText(parsed.data.provisioning.supplier),
         dueDate: parseDateOnly(parsed.data.provisioning.dueDate),
         forecastValue: Number(parsed.data.provisioning.forecastValue || 0),
+        priority,
         comment: toOptionalText(parsed.data.provisioning.comment),
-        status: "PREVISTO",
+        status: initialStatus,
         createdByUserId: Number(user!.id),
         updatedByUserId: Number(user!.id),
       },
@@ -2189,7 +2231,7 @@ app.post("/provisioning", requireAuth, async (req: AuthRequest, res) => {
         userId: Number(user!.id),
         action: "CRIACAO",
         description: "Provisionamento criado.",
-        statusTo: "PREVISTO",
+        statusTo: initialStatus,
       }
     });
     const attachments = await toAttachments(parsed.data.provisioning.attachments || [], "PROVISIONING_ATTACHMENT" as AttachmentKind);
@@ -2234,8 +2276,13 @@ app.put("/provisioning/:id", requireAuth, async (req: AuthRequest, res) => {
 
   const saved = await prisma.$transaction(async (tx: any) => {
     const categoryId = Number(parsed.data.provisioning.categoryId);
-    const category = await tx.provisioningCategory.findUnique({ where: { id: categoryId } });
+    const category = Number.isFinite(categoryId) && categoryId > 0
+      ? await tx.provisioningCategory.findFirst({ where: { id: categoryId, isActive: true } })
+      : await ensureProvisioningDefaultCategory(tx);
     if (!category || !category.isActive) throw new Error("Category not found");
+    const itemMacro = String(parsed.data.provisioning.itemMacro).trim().toUpperCase();
+    const derivedTitle = truncateText(itemMacro, 190);
+    const priority = toOptionalText(String(parsed.data.provisioning.priority || "").trim().toUpperCase());
     await tx.provisioningHistory.create({
       data: {
         provisioningId: existing.id,
@@ -2250,11 +2297,13 @@ app.put("/provisioning/:id", requireAuth, async (req: AuthRequest, res) => {
       where: { id: existing.id },
       data: {
         categoryId: category.id,
-        title: String(parsed.data.provisioning.title).trim(),
+        title: derivedTitle,
+        itemMacro,
         description: String(parsed.data.provisioning.description).trim(),
         supplier: toOptionalText(parsed.data.provisioning.supplier),
         dueDate: parseDateOnly(parsed.data.provisioning.dueDate),
         forecastValue: Number(parsed.data.provisioning.forecastValue || 0),
+        priority,
         comment: toOptionalText(parsed.data.provisioning.comment),
         updatedByUserId: Number(user!.id),
       },

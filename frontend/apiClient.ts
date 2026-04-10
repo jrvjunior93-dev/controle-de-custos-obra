@@ -219,16 +219,21 @@ export const dbService = {
     return request<any>("/provisioning/context");
   },
 
-  async getProvisioning(projectId?: string, status?: string, search?: string) {
+  async getProvisioning(projectId?: string, status?: string, search?: string, priority?: string) {
     const params = new URLSearchParams();
     if (projectId) params.set("projectId", projectId);
     if (status) params.set("status", status);
     if (search) params.set("search", search);
+    if (priority) params.set("priority", priority);
     return request<any[]>(`/provisioning${params.toString() ? `?${params.toString()}` : ""}`);
   },
 
-  async getProvisioningDashboard() {
-    return request<any>("/provisioning/dashboard");
+  async getProvisioningDashboard(filters?: { projectId?: string; status?: string; priority?: string }) {
+    const params = new URLSearchParams();
+    if (filters?.projectId) params.set("projectId", filters.projectId);
+    if (filters?.status) params.set("status", filters.status);
+    if (filters?.priority) params.set("priority", filters.priority);
+    return request<any>(`/provisioning/dashboard${params.toString() ? `?${params.toString()}` : ""}`);
   },
 
   async getProvisioningCategories() {
