@@ -575,7 +575,10 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     };
 
     try {
-      await onPersistOrder(project.id, order);
+      // Backend validates sectorStatus against sector configured statuses.
+      // On create we let the backend apply the default 'PENDENTE' without sending it in the payload.
+      const orderToPersist: Order = { ...order, sectorStatus: undefined };
+      await onPersistOrder(project.id, orderToPersist);
       setIsModalOpen(false);
       setNewOrder({ title: '', type: '', description: '', macroItemId: '', currentSectorId: '', expectedDate: '', value: undefined, attachments: [] });
     } catch (error) {

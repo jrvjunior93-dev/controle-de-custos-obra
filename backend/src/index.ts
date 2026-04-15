@@ -1094,7 +1094,9 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
     || authUser.role === UserRole.ADMIN
     || (authUser.role === UserRole.MEMBRO && isComprasSectorName(actorUser?.sector?.name));
 
-  if (normalizedSectorStatus && statusSector && !(statusSector.statuses || []).some((item: any) => item.name === normalizedSectorStatus)) {
+  // 'PENDENTE' is treated as a universal sector status to avoid blocking order creation
+  // when a sector hasn't explicitly configured its status list yet.
+  if (normalizedSectorStatus && normalizedSectorStatus !== "PENDENTE" && statusSector && !(statusSector.statuses || []).some((item: any) => item.name === normalizedSectorStatus)) {
     const error = new Error("Invalid sector status") as Error & { status?: number };
     error.status = 400;
     throw error;
@@ -1577,7 +1579,8 @@ app.patch("/projects/:projectId/orders/:orderId/sector-status", requireAuth, asy
         })
       : null;
     const normalizedSectorStatus = String(parsed.data.sectorStatus || "").trim().toUpperCase() || null;
-    if (normalizedSectorStatus && statusSector && !(statusSector.statuses || []).some((item: any) => item.name === normalizedSectorStatus)) {
+    // 'PENDENTE' is treated as a universal sector status to avoid blocking basic workflow.
+    if (normalizedSectorStatus && normalizedSectorStatus !== "PENDENTE" && statusSector && !(statusSector.statuses || []).some((item: any) => item.name === normalizedSectorStatus)) {
       return res.status(400).json({ error: "Invalid sector status" });
     }
 

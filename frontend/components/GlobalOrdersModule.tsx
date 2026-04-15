@@ -636,7 +636,10 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     const previousProjects = projects;
     onUpdateProjects(projects.map((project) => project.id === targetProject.id ? updatedProject : project));
     try {
-      await onPersistMemberOrder(targetProject.id, order);
+      // Backend validates sectorStatus against sector configured statuses.
+      // On create we let the backend apply the default 'PENDENTE' without sending it in the payload.
+      const orderToPersist: Order = { ...order, sectorStatus: undefined };
+      await onPersistMemberOrder(targetProject.id, orderToPersist);
       setIsModalOpen(false);
       setNewOrder({ projectId: '', title: '', type: '', description: '', macroItemId: '', currentSectorId: '', expectedDate: '', value: undefined, attachments: [] });
     } catch (error) {
