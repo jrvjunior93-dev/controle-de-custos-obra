@@ -112,14 +112,16 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
 
   const getLegacyLinkedOrder = (cost: ExecutedCost) => {
     return (project.orders || []).find((order) => {
+      const normalizeKey = (value: any) => String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
       const sameOrderCode = String(cost.manualOrderCode || '').trim().toUpperCase() !== '' && String(cost.manualOrderCode || '').trim().toUpperCase() === String(order.orderCode || '').trim().toUpperCase();
-      const normalizedCostDescription = String(cost.description || '').trim().toUpperCase();
-      const normalizedOrderDescription = `[PEDIDO] ${String(order.title || '').trim()}`.toUpperCase();
+      const normalizedCostDescription = normalizeKey(cost.description);
+      const normalizedOrderDescription = normalizeKey(`[PEDIDO] ${String(order.title || '').trim()}`);
       const sameDescription = normalizedCostDescription === normalizedOrderDescription;
+      const containsOrderCode = !!order.orderCode && normalizedCostDescription.includes(String(order.orderCode).trim().toUpperCase());
       const sameMacro = String(cost.macroItemId || '') === String(order.macroItemId || '');
-      const sameValue = Number(cost.totalValue || 0) === Number(order.value || 0);
-      const sameDetail = String(cost.itemDetail || '').trim() === String(order.description || '').trim();
-      return sameOrderCode || (sameDescription && sameMacro && sameValue && sameDetail);
+      const sameValue = Math.abs(Number(cost.totalValue || 0) - Number(order.value || 0)) < 0.01;
+      const sameDetail = normalizeKey(cost.itemDetail) === normalizeKey(order.description);
+      return sameOrderCode || ((containsOrderCode || sameDescription) && sameMacro && sameValue && sameDetail);
     });
   };
 
@@ -127,7 +129,7 @@ export const CostModule: React.FC<CostModuleProps> = ({ project, onSave, canMana
     const order = cost.originOrderId
       ? (project.orders || []).find((item) => item.id === cost.originOrderId)
       : getLegacyLinkedOrder(cost);
-    if (!order) return 'Lançamento manual';
+    if (!order) return cost.manualOrderCode ? `Pedido ${cost.manualOrderCode}` : 'Lançamento manual';
     return order.orderCode ? `Pedido ${order.orderCode}` : `Pedido ${order.title}`;
   };
 

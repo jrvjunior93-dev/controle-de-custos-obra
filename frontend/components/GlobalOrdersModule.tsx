@@ -24,14 +24,16 @@ const parseMoneyInput = (value: string) => {
 };
 
 const isLegacyLinkedOrderCost = (cost: ExecutedCost, order: Order) => {
+  const normalizeKey = (value: any) => String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
   const sameOrderCode = String(cost.manualOrderCode || '').trim().toUpperCase() !== '' && String(cost.manualOrderCode || '').trim().toUpperCase() === String(order.orderCode || '').trim().toUpperCase();
-  const normalizedCostDescription = String(cost.description || '').trim().toUpperCase();
-  const normalizedOrderDescription = `[PEDIDO] ${String(order.title || '').trim()}`.toUpperCase();
+  const normalizedCostDescription = normalizeKey(cost.description);
+  const normalizedOrderDescription = normalizeKey(`[PEDIDO] ${String(order.title || '').trim()}`);
   const sameDescription = normalizedCostDescription === normalizedOrderDescription;
+  const containsOrderCode = !!order.orderCode && normalizedCostDescription.includes(String(order.orderCode).trim().toUpperCase());
   const sameMacro = String(cost.macroItemId || '') === String(order.macroItemId || '');
-  const sameValue = Number(cost.totalValue || 0) === Number(order.value || 0);
-  const sameDetail = String(cost.itemDetail || '').trim() === String(order.description || '').trim();
-  return sameOrderCode || (sameDescription && sameMacro && sameValue && sameDetail);
+  const sameValue = Math.abs(Number(cost.totalValue || 0) - Number(order.value || 0)) < 0.01;
+  const sameDetail = normalizeKey(cost.itemDetail) === normalizeKey(order.description);
+  return sameOrderCode || ((containsOrderCode || sameDescription) && sameMacro && sameValue && sameDetail);
 };
 const normalizeDateKey = (value?: string) => {
   if (!value) return '';
@@ -431,6 +433,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     return {
       id: existingCost?.id || crypto.randomUUID(),
       macroItemId: order.macroItemId!,
+      manualOrderCode: order.orderCode,
       description: `[PEDIDO] ${order.title}`,
       itemDetail: order.description,
       unit: existingCost?.unit || 'un',
