@@ -311,6 +311,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const [selectedMacroItemId, setSelectedMacroItemId] = useState('');
   const [selectedForwardSectorId, setSelectedForwardSectorId] = useState('');
   const [selectedSectorStatus, setSelectedSectorStatus] = useState('');
+  const selectedSectorStatusRef = React.useRef('');
   const [isEditingSectorStatus, setIsEditingSectorStatus] = useState(false);
   const [isSectorStatusModalOpen, setIsSectorStatusModalOpen] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
@@ -560,7 +561,8 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setHasSavedCostAssignment(linkedCostExists);
     setSelectedMacroItemId(order.macroItemId || '');
     setSelectedForwardSectorId(order.currentSectorId || '');
-    setSelectedSectorStatus(order.sectorStatus || '');
+    selectedSectorStatusRef.current = order.sectorStatus || '';
+    setSelectedSectorStatus(selectedSectorStatusRef.current);
     setIsEditingSectorStatus(false);
     setIsSectorStatusModalOpen(false);
   };
@@ -571,7 +573,8 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     if ((latestOrder.messages || []).length < (isActionModalOpen.messages || []).length) return;
 
     setIsActionModalOpen(latestOrder);
-    setSelectedSectorStatus(latestOrder.sectorStatus || '');
+    selectedSectorStatusRef.current = latestOrder.sectorStatus || '';
+    setSelectedSectorStatus(selectedSectorStatusRef.current);
     setSelectedMacroItemId(latestOrder.macroItemId || '');
     setSelectedForwardSectorId(latestOrder.currentSectorId || '');
     setEditableOrderValue(Number(latestOrder.value || 0));
@@ -1005,7 +1008,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     }
   };
 
-  const handleSaveSectorStatus = async (nextStatus = selectedSectorStatus) => {
+  const handleSaveSectorStatus = async (nextStatus = selectedSectorStatusRef.current) => {
     if (!isActionModalOpen) return;
     if (!canEditSectorStatus(isActionModalOpen)) return alert('Voce nao pode alterar o status deste setor.');
     const availableStatuses = getEditableSectorStatuses(isActionModalOpen);
@@ -1019,7 +1022,8 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     try {
       const savedOrder = await onUpdateMemberOrderSectorStatus(isActionModalOpen.projectId, isActionModalOpen.id, nextStatus || undefined);
       setIsActionModalOpen(savedOrder);
-      setSelectedSectorStatus(savedOrder.sectorStatus || '');
+      selectedSectorStatusRef.current = savedOrder.sectorStatus || '';
+      setSelectedSectorStatus(selectedSectorStatusRef.current);
       setIsEditingSectorStatus(false);
       setIsSectorStatusModalOpen(false);
     } catch (error: any) {
@@ -1568,7 +1572,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                     {canEditSectorStatus(isActionModalOpen) && (
                       <button
                         type="button"
-                        onClick={() => { setSelectedSectorStatus(isActionModalOpen.sectorStatus || ''); setIsSectorStatusModalOpen(true); }}
+                        onClick={() => { selectedSectorStatusRef.current = isActionModalOpen.sectorStatus || ''; setSelectedSectorStatus(selectedSectorStatusRef.current); setIsSectorStatusModalOpen(true); }}
                         className="w-7 h-7 border border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:border-slate-300"
                         title="Editar status do setor"
                       >
@@ -1826,20 +1830,20 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 <i className="fas fa-times"></i>
               </button>
             </div>
-            <select
-              className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase"
-              value={selectedSectorStatus}
-              onChange={(event) => setSelectedSectorStatus(event.target.value)}
-            >
+              <select
+                className="w-full bg-slate-50 border border-slate-200 px-4 py-3 font-black text-xs uppercase"
+                value={selectedSectorStatus}
+                onChange={(event) => { selectedSectorStatusRef.current = event.target.value; setSelectedSectorStatus(event.target.value); }}
+              >
               <option value="">Sem status setorial</option>
               {getEditableSectorStatuses(isActionModalOpen).map((status) => (
                 <option key={status} value={status}>{status}</option>
               ))}
             </select>
-            <div className="flex gap-3">
-              <button type="button" onClick={() => setIsSectorStatusModalOpen(false)} className="flex-1 border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-600">Fechar</button>
-              <button type="button" onClick={() => void handleSaveSectorStatus(selectedSectorStatus)} className="flex-1 bg-slate-900 text-white py-3 text-[10px] font-black uppercase tracking-widest">Salvar Status</button>
-            </div>
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setIsSectorStatusModalOpen(false)} className="flex-1 border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-600">Fechar</button>
+                <button type="button" onClick={() => void handleSaveSectorStatus(selectedSectorStatusRef.current)} className="flex-1 bg-slate-900 text-white py-3 text-[10px] font-black uppercase tracking-widest">Salvar Status</button>
+              </div>
           </div>
         </div>
       )}
