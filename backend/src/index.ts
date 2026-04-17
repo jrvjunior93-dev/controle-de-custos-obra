@@ -1060,8 +1060,16 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       .filter(Boolean)
   );
 
-  const normalizedSectorStatus = String(orderPayload.sectorStatus || "").trim().toUpperCase() || null;
-  const createdSectorStatus = existingOrder ? normalizedSectorStatus : (normalizedSectorStatus || "PENDENTE");
+  const hasSectorStatusProp = Object.prototype.hasOwnProperty.call(orderPayload, "sectorStatus");
+  const requestedSectorStatus = hasSectorStatusProp
+    ? (String(orderPayload.sectorStatus || "").trim().toUpperCase() || null)
+    : undefined;
+  // Preserve existing sectorStatus when the client doesn't send it.
+  // Allow clearing only when the client explicitly sends empty/null.
+  const nextSectorStatus =
+    existingOrder
+      ? (requestedSectorStatus ?? (existingOrder.sectorStatus || null))
+      : (requestedSectorStatus || "PENDENTE");
   const normalizedTitle = String(orderPayload.title || '').trim();
   const normalizedDescription = String(orderPayload.description || '').trim();
   const normalizedType = String(orderPayload.type || '').trim().toUpperCase();
@@ -1094,9 +1102,9 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
     || authUser.role === UserRole.ADMIN
     || (authUser.role === UserRole.MEMBRO && isComprasSectorName(actorUser?.sector?.name));
 
-  // 'PENDENTE' is treated as a universal sector status to avoid blocking order creation
-  // when a sector hasn't explicitly configured its status list yet.
-  if (normalizedSectorStatus && normalizedSectorStatus !== "PENDENTE" && statusSector && !(statusSector.statuses || []).some((item: any) => item.name === normalizedSectorStatus)) {
+  // 'PENDENTE' is treated as a universal sector status to avoid blocking basic workflow.
+  // Only validate when the client is explicitly trying to set a sector status.
+  if (requestedSectorStatus && requestedSectorStatus !== "PENDENTE" && statusSector && !(statusSector.statuses || []).some((item: any) => item.name === requestedSectorStatus)) {
     const error = new Error("Invalid sector status") as Error & { status?: number };
     error.status = 400;
     throw error;
@@ -1127,7 +1135,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       requestedAccessibleSectorIds.every((value, index) => value === existingAccessibleSectorIds[index]) &&
       normalizedCompletionNote === (existingOrder.completionNote || null) &&
       normalizedCancellationReason === (existingOrder.cancellationReason || null) &&
-      normalizedSectorStatus === (existingOrder.sectorStatus || null) &&
+      nextSectorStatus === (existingOrder.sectorStatus || null) &&
       attachmentListsMatch(requestAttachmentsPayload, existingRequestAttachmentEntities) &&
       ((!completionAttachmentPayload && !completionAttachmentEntity) || (!!completionAttachmentPayload && !!completionAttachmentEntity && attachmentSignatureFromPayload(completionAttachmentPayload) === attachmentSignatureFromStored(completionAttachmentEntity)));
 
@@ -1161,7 +1169,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       requestedAccessibleSectorIds.every((value, index) => value === existingAccessibleSectorIds[index]) &&
       normalizedCompletionNote === (existingOrder.completionNote || null) &&
       normalizedCancellationReason === (existingOrder.cancellationReason || null) &&
-      normalizedSectorStatus === (existingOrder.sectorStatus || null) &&
+      nextSectorStatus === (existingOrder.sectorStatus || null) &&
       attachmentListsMatch(requestAttachmentsPayload, existingRequestAttachmentEntities) &&
       ((!completionAttachmentPayload && !completionAttachmentEntity) || (!!completionAttachmentPayload && !!completionAttachmentEntity && attachmentSignatureFromPayload(completionAttachmentPayload) === attachmentSignatureFromStored(completionAttachmentEntity)));
 
@@ -1188,7 +1196,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
         normalizedExternalCode !== (existingOrder.externalCode || null) ||
         !attachmentListsMatch(requestAttachmentsPayload, existingRequestAttachmentEntities);
 
-      const sectorStatusChanged = normalizedSectorStatus !== (existingOrder.sectorStatus || null);
+      const sectorStatusChanged = hasSectorStatusProp && requestedSectorStatus !== (existingOrder.sectorStatus || null);
       if (financialFieldsChanged || structuralFieldsChanged || (sectorStatusChanged && !canActorEditSectorStatus)) {
         const error = new Error("Forbidden") as Error & { status?: number };
         error.status = 403;
@@ -1216,7 +1224,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       description: String(orderPayload.description || '').trim(),
       expectedDate: parseDateOnly(orderPayload.expectedDate),
       status: Object.values(OrderStatus).includes(orderPayload.status) ? orderPayload.status : OrderStatus.PENDENTE,
-      sectorStatus: createdSectorStatus,
+      sectorStatus: nextSectorStatus,
       completionNote: toOptionalText(orderPayload.completionNote),
       cancellationReason: toOptionalText(orderPayload.cancellationReason),
       requestedValue: orderPayload.value ?? null,
