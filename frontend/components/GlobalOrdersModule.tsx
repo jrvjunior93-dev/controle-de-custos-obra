@@ -263,6 +263,7 @@ const exportOrdersToExcel = async (orders: Order[]) => {
 export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects, sectors, user, onUpdateProjects, onPersistProject, onPersistMemberOrder, onUpdateMemberOrderSectorStatus, onAddMemberOrderMessage, onDeleteMemberOrder, orderTypes }) => {
   const canManageAllOrders = canManageAssignedOrders(user.role);
   const canImportOrders = user.role === 'SUPERADMIN';
+  const usesAssignedProjectScope = !canManageAllOrders && (!user.sectorName || isObraSectorName(user.sectorName));
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     const defaults = {
       select: 60,
@@ -331,6 +332,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
   const canUserSeeOrder = (order: Order) => {
     if (canManageAllOrders) return true;
+    if (usesAssignedProjectScope) return true;
     if (order.requesterId === user.id) return true;
     if (!user.sectorId) return false;
     return order.currentSectorId === user.sectorId || (order.accessibleSectorIds || []).includes(user.sectorId);
@@ -389,7 +391,6 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     window.localStorage.setItem(GLOBAL_ORDERS_COLUMN_WIDTHS_KEY, JSON.stringify(columnWidths));
   }, [columnWidths]);
 
-  const usesAssignedProjectScope = !canManageAllOrders && (!user.sectorName || isObraSectorName(user.sectorName));
   const assignedProjects = canManageAllOrders || !usesAssignedProjectScope ? projects : projects.filter((project) => user.assignedProjectIds?.includes(project.id));
   const isOtherOrderType = (value?: string) => String(value || '').trim().toUpperCase() === 'OUTROS';
   const isNewOrderOtherType = isOtherOrderType(newOrder.type);

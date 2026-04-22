@@ -660,8 +660,12 @@ async function mapProvisioningFromDb(record: any) {
 }
 
 async function mapProjectFromDb(project: any, authUser?: any) {
+  // Users scoped by assigned projects (OBRA sector or no sector) should see all orders
+  // within projects they can access. Other sectors keep the sector-based visibility rule.
   const scopedOrders = authUser
-    ? (project.orders || []).filter((order: any) => canUserAccessOrder(order, authUser.id, authUser.role, authUser.sectorId))
+    ? (shouldUseAssignedProjectScope(authUser)
+      ? (project.orders || [])
+      : (project.orders || []).filter((order: any) => canUserAccessOrder(order, authUser.id, authUser.role, authUser.sectorId)))
     : (project.orders || []);
 
   return {
