@@ -796,7 +796,17 @@ const App: React.FC = () => {
 
         {view === 'PROJECT_LIST' && canManageProjectPortfolio && (
 
-          <ProjectList projects={visibleProjects} onSelect={(id) => setNavigationState('PROJECT_DETAIL', id)} onAdd={async (p) => handleSaveProject({ ...p, id: crypto.randomUUID(), code: String(p.code || '').trim().toUpperCase(), budget: [], costs: [], installments: [], orders: [] })} onDelete={handleDeleteProject} canCreateProject={canManageGlobalData} canDeleteProject={canManageGlobalData} canManageProject={canManageProjectPortfolio} />
+          <ProjectList
+            projects={visibleProjects}
+            onSelect={(id) => setNavigationState('PROJECT_DETAIL', id)}
+            onAdd={async (p) => handleSaveProject({ ...p, id: crypto.randomUUID(), code: String(p.code || '').trim().toUpperCase(), budget: [], costs: [], installments: [], orders: [] })}
+            onDelete={handleDeleteProject}
+            onUpdateProjectCode={handleUpdateProjectCode}
+            canCreateProject={canManageGlobalData}
+            canDeleteProject={canManageGlobalData}
+            canManageProject={canManageProjectPortfolio}
+            canEditProjectCode={user.role === 'SUPERADMIN'}
+          />
 
         )}
 
