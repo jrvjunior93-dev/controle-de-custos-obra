@@ -6,6 +6,7 @@ interface ProjectDetailProps {
   sectors: Sector[];
   user: User;
   onUpdate: (p: Project) => Promise<void> | void;
+  onUpdateProjectCode: (projectId: string, code: string) => Promise<void>;
   onPersistOrder: (projectId: string, order: Order) => Promise<Order>;
   onUpdateOrderSectorStatus: (projectId: string, orderId: string, sectorStatus?: string) => Promise<Order>;
   onAddOrderMessage: (projectId: string, orderId: string, message: Partial<OrderMessage>) => Promise<OrderMessage>;
@@ -30,15 +31,23 @@ const TabFallback: React.FC = () => (
   </div>
 );
 
-export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, user, onUpdate, onPersistOrder, onUpdateOrderSectorStatus, onAddOrderMessage, onDeleteOrder, onBack }) => {
+export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, user, onUpdate, onUpdateProjectCode, onPersistOrder, onUpdateOrderSectorStatus, onAddOrderMessage, onDeleteOrder, onBack }) => {
   const [activeTab, setActiveTab] = useState<Tab>('RESUMO');
   const [reportMode, setReportMode] = useState<ReportMode>('CUSTO');
   const [exportStatus, setExportStatus] = useState<ExportStatus>('IDLE');
+  const [isEditingProjectCode, setIsEditingProjectCode] = useState(false);
+  const [projectCodeDraft, setProjectCodeDraft] = useState(project.code || '');
+  const [isSavingProjectCode, setIsSavingProjectCode] = useState(false);
   const budgetDraftStorageKey = useMemo(() => `csc_brape_budget_draft_${project.id}`, [project.id]);
   const projectTabStorageKey = useMemo(() => `csc_brape_project_tab_${project.id}`, [project.id]);
   const [budgetDraft, setBudgetDraft] = useState(project.budget || []);
   const canManageProject = isGlobalAdmin(user.role) || (isProjectAdmin(user.role) && user.assignedProjectIds?.includes(project.id));
   const canAccessFullProjectTabs = user.role !== 'ADMIN_OBRA';
+  const canEditProjectCode = user.role === 'SUPERADMIN';
+
+  useEffect(() => {
+    setProjectCodeDraft(project.code || '');
+  }, [project.code]);
 
   useEffect(() => {
     const savedTab = sessionStorage.getItem(projectTabStorageKey) as Tab | null;
@@ -160,6 +169,18 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, 
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">{project.name}</h2>
+                <span className="text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-700 border border-slate-200 px-2 py-1" title="Codigo da obra">
+                  {project.code}
+                </span>
+                {canEditProjectCode && (
+                  <button
+                    onClick={() => setIsEditingProjectCode(true)}
+                    className="h-8 w-8 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    title="Editar codigo da obra"
+                  >
+                    <i className="fas fa-pen text-[12px]"></i>
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-4 text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
                 <span><i className="fas fa-map-marker-alt mr-1"></i> {project.location}</span>
@@ -191,6 +212,63 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, 
           ))}
         </div>
       </div>
+
+      {isEditingProjectCode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white border border-slate-200 shadow-2xl w-full max-w-[520px] p-6 rounded-none">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-widest text-slate-800">Editar codigo da obra</h3>
+                <p className="text-[11px] text-slate-500 mt-1">Ex: OBRA7. Evite acentos e espacos.</p>
+              </div>
+              <button onClick={() => setIsEditingProjectCode(false)} className="h-9 w-9 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" title="Fechar" disabled={isSavingProjectCode}>
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+
+            <div className="mt-5">
+              <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Codigo</label>
+              <input
+                value={projectCodeDraft}
+                onChange={(e) => setProjectCodeDraft(e.target.value)}
+                className="mt-2 w-full border border-slate-200 px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-slate-400"
+                placeholder="OBRA7"
+                disabled={isSavingProjectCode}
+              />
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                onClick={() => { setIsEditingProjectCode(false); setProjectCodeDraft(project.code || ''); }}
+                className="px-4 py-2 border border-slate-200 bg-white text-slate-700 text-[11px] font-black uppercase tracking-widest hover:bg-slate-50"
+                disabled={isSavingProjectCode}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  const next = String(projectCodeDraft || '').trim();
+                  if (!next) { alert('Informe o codigo da obra.'); return; }
+                  try {
+                    setIsSavingProjectCode(true);
+                    await onUpdateProjectCode(project.id, next);
+                    setIsEditingProjectCode(false);
+                    alert('Codigo da obra atualizado!');
+                  } catch (e: any) {
+                    alert(e?.message || 'Nao foi possivel atualizar o codigo da obra.');
+                  } finally {
+                    setIsSavingProjectCode(false);
+                  }
+                }}
+                className="px-5 py-2 bg-slate-900 text-white text-[11px] font-black uppercase tracking-widest hover:bg-slate-800"
+                disabled={isSavingProjectCode}
+              >
+                {isSavingProjectCode ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 p-8 overflow-y-auto rounded-none">
         <div className="no-print">

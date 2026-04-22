@@ -65,6 +65,13 @@ export const dbService = {
     });
   },
 
+  async updateProjectCode(projectId: string, code: string) {
+    return request<any>(`/projects/${projectId}/code`, {
+      method: "PATCH",
+      body: JSON.stringify({ code })
+    });
+  },
+
   async deleteProject(projectId: string) {
     return request<{ ok: boolean }>(`/projects/${projectId}`, {
       method: "DELETE"

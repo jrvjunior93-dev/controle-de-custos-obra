@@ -506,6 +506,15 @@ const App: React.FC = () => {
     });
   };
 
+  const handleUpdateProjectCode = async (projectId: string, code: string) => {
+    const savedProject = normalizeProjectRecord(await dbService.updateProjectCode(projectId, code));
+    setProjects((currentProjects) => {
+      const nextProjects = currentProjects.map((item) => item.id === savedProject.id ? savedProject : item);
+      localStorage.setItem('csc_brape_projects', JSON.stringify(nextProjects));
+      return nextProjects;
+    });
+  };
+
   const handleSaveSector = async (sector: Sector) => {
     const savedSector = normalizeSectorRecord(await dbService.upsertSector(sector));
     setSectors((currentSectors) => {
@@ -794,7 +803,18 @@ const App: React.FC = () => {
         <Suspense fallback={<ScreenFallback />}>
           {view === 'PROJECT_DETAIL' && visibleProjects.find((p) => p.id === selectedProjectId) && (
 
-            <ProjectDetail project={visibleProjects.find((p) => p.id === selectedProjectId)!} sectors={sectors} user={user} onUpdate={handleSaveProject} onPersistOrder={handleSyncMemberOrder} onUpdateOrderSectorStatus={handleUpdateMemberOrderSectorStatus} onAddOrderMessage={handleAddMemberOrderMessage} onDeleteOrder={handleDeleteMemberOrder} onBack={() => setNavigationState('PROJECT_LIST', null)} />
+            <ProjectDetail
+              project={visibleProjects.find((p) => p.id === selectedProjectId)!}
+              sectors={sectors}
+              user={user}
+              onUpdate={handleSaveProject}
+              onUpdateProjectCode={handleUpdateProjectCode}
+              onPersistOrder={handleSyncMemberOrder}
+              onUpdateOrderSectorStatus={handleUpdateMemberOrderSectorStatus}
+              onAddOrderMessage={handleAddMemberOrderMessage}
+              onDeleteOrder={handleDeleteMemberOrder}
+              onBack={() => setNavigationState('PROJECT_LIST', null)}
+            />
 
           )}
 

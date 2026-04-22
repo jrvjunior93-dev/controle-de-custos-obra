@@ -1429,6 +1429,31 @@ app.get("/projects", requireAuth, async (req: AuthRequest, res) => {
   res.json(await Promise.all(projects.map((project) => mapProjectFromDb(project, scopedUser))));
 });
 
+// Update project code without re-writing the whole project graph (safe in production).
+app.patch("/projects/:id/code", requireAuth, requireRole([UserRole.SUPERADMIN]), async (req: AuthRequest, res) => {
+  const projectId = Number(req.params.id);
+  if (!Number.isFinite(projectId)) return res.status(400).json({ error: "Invalid project id" });
+
+  const parsed = z.object({ code: z.string().min(1) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  const nextCode = normalizeProjectCode(parsed.data.code);
+  if (!nextCode) return res.status(400).json({ error: "Invalid project code" });
+
+  const conflict = await prisma.project.findFirst({
+    where: { code: nextCode, NOT: { id: projectId } },
+    select: { id: true }
+  });
+  if (conflict) return res.status(409).json({ error: "Project code already exists" });
+
+  await prisma.project.update({ where: { id: projectId }, data: { code: nextCode } });
+
+  const scopedUser = req.authUser ? await getScopedAuthUser(Number(req.authUser.id)) : null;
+  const project = await prisma.project.findUnique({ where: { id: projectId }, include: projectInclude });
+  if (!project) return res.status(404).json({ error: "Project not found" });
+  res.json(await mapProjectFromDb(project, scopedUser || undefined));
+});
+
 app.put("/projects/:id", requireAuth, async (req: AuthRequest, res) => {
   const parsed = projectPayloadSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
