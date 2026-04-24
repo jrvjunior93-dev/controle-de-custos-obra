@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
-import { Attachment, ExecutedCost, Order, OrderMessage, OrderStatus, Project, Sector, User, canManageAssignedOrders } from '../types';
+import { Attachment, ExecutedCost, Order, OrderMessage, Project, Sector, User, canManageAssignedOrders } from '../types';
 import { AttachmentViewerModal } from './AttachmentViewerModal';
 import { canPreviewAttachmentInline, resolveAttachmentForAccess, triggerAttachmentDownload } from '../utils/attachments';
 
@@ -66,22 +66,6 @@ const getOrderCodeSearchTokens = (order: Order) => {
 
 const isObraSectorName = (name?: string) => String(name || '').trim().toUpperCase() === 'OBRA';
 const isComprasSectorMember = (user: User) => user.role === 'MEMBRO' && String(user.sectorName || '').trim().toUpperCase() === 'COMPRAS';
-const getStatusColor = (status: OrderStatus) => {
-  switch (status) {
-    case 'PENDENTE':
-      return 'bg-amber-100 text-amber-700';
-    case 'EM_ANALISE':
-      return 'bg-blue-100 text-blue-700';
-    case 'AGUARDANDO_INFORMACAO':
-      return 'bg-purple-100 text-purple-700';
-    case 'CONCLUIDO':
-      return 'bg-emerald-100 text-emerald-700';
-    case 'CANCELADO':
-      return 'bg-rose-100 text-rose-700';
-    default:
-      return 'bg-slate-100 text-slate-700';
-  }
-};
 
 const getEffectiveOrderStatusLabel = (order: Order) => order.sectorStatus || 'Sem status setorial';
 
@@ -249,7 +233,6 @@ const exportOrdersToExcel = async (orders: Order[]) => {
     'Descrição': order.description || '',
     'Tipo do Pedido': order.type || '',
     'Valor do Pedido': Number(order.value || 0),
-    'Status Atual': order.status.replaceAll('_', ' '),
     'Status Setorial': order.sectorStatus || '',
     'Setor Atual': order.currentSectorName || '',
     'Solicitante': order.requesterName || '',
@@ -858,7 +841,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
           accessibleSectorIds: Array.from(new Set([...(order.accessibleSectorIds || []), ...(order.currentSectorId ? [order.currentSectorId] : []), bulkForwardSectorId])),
           responsibleId: undefined,
           responsibleName: undefined,
-          status: 'PENDENTE' as OrderStatus,
+          status: 'PENDENTE',
           messages: [...(order.messages || []), {
             id: crypto.randomUUID(),
             userId: 'system',
@@ -1246,7 +1229,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
         </div>
         <div className="relative">
           <button type="button" onClick={() => { setIsStatusFilterOpen((current) => !current); setIsProjectFilterOpen(false); setIsTypeFilterOpen(false); }} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 text-left text-[10px] font-black uppercase flex items-center justify-between">
-            <span>{formatFilterLabel(filterStatus, 'Status (Todos)', statusFilterItems)}</span>
+            <span>{formatFilterLabel(filterStatus, 'Status Setorial (Todos)', statusFilterItems)}</span>
             <i className={`fas fa-chevron-${isStatusFilterOpen ? 'up' : 'down'} text-slate-400`}></i>
           </button>
           {isStatusFilterOpen && (
@@ -1369,7 +1352,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 {renderColumnHeader('description', 'Descrição', 'px-5')}
                 {renderColumnHeader('type', 'Tipo do Pedido')}
                 {renderColumnHeader('value', 'Valor do Pedido')}
-                {renderColumnHeader('status', 'Status Atual')}
+                {renderColumnHeader('status', 'Status Setorial')}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from 'react';
-import { Attachment, ExecutedCost, Order, OrderMessage, OrderStatus, Project, Sector, User, canManageAssignedOrders } from '../types';
+import { Attachment, ExecutedCost, Order, OrderMessage, Project, Sector, User, canManageAssignedOrders } from '../types';
 import { AttachmentViewerModal } from './AttachmentViewerModal';
 import { canPreviewAttachmentInline, resolveAttachmentForAccess, triggerAttachmentDownload } from '../utils/attachments';
 
@@ -94,7 +94,6 @@ const exportOrdersToExcel = async (projectName: string, orders: Order[]) => {
     'Descrição': order.description || '',
     'Tipo do Pedido': order.type || '',
     'Valor do Pedido': Number(order.value || 0),
-    'Status Atual': order.status.replaceAll('_', ' '),
     'Status Setorial': order.sectorStatus || '',
     'Setor Atual': order.currentSectorName || '',
     'Solicitante': order.requesterName || '',
@@ -854,23 +853,6 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     })();
   };
 
-const getStatusColor = (status: OrderStatus) => {
-  switch (status) {
-      case 'PENDENTE':
-        return 'bg-amber-100 text-amber-700';
-      case 'EM_ANALISE':
-        return 'bg-blue-100 text-blue-700';
-      case 'AGUARDANDO_INFORMACAO':
-        return 'bg-purple-100 text-purple-700';
-      case 'CONCLUIDO':
-        return 'bg-emerald-100 text-emerald-700';
-      case 'CANCELADO':
-        return 'bg-rose-100 text-rose-700';
-      default:
-        return 'bg-slate-100 text-slate-700';
-  }
-};
-
 const renderListStatusBadge = (order: Order) => {
   return (
     <span
@@ -900,7 +882,7 @@ const renderListStatusBadge = (order: Order) => {
         <input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Filtrar por código do pedido..." className="bg-slate-50 border border-slate-200 px-4 py-3 text-xs font-bold outline-none" />
         <div className="relative">
           <button type="button" onClick={() => { setIsStatusFilterOpen((current) => !current); setIsTypeFilterOpen(false); }} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 text-left text-[10px] font-black uppercase flex items-center justify-between">
-            <span>{formatFilterLabel(filterStatus, 'Status (Todos)', statusFilterItems)}</span>
+            <span>{formatFilterLabel(filterStatus, 'Status Setorial (Todos)', statusFilterItems)}</span>
             <i className={`fas fa-chevron-${isStatusFilterOpen ? 'up' : 'down'} text-slate-400`}></i>
           </button>
           {isStatusFilterOpen && (
