@@ -427,8 +427,10 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     if ((latestOrder.messages || []).length < (isActionModalOpen.messages || []).length) return;
 
     setIsActionModalOpen(latestOrder);
-    selectedSectorStatusRef.current = latestOrder.sectorStatus || '';
-    setSelectedSectorStatus(selectedSectorStatusRef.current);
+    if (!isSectorStatusModalOpen) {
+      selectedSectorStatusRef.current = latestOrder.sectorStatus || '';
+      setSelectedSectorStatus(selectedSectorStatusRef.current);
+    }
     setSelectedMacroItemId(latestOrder.macroItemId || '');
     setSelectedForwardSectorId(latestOrder.currentSectorId || '');
     setEditableOrderValue(Number(latestOrder.value || 0));
