@@ -1000,7 +1000,6 @@ async function listEligiblePriorityOrders(batch: any, query: any = {}) {
   const where: any = selectedOnly
     ? { id: { in: selectedIds.length > 0 ? selectedIds : [-1] } }
     : {
-        status: { notIn: [OrderStatus.CONCLUIDO, OrderStatus.CANCELADO] },
         requestedValue: { not: null },
         OR: [
           { priorityApproved: false },
@@ -1047,7 +1046,6 @@ async function replacePriorityBatchItems(batch: any, orderIds: number[], userId:
     ? await tx.order.findMany({
         where: {
           id: { in: orderIds },
-          status: { notIn: [OrderStatus.CONCLUIDO, OrderStatus.CANCELADO] },
           requestedValue: { not: null },
           OR: [
             { priorityApproved: false },
@@ -1852,10 +1850,6 @@ app.post("/projects/:projectId/orders/:orderId/messages", requireAuth, async (re
     if (!canUserAccessOrder(order, Number(req.authUser.id), req.authUser.role, actorUser.sectorId || undefined, actorUser.sector?.name)) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    if (order.status === OrderStatus.CONCLUIDO || order.status === OrderStatus.CANCELADO) {
-      return res.status(400).json({ error: "Este pedido não aceita mais interações." });
-    }
-
     const createdMessage = await prisma.orderMessage.create({
       data: {
         orderId: order.id,
@@ -1927,10 +1921,6 @@ app.patch("/projects/:projectId/orders/:orderId/sector-status", requireAuth, asy
       req.authUser.role === UserRole.ADMIN ||
       actorSectorHasAccess;
     if (!canActorEditSectorStatus) return res.status(403).json({ error: "Forbidden" });
-    if (order.status === OrderStatus.CONCLUIDO || order.status === OrderStatus.CANCELADO) {
-      return res.status(400).json({ error: "Este pedido não aceita alteração de status setorial." });
-    }
-
     const statusSectorId =
       req.authUser.role === UserRole.SUPERADMIN || req.authUser.role === UserRole.ADMIN
         ? (actorUser.sectorId || order.currentSectorId || null)

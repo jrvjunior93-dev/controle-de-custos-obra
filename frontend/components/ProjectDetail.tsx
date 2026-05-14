@@ -90,7 +90,7 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, 
   const totalBudgeted = currentBudget.reduce((sum, item) => sum + item.budgetedValue, 0);
   const paidCosts = project.costs || [];
   const pendingInstallments = (project.installments || []).filter((installment) => installment.status === 'PENDING');
-  const activeOrdersWithValue = (project.orders || []).filter((order) => (order.value || 0) > 0 && order.status !== 'CONCLUIDO' && order.status !== 'CANCELADO');
+  const activeOrdersWithValue = (project.orders || []).filter((order) => (order.value || 0) > 0);
   const totalExecuted = paidCosts.reduce((sum, item) => sum + item.totalValue, 0);
   const totalToPay = pendingInstallments.reduce((sum, installment) => sum + installment.value, 0);
   const totalRequested = activeOrdersWithValue.reduce((sum, order) => sum + Number(order.value || 0), 0);

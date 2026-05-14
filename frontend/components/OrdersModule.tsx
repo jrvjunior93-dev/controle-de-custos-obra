@@ -152,9 +152,6 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const [filterEndDate, setFilterEndDate] = useState('');
   const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
   const [isTypeFilterOpen, setIsTypeFilterOpen] = useState(false);
-  const [actionType, setActionType] = useState<'COMPLETE' | 'CANCEL' | 'NONE'>('NONE');
-  const [actionText, setActionText] = useState('');
-  const [actionAttachments, setActionAttachments] = useState<Attachment[]>([]);
   const [messageText, setMessageText] = useState('');
   const [messageAttachments, setMessageAttachments] = useState<Attachment[]>([]);
   const [applyOrderCost, setApplyOrderCost] = useState(false);
@@ -181,16 +178,14 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const orders = project.orders || [];
   const isOtherOrderType = (value?: string) => String(value || '').trim().toUpperCase() === 'OUTROS';
   const isNewOrderOtherType = isOtherOrderType(newOrder.type);
-  const isOrderActive = (order: Order) => order.status !== 'CONCLUIDO' && order.status !== 'CANCELADO';
-  const canOpenOrderDetails = (order: Order) => isOrderActive(order) || user.role === 'SUPERADMIN' || user.role === 'ADMIN';
-  const canTreatOrder = (order: Order) => canManageProjectOrders && isOrderActive(order);
-  const canReopenOrder = (order: Order) => canManageProjectOrders && (order.status === 'CONCLUIDO' || order.status === 'CANCELADO');
+  const isOrderActive = (_order: Order) => true;
+  const canOpenOrderDetails = (_order: Order) => true;
   const canManageFinancialFields = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
   const canEditOrderValue = canManageFinancialFields || isComprasSectorMember(user);
   const canDeleteOrderDirectly = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
-  const canCommentOnOrder = (order: Order) => isOrderActive(order);
-  const canForwardOrder = (order: Order) => canManageProjectOrders && isOrderActive(order);
-  const canEditSectorStatus = (order: Order) => isOrderActive(order) && (
+  const canCommentOnOrder = (_order: Order) => true;
+  const canForwardOrder = (_order: Order) => canManageProjectOrders;
+  const canEditSectorStatus = (order: Order) => (
     user.role === 'SUPERADMIN' ||
     user.role === 'ADMIN' ||
     (!!user.sectorId && (order.currentSectorId === user.sectorId || (order.accessibleSectorIds || []).includes(user.sectorId)))
@@ -400,9 +395,6 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   };
 
   const resetActionState = () => {
-    setActionType('NONE');
-    setActionText('');
-    setActionAttachments([]);
     setMessageText('');
     setMessageAttachments([]);
     setEditableOrderValue(0);
@@ -410,10 +402,6 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   };
 
   const openOrderModal = (order: Order) => {
-    if (!canOpenOrderDetails(order)) {
-      alert('Somente ADMIN CENTRAL e SUPERADMIN podem abrir pedidos finalizados ou cancelados.');
-      return;
-    }
     setIsActionModalOpen(order);
     resetActionState();
     const currentValue = Number(order.value || 0);
@@ -447,7 +435,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     setHasSavedCostAssignment(linkedCostExists);
   }, [project, isActionModalOpen]);
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, target: 'NEW' | 'ACTION' | 'MESSAGE') => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, target: 'NEW' | 'MESSAGE') => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
@@ -472,10 +460,8 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
 
     if (target === 'NEW') {
       setNewOrder((current) => ({ ...current, attachments: [...(current.attachments || []), ...uploaded] }));
-    } else if (target === 'MESSAGE') {
-      setMessageAttachments((current) => [...current, ...uploaded]);
     } else {
-      setActionAttachments((current) => [...current, ...uploaded]);
+      setMessageAttachments((current) => [...current, ...uploaded]);
     }
 
     event.target.value = '';
@@ -483,10 +469,6 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
 
   const removeNewOrderAttachment = (attachmentId: string) => {
     setNewOrder((current) => ({ ...current, attachments: (current.attachments || []).filter((attachment) => attachment.id !== attachmentId) }));
-  };
-
-  const removeActionAttachment = (attachmentId: string) => {
-    setActionAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
   };
 
   const removeMessageAttachment = (attachmentId: string) => {
@@ -651,48 +633,6 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     }
   };
 
-  const handleAction = async () => {
-    if (!isActionModalOpen || actionType === 'NONE') return;
-    if (!canTreatOrder(isActionModalOpen)) return alert('Você não pode tratar este pedido.');
-    if (actionType === 'CANCEL' && !actionText.trim()) return alert('Preencha a mensagem do cancelamento antes de continuar.');
-    const actionLabel = actionType === 'COMPLETE' ? 'concluir' : 'cancelar';
-    if (!confirm(`Confirmar a ação de ${actionLabel} para o pedido "${isActionModalOpen.title}"?`)) return;
-
-    const updatedOrder: Order = {
-      ...isActionModalOpen,
-      value: canEditOrderValue ? Number(editableOrderValue || 0) : isActionModalOpen.value,
-      macroItemId: canManageFinancialFields ? (selectedMacroItemId || undefined) : isActionModalOpen.macroItemId
-    };
-
-    if (actionType === 'COMPLETE') {
-      updatedOrder.status = 'CONCLUIDO';
-      updatedOrder.completionAttachment = actionAttachments[0] || undefined;
-      updatedOrder.completionNote = actionText;
-    } else if (actionType === 'CANCEL') {
-      updatedOrder.status = 'CANCELADO';
-      updatedOrder.cancellationReason = actionText.trim();
-      updatedOrder.messages = [...(updatedOrder.messages || []), {
-        id: crypto.randomUUID(),
-        userId: user.id,
-        userName: user.name,
-        text: `Pedido cancelado: ${actionText.trim()}`,
-        date: new Date().toISOString(),
-        attachments: actionAttachments.length > 0 ? actionAttachments : undefined
-      }];
-    }
-
-    try {
-      const savedOrder = await onPersistOrder(project.id, updatedOrder);
-      setIsActionModalOpen(savedOrder);
-      setActionType('NONE');
-      setActionText('');
-      setActionAttachments([]);
-    } catch (error) {
-      console.error('Erro ao atualizar status do pedido:', error);
-      alert('Não foi possível concluir a atualização do pedido. Tente novamente.');
-    }
-  };
-
   const handleSaveCostAssignment = async () => {
     if (!isActionModalOpen) return;
     if (!canManageFinancialFields) return alert('Você não pode alterar a vinculação de custo deste pedido.');
@@ -748,7 +688,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
 
   const handleSaveOrderValue = async () => {
     if (!isActionModalOpen) return;
-    if (!canEditOrderValue || !isOrderActive(isActionModalOpen)) return alert('Você não pode alterar o valor deste pedido.');
+    if (!canEditOrderValue) return alert('Você não pode alterar o valor deste pedido.');
     if (Number(editableOrderValue || 0) === Number(isActionModalOpen.value || 0)) return;
     if (!confirm(`Salvar o novo valor do pedido "${isActionModalOpen.title}"?`)) return;
 
@@ -821,7 +761,6 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       accessibleSectorIds: Array.from(new Set([...(isActionModalOpen.accessibleSectorIds || []), ...(isActionModalOpen.currentSectorId ? [isActionModalOpen.currentSectorId] : []), selectedForwardSectorId])),
       responsibleId: undefined,
       responsibleName: undefined,
-      status: 'PENDENTE',
       messages: [...(isActionModalOpen.messages || []), {
         id: crypto.randomUUID(),
         userId: 'system',
@@ -838,42 +777,6 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       } catch (error) {
         console.error('Erro ao encaminhar pedido:', error);
         alert('Não foi possível encaminhar o pedido. Tente novamente.');
-      }
-    })();
-  };
-
-  const handleReopenOrder = () => {
-    if (!isActionModalOpen) return;
-    if (!canReopenOrder(isActionModalOpen)) return alert('Você não pode reabrir este pedido.');
-    if (!confirm(`Reabrir o pedido "${isActionModalOpen.title}"?`)) return;
-
-    const updatedOrder: Order = {
-      ...isActionModalOpen,
-      status: 'PENDENTE',
-      messages: [...(isActionModalOpen.messages || []), {
-        id: crypto.randomUUID(),
-        userId: 'system',
-        userName: 'SISTEMA',
-        text: `${user.name} reabriu o pedido.`,
-        date: new Date().toISOString()
-      }]
-    };
-
-    void (async () => {
-      try {
-        const savedOrder = await onPersistOrder(project.id, updatedOrder);
-        const costsWithoutOrder = (project.costs || []).filter((cost) => cost.originOrderId !== updatedOrder.id);
-        if (costsWithoutOrder.length !== (project.costs || []).length) {
-          await onUpdate({
-            ...project,
-            costs: costsWithoutOrder,
-          });
-        }
-        setIsActionModalOpen(savedOrder);
-        setApplyOrderCost(false);
-      } catch (error) {
-        console.error('Erro ao reabrir pedido:', error);
-        alert('Não foi possível reabrir o pedido. Tente novamente.');
       }
     })();
   };
@@ -1248,12 +1151,12 @@ const renderListStatusBadge = (order: Order) => {
                         className="w-full bg-slate-50 border border-slate-200 px-3 py-2 font-black text-[10px] uppercase"
                         value={selectedMacroItemId}
                         onChange={(event) => setSelectedMacroItemId(event.target.value)}
-                        disabled={!canManageFinancialFields || !isOrderActive(isActionModalOpen)}
+                        disabled={!canManageFinancialFields}
                       >
                         <option value="">Selecione...</option>
                         {project.budget.map((macro) => <option key={macro.id} value={macro.id}>{macro.description}</option>)}
                       </select>
-                      {canManageFinancialFields && isOrderActive(isActionModalOpen) && (
+                      {canManageFinancialFields && (
                         <button type="button" onClick={handleUpdateMacroItem} className="w-full bg-slate-900 text-white py-2 font-black uppercase text-[9px] tracking-widest">
                           Salvar Item Macro
                         </button>
@@ -1337,19 +1240,10 @@ const renderListStatusBadge = (order: Order) => {
                 </div>
 
                 <div className="space-y-6">
-                  {canReopenOrder(isActionModalOpen) && (
-                    <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-3">
-                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Gerenciar Pedido</h4>
-                      <button onClick={handleReopenOrder} className="w-full bg-emerald-50 text-emerald-700 border border-emerald-200 py-4 font-black uppercase text-[10px] shadow-sm">
-                        Reabrir Pedido
-                      </button>
-                    </div>
-                  )}
-
                   <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Valor Atual</h4>
                     <p className="text-[10px] font-black text-slate-800">{formatMoney(isActionModalOpen.value)}</p>
-                    {canEditOrderValue && isOrderActive(isActionModalOpen) && (
+                    {canEditOrderValue && (
                       <div className="mt-3 space-y-3">
                         <div className="relative">
                           <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-black">R$</span>
@@ -1414,12 +1308,6 @@ const renderListStatusBadge = (order: Order) => {
                   </div>
                   )}
 
-                  {isActionModalOpen.status === 'CANCELADO' && (
-                  <div className="bg-rose-50 p-6 border-l-4 border-rose-500">
-                    <h4 className="text-[11px] font-black text-rose-700 uppercase mb-2">Pedido Cancelado</h4>
-                    <p className="text-xs text-rose-800 font-medium italic">"{isActionModalOpen.cancellationReason || 'Sem motivo informado.'}"</p>
-                  </div>
-                  )}
                 </div>
               </div>
             </div>

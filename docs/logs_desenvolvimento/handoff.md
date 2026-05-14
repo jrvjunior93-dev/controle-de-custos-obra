@@ -23,6 +23,12 @@
   - Central de Pedidos tambem substitui imediatamente o pedido local pelo retorno do endpoint de status setorial.
   - Files: `frontend/App.tsx`, `frontend/components/GlobalOrdersModule.tsx`
 
+- Change: remove fluxo legado de tratamento por status principal de pedidos.
+  - Interface deixa de oferecer concluir, cancelar e reabrir pedido; o fluxo operacional passa a ser comentario, anexo, encaminhamento e status setorial.
+  - Regras de tela e backend deixam de bloquear comentario, anexo, status setorial e lotes de prioridade por `CONCLUIDO`/`CANCELADO` legado.
+  - O campo `status` principal continua no modelo por compatibilidade, mas nao guia mais a operacao atual.
+  - Files: `frontend/components/OrdersModule.tsx`, `frontend/components/GlobalOrdersModule.tsx`, `frontend/components/ProjectDetail.tsx`, `backend/src/index.ts`
+
 ## 2026-04-17
 - Fix: preserve `sectorStatus` during order upserts when the payload does not include `sectorStatus`.
   - Why: the `PUT /projects/:projectId/orders/:orderId` flow can run after setting sector status and would wipe it (treated missing as `null`), causing "need to change twice".
