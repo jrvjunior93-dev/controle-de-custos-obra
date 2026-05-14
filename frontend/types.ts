@@ -143,6 +143,9 @@ export interface Order {
   messages: OrderMessage[];
   createdAt: string;
   value?: number;
+  priorityApproved?: boolean;
+  priorityApprovedAt?: string;
+  priorityBatchId?: string;
 }
 
 export type UserRole = 'SUPERADMIN' | 'ADMIN' | 'ADMIN_OBRA' | 'MEMBRO';
@@ -205,12 +208,73 @@ export interface ProvisioningDashboardData {
   upcoming: ProvisioningRecord[];
 }
 
+export type OrderPriorityBatchStatus = 'ABERTO' | 'AGUARDANDO_APROVACAO' | 'APROVADO' | 'RECUSADO' | 'CANCELADO';
+export type OrderPriorityBatchType = 'DIRETORIA_ADMINISTRATIVA' | 'DIRETORIA_OBRAS';
+
+export interface OrderPriorityBatchItem {
+  id: string;
+  selectedValue: number;
+  selectedAt: string;
+  order: Order;
+}
+
+export interface OrderPriorityBatch {
+  id: string;
+  type: OrderPriorityBatchType;
+  status: OrderPriorityBatchStatus;
+  originSector: string;
+  targetSector: string;
+  availableValue: number | null;
+  selectedValue: number;
+  balanceValue: number | null;
+  itemsCount: number;
+  note?: string;
+  rejectionReason?: string;
+  createdByUserId: string;
+  createdByUserName: string;
+  submittedByUserName?: string;
+  submittedAt?: string;
+  approvedByUserName?: string;
+  approvedAt?: string;
+  rejectedByUserName?: string;
+  rejectedAt?: string;
+  cancelledByUserName?: string;
+  cancelledAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  canSave: boolean;
+  canSubmit: boolean;
+  canApprove: boolean;
+  canReject: boolean;
+  canCancel: boolean;
+  items?: OrderPriorityBatchItem[];
+}
+
+export interface OrderPriorityBatchContext {
+  permissions: {
+    canAccess: boolean;
+    canCreateAdministrativeBatch: boolean;
+    canCreateWorksBatch: boolean;
+    canApprove: boolean;
+    canReject: boolean;
+    canCancel: boolean;
+    isAdministrativeBoard: boolean;
+    isWorksBoard: boolean;
+  };
+  boards: {
+    administrative: string;
+    works: string;
+  };
+  projectOptions: Array<{ id: string; code: string; name: string }>;
+}
+
 export type ViewState =
   | 'PROJECT_LIST'
   | 'PROJECT_DETAIL'
   | 'SPECIFICATION'
   | 'USERS_MANAGEMENT'
   | 'ORDERS_GLOBAL'
+  | 'ORDER_PRIORITIES'
   | 'PROVISIONING_LIST'
   | 'PROVISIONING_NEW'
   | 'PROVISIONING_DASHBOARD';

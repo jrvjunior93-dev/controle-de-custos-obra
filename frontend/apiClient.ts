@@ -294,6 +294,70 @@ export const dbService = {
       method: "POST",
       body: JSON.stringify({ attachment })
     });
+  },
+
+  async getOrderPriorityBatchContext() {
+    return request<any>("/order-priority-batches/context");
+  },
+
+  async listOrderPriorityBatches(status?: string) {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    return request<any>(`/order-priority-batches${params.toString() ? `?${params.toString()}` : ""}`);
+  },
+
+  async createOrderPriorityBatch(payload: { type: string; availableValue?: number; note?: string }) {
+    return request<any>("/order-priority-batches", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getOrderPriorityBatch(id: string) {
+    return request<any>(`/order-priority-batches/${id}`);
+  },
+
+  async getOrderPriorityBatchAvailableOrders(id: string, filters?: { search?: string; projectId?: string; selectedOnly?: boolean }) {
+    const params = new URLSearchParams();
+    if (filters?.search) params.set("search", filters.search);
+    if (filters?.projectId) params.set("projectId", filters.projectId);
+    if (filters?.selectedOnly) params.set("selectedOnly", "true");
+    return request<any>(`/order-priority-batches/${id}/available-orders${params.toString() ? `?${params.toString()}` : ""}`);
+  },
+
+  async saveOrderPriorityBatchSelection(id: string, orderIds: string[]) {
+    return request<any>(`/order-priority-batches/${id}/selection`, {
+      method: "PATCH",
+      body: JSON.stringify({ orderIds })
+    });
+  },
+
+  async submitOrderPriorityBatch(id: string) {
+    return request<any>(`/order-priority-batches/${id}/submit`, {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+  },
+
+  async approveOrderPriorityBatch(id: string) {
+    return request<any>(`/order-priority-batches/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+  },
+
+  async rejectOrderPriorityBatch(id: string, reason?: string) {
+    return request<any>(`/order-priority-batches/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason })
+    });
+  },
+
+  async cancelOrderPriorityBatch(id: string) {
+    return request<any>(`/order-priority-batches/${id}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({})
+    });
   }
 };
 

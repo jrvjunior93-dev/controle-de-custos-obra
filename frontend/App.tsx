@@ -13,6 +13,7 @@ const ProjectDetail = lazy(() => import('./components/ProjectDetail').then((modu
 const SpecificationDoc = lazy(() => import('./components/SpecificationDoc').then((module) => ({ default: module.SpecificationDoc })));
 const UsersManagement = lazy(() => import('./components/UsersManagement').then((module) => ({ default: module.UsersManagement })));
 const GlobalOrdersModule = lazy(() => import('./components/GlobalOrdersModule').then((module) => ({ default: module.GlobalOrdersModule })));
+const OrderPriorityBatchesModule = lazy(() => import('./components/OrderPriorityBatchesModule').then((module) => ({ default: module.OrderPriorityBatchesModule })));
 const ProvisioningModule = lazy(() => import('./components/ProvisioningModule').then((module) => ({ default: module.ProvisioningModule })));
 const NewProvisioningModule = lazy(() => import('./components/NewProvisioningModule').then((module) => ({ default: module.NewProvisioningModule })));
 const ProvisioningDashboard = lazy(() => import('./components/ProvisioningDashboard').then((module) => ({ default: module.ProvisioningDashboard })));
@@ -40,6 +41,15 @@ const normalizeSectorRecord = (sector: Sector): Sector => ({
 });
 
 const isObraSectorName = (name?: string) => String(name || '').trim().toUpperCase() === 'OBRA';
+const isBoardSectorName = (name?: string) => {
+  const normalized = String(name || '')
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+  return normalized === 'DIRETORIA ADMINISTRATIVA' || normalized === 'DIRETORIA DE OBRAS';
+};
 
 const normalizeProjectRecord = (project: Project): Project => ({
   ...project,
@@ -340,7 +350,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!user || !isDataSynced) return;
 
-    const shouldRefresh = ['PROJECT_LIST', 'PROJECT_DETAIL', 'ORDERS_GLOBAL', 'USERS_MANAGEMENT', 'SPECIFICATION'].includes(view);
+    const shouldRefresh = ['PROJECT_LIST', 'PROJECT_DETAIL', 'ORDERS_GLOBAL', 'ORDER_PRIORITIES', 'USERS_MANAGEMENT', 'SPECIFICATION'].includes(view);
     if (!shouldRefresh) return;
 
     void initData(user);
@@ -661,6 +671,7 @@ const App: React.FC = () => {
   const canAccessProvisioning = Boolean(user.canAccessProvisioning || user.role === 'SUPERADMIN');
   const canCreateProvisioning = Boolean(user.canCreateProvisioning || user.role === 'SUPERADMIN');
   const canViewProvisioningDashboard = Boolean(user.canViewProvisioningDashboard || user.role === 'SUPERADMIN');
+  const canAccessOrderPriorities = Boolean(user.role === 'SUPERADMIN' || isBoardSectorName(user.sectorName));
   const usesAssignedProjectScope = !canManageGlobalData && (!user.sectorName || isObraSectorName(user.sectorName));
   const visibleProjects = canManageGlobalData
     ? projects
@@ -718,6 +729,10 @@ const App: React.FC = () => {
           )}
 
           <button onClick={() => setNavigationState('ORDERS_GLOBAL', null)} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'ORDERS_GLOBAL' ? 'text-blue-400' : ''}`}>Pedidos</button>
+
+          {canAccessOrderPriorities && (
+            <button onClick={() => setNavigationState('ORDER_PRIORITIES', null)} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'ORDER_PRIORITIES' ? 'text-blue-400' : ''}`}>Prioridades</button>
+          )}
 
           {canAccessProvisioning && (
             <button onClick={() => setNavigationState('PROVISIONING_LIST', null)} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'PROVISIONING_LIST' ? 'text-blue-400' : ''}`}>Provisionamento</button>
@@ -834,6 +849,12 @@ const App: React.FC = () => {
               const updatedMap = new Map(updatedProjects.map((project) => [project.id, project]));
               setProjects((currentProjects) => currentProjects.map((project) => updatedMap.get(project.id) || project));
             }} onPersistProject={handleSaveProject} onPersistMemberOrder={handleSyncMemberOrder} onUpdateMemberOrderSectorStatus={handleUpdateMemberOrderSectorStatus} onAddMemberOrderMessage={handleAddMemberOrderMessage} onDeleteMemberOrder={handleDeleteMemberOrder} orderTypes={orderTypes} />
+
+          )}
+
+          {view === 'ORDER_PRIORITIES' && canAccessOrderPriorities && (
+
+            <OrderPriorityBatchesModule />
 
           )}
 

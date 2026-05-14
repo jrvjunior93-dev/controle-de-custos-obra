@@ -84,6 +84,14 @@ const renderListStatusBadge = (order: Order) => {
   );
 };
 
+const renderPriorityBadge = (order: Order) => (
+  order.priorityApproved ? (
+    <span className="inline-flex text-[8px] font-black uppercase px-2 py-1 border whitespace-nowrap bg-emerald-50 text-emerald-700 border-emerald-200">
+      Prioridade aprovada
+    </span>
+  ) : null
+);
+
 const matchesDesiredDateRange = (expectedDate?: string, startDate?: string, endDate?: string) => {
   const targetDateKey = normalizeDateKey(expectedDate);
   const startDateKey = normalizeDateKey(startDate);
@@ -1399,7 +1407,10 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                     <div className="text-[10px] text-slate-700 font-black whitespace-nowrap">R$ {(order.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                   </td>
                   <td className="px-4 py-6" style={getColumnStyle('status')}>
-                    {renderListStatusBadge(order)}
+                    <div className="flex flex-col gap-1 items-start">
+                      {renderPriorityBadge(order)}
+                      {renderListStatusBadge(order)}
+                    </div>
                   </td>
                 </tr>
               )})}
@@ -1432,6 +1443,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
               </div>
               </div>
               {renderListStatusBadge(order)}
+              {renderPriorityBadge(order)}
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-[10px] font-bold uppercase">

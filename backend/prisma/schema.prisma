@@ -48,6 +48,19 @@ enum ProvisioningStatus {
   REALIZADO
 }
 
+enum OrderPriorityBatchStatus {
+  ABERTO
+  AGUARDANDO_APROVACAO
+  APROVADO
+  RECUSADO
+  CANCELADO
+}
+
+enum OrderPriorityBatchType {
+  DIRETORIA_ADMINISTRATIVA
+  DIRETORIA_OBRAS
+}
+
 model User {
   id                Int            @id @default(autoincrement())
   email             String         @unique @map("email")
@@ -76,6 +89,12 @@ model User {
   provisioningCancelled ProvisioningRecord[] @relation("ProvisioningCancelledBy")
   provisioningHistories ProvisioningHistory[]
   provisioningAttachments ProvisioningAttachment[] @relation("ProvisioningAttachmentUploadedBy")
+  orderPriorityBatchesCreated OrderPriorityBatch[] @relation("OrderPriorityBatchCreatedBy")
+  orderPriorityBatchesSubmitted OrderPriorityBatch[] @relation("OrderPriorityBatchSubmittedBy")
+  orderPriorityBatchesApproved OrderPriorityBatch[] @relation("OrderPriorityBatchApprovedBy")
+  orderPriorityBatchesRejected OrderPriorityBatch[] @relation("OrderPriorityBatchRejectedBy")
+  orderPriorityBatchesCancelled OrderPriorityBatch[] @relation("OrderPriorityBatchCancelledBy")
+  orderPriorityBatchItemsSelected OrderPriorityBatchItem[] @relation("OrderPriorityBatchItemSelectedBy")
 
   @@index([role, isActive])
   @@index([managerId])
@@ -312,6 +331,11 @@ model Order {
   attachments        OrderAttachment[]
   messages           OrderMessage[]
   sectorAccess       OrderSectorAccess[]
+  priorityApproved   Boolean       @default(false) @map("prioridade_aprovada")
+  priorityApprovedAt DateTime?     @map("prioridade_aprovada_em")
+  priorityBatchId    Int?          @map("prioridade_lote_id")
+  priorityBatch      OrderPriorityBatch? @relation("OrderApprovedPriorityBatch", fields: [priorityBatchId], references: [id], onDelete: SetNull)
+  priorityBatchItems OrderPriorityBatchItem[]
 
   @@index([projectId])
   @@index([orderCode])
@@ -323,8 +347,61 @@ model Order {
   @@index([assignedUserId])
   @@index([status])
   @@index([expectedDate])
+  @@index([priorityApproved])
+  @@index([priorityBatchId])
 
   @@map("pedidos")
+}
+
+model OrderPriorityBatch {
+  id              Int                      @id @default(autoincrement())
+  type            OrderPriorityBatchType   @map("tipo")
+  status          OrderPriorityBatchStatus @default(ABERTO) @map("status")
+  originSector    String                   @map("setor_origem")
+  targetSector    String                   @map("setor_destino")
+  availableValue  Decimal?                 @db.Decimal(15, 2) @map("valor_disponivel")
+  selectedValue   Decimal                  @default(0) @db.Decimal(15, 2) @map("valor_selecionado")
+  note            String?                  @db.Text @map("observacao")
+  rejectionReason String?                  @db.Text @map("motivo_recusa")
+  createdByUserId Int                      @map("criado_por_usuario_id")
+  submittedByUserId Int?                   @map("enviado_por_usuario_id")
+  submittedAt     DateTime?                @map("enviado_em")
+  approvedByUserId Int?                    @map("aprovado_por_usuario_id")
+  approvedAt       DateTime?               @map("aprovado_em")
+  rejectedByUserId Int?                    @map("recusado_por_usuario_id")
+  rejectedAt       DateTime?               @map("recusado_em")
+  cancelledByUserId Int?                   @map("cancelado_por_usuario_id")
+  cancelledAt      DateTime?               @map("cancelado_em")
+  createdAt        DateTime                @default(now()) @map("criado_em")
+  updatedAt        DateTime                @updatedAt @map("atualizado_em")
+  createdBy        User                    @relation("OrderPriorityBatchCreatedBy", fields: [createdByUserId], references: [id])
+  submittedBy      User?                   @relation("OrderPriorityBatchSubmittedBy", fields: [submittedByUserId], references: [id])
+  approvedBy       User?                   @relation("OrderPriorityBatchApprovedBy", fields: [approvedByUserId], references: [id])
+  rejectedBy       User?                   @relation("OrderPriorityBatchRejectedBy", fields: [rejectedByUserId], references: [id])
+  cancelledBy      User?                   @relation("OrderPriorityBatchCancelledBy", fields: [cancelledByUserId], references: [id])
+  items            OrderPriorityBatchItem[]
+  approvedOrders   Order[]                 @relation("OrderApprovedPriorityBatch")
+
+  @@index([status, createdAt])
+  @@index([type, status])
+  @@index([createdByUserId])
+  @@map("lotes_prioridade_pedidos")
+}
+
+model OrderPriorityBatchItem {
+  id             Int                @id @default(autoincrement())
+  batchId        Int                @map("lote_id")
+  orderId        Int                @map("pedido_id")
+  selectedValue  Decimal            @default(0) @db.Decimal(15, 2) @map("valor_selecionado")
+  selectedByUserId Int?             @map("selecionado_por_usuario_id")
+  selectedAt     DateTime           @default(now()) @map("selecionado_em")
+  batch          OrderPriorityBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  order          Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  selectedBy     User?              @relation("OrderPriorityBatchItemSelectedBy", fields: [selectedByUserId], references: [id])
+
+  @@unique([batchId, orderId])
+  @@index([orderId])
+  @@map("lotes_prioridade_pedidos_itens")
 }
 
 model OrderSectorAccess {

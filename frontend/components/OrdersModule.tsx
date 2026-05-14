@@ -77,6 +77,14 @@ const matchesDesiredDateRange = (expectedDate?: string, startDate?: string, endD
 
 const getEffectiveOrderStatusLabel = (order: Order) => order.sectorStatus || 'Sem status setorial';
 
+const renderPriorityBadge = (order: Order) => (
+  order.priorityApproved ? (
+    <span className="inline-flex text-[8px] font-black uppercase px-2 py-1 border whitespace-nowrap bg-emerald-50 text-emerald-700 border-emerald-200">
+      Prioridade aprovada
+    </span>
+  ) : null
+);
+
 const stripLinkedOrderCosts = (costs: ExecutedCost[], order: Order) => (
   costs.filter((cost) => cost.originOrderId !== order.id && !(!cost.originOrderId && isLegacyLinkedOrderCost(cost, order)))
 );
@@ -987,7 +995,12 @@ const renderListStatusBadge = (order: Order) => {
                   </td>
                   <td className="px-4 py-4 text-[10px] font-black text-blue-600 uppercase truncate" style={getColumnStyle('type')} title={order.type}>{order.type}</td>
                   <td className="px-4 py-4 text-[10px] font-black text-slate-700 whitespace-nowrap" style={getColumnStyle('value')}>{formatMoney(order.value)}</td>
-                  <td className="px-4 py-4" style={getColumnStyle('status')}>{renderListStatusBadge(order)}</td>
+                  <td className="px-4 py-4" style={getColumnStyle('status')}>
+                    <div className="flex flex-col gap-1 items-start">
+                      {renderPriorityBadge(order)}
+                      {renderListStatusBadge(order)}
+                    </div>
+                  </td>
                   <td className="px-4 py-4 text-[10px] font-black uppercase text-slate-600 truncate" style={getColumnStyle('requester')} title={order.requesterName}>{order.requesterName}</td>
                   <td className="px-4 py-4 text-[10px] font-black uppercase text-slate-400 truncate" style={getColumnStyle('sector')} title={order.currentSectorName || 'SEM SETOR'}>{order.currentSectorName || 'SEM SETOR'}</td>
                 </tr>
@@ -1016,7 +1029,10 @@ const renderListStatusBadge = (order: Order) => {
                   <div className="text-[10px] text-blue-600 font-bold uppercase tracking-tighter">{project.budget.find((macro) => macro.id === order.macroItemId)?.description || 'Item macro não vinculado'}</div>
                 </div>
               </div>
-              {renderListStatusBadge(order)}
+              <div className="flex flex-col gap-1 items-end">
+                {renderPriorityBadge(order)}
+                {renderListStatusBadge(order)}
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3 text-[10px] font-bold uppercase">
               <div className="bg-slate-50 border border-slate-100 p-3"><div className="text-slate-400">Data Solic.</div><div className="text-slate-700 mt-1">{formatOrderDate(order.createdAt)}</div></div>

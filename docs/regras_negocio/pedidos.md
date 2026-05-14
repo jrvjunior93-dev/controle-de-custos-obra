@@ -1,0 +1,147 @@
+# Pedidos
+
+## Papel do módulo
+
+O módulo de pedidos concentra:
+
+- abertura de solicitações
+- circulação entre setores
+- registro de comentários
+- anexos
+- status principal
+- status setorial
+- vínculo opcional com custo da obra
+
+## Estrutura do pedido
+
+Cada pedido possui, entre outros campos:
+
+- obra
+- tipo de pedido
+- item macro de apropriação
+- setor atual
+- setores com acesso
+- código do pedido
+- código externo opcional
+- título
+- descrição
+- data prevista
+- status
+- status setorial
+- solicitante
+- responsável
+- valor solicitado
+- anexos da solicitação
+- mensagens com anexos
+
+## Status principal
+
+- `PENDENTE`
+- `EM_ANALISE`
+- `AGUARDANDO_INFORMACAO`
+- `CONCLUIDO`
+- `CANCELADO`
+
+## Status setorial
+
+Além do status principal, o pedido pode ter `status setorial`, configurado por setor.
+
+## Criação do pedido
+
+Regras funcionais consolidadas:
+
+- `Tipo do Pedido` inicia vazio
+- `Descrição` é opcional
+- `Anexos` são opcionais
+- `Valor` e `Apropriação` são obrigatórios para tipos normais
+- para tipo `OUTROS`, `Valor` e `Apropriação` podem ficar vazios
+
+## Encaminhamento por setor
+
+O pedido pode ser encaminhado para outro setor.
+
+Regra atual:
+
+- o setor que recebe ganha acesso
+- o setor anterior não perde acesso
+- o histórico do pedido permanece íntegro
+- todos os setores envolvidos continuam podendo interagir por comentários e anexos
+
+## Interações livres
+
+O tratamento do pedido ocorre por:
+
+- comentários livres
+- anexos nas mensagens
+
+## Vínculo com custo da obra
+
+Fluxo atual:
+
+- existe uma caixa `Vincular valor ao custo da obra`
+- ao salvar marcada, o valor do pedido é vinculado ao custo da obra
+- ao salvar desmarcada, a vinculação é removida
+
+Regras adicionais:
+
+- se o pedido for reaberto, o custo vinculado deve ser removido
+- reabertura e nova conclusão não podem duplicar custo
+
+## Reabertura
+
+`SUPERADMIN` e `ADMIN` podem reabrir pedidos:
+
+- `CONCLUIDO`
+- `CANCELADO`
+
+## Lotes de prioridade da diretoria
+
+O sistema possui uma tela `Prioridades Diretoria` para usuarios dos setores:
+
+- `DIRETORIA ADMINISTRATIVA`
+- `DIRETORIA DE OBRAS`
+
+Fluxos:
+
+- a `DIRETORIA ADMINISTRATIVA` pode abrir lote para a `DIRETORIA DE OBRAS` informando `valor disponivel`
+- a `DIRETORIA DE OBRAS` pode abrir lote para a `DIRETORIA ADMINISTRATIVA` sem valor definido
+- a selecao de pedidos pode ser salva em lote aberto para permitir navegacao e retomada posterior
+- filtros de busca, obra e selecionados nao removem pedidos ja selecionados
+- lotes enviados entram em `AGUARDANDO_APROVACAO`
+- somente a `DIRETORIA ADMINISTRATIVA` aprova, recusa ou cancela lotes aguardando aprovacao
+- somente na aprovacao os pedidos recebem `prioridade_aprovada`
+
+Status do lote:
+
+- `ABERTO`
+- `AGUARDANDO_APROVACAO`
+- `APROVADO`
+- `RECUSADO`
+- `CANCELADO`
+
+## Importação e exportação
+
+### Importação em massa
+
+- disponível apenas para `SUPERADMIN`
+
+### Exportação em Excel
+
+- suporta exportação de pedidos selecionados
+
+## Histórico do pedido
+
+O histórico deve registrar:
+
+- mensagens livres
+- anexos enviados
+- alterações de valor
+- alteração de apropriação
+- encaminhamento entre setores
+- mudança de status setorial
+- reabertura
+
+Regra visual atual:
+
+- mensagens mais recentes em cima
+- mensagens mais antigas embaixo

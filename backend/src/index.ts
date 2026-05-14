@@ -110,6 +110,17 @@ const orderMessageSchema = z.object({
 const orderSectorStatusSchema = z.object({
   sectorStatus: z.string().trim().optional(),
 });
+const orderPriorityBatchCreateSchema = z.object({
+  type: z.enum(["DIRETORIA_ADMINISTRATIVA", "DIRETORIA_OBRAS"]),
+  availableValue: z.number().nonnegative().optional(),
+  note: z.string().trim().optional(),
+});
+const orderPriorityBatchSelectionSchema = z.object({
+  orderIds: z.array(z.union([z.string(), z.number()])).optional(),
+});
+const orderPriorityBatchRejectSchema = z.object({
+  reason: z.string().trim().min(2).optional(),
+});
 
 type AuthUser = { id: string; role: UserRole };
 type AuthRequest = express.Request & { authUser?: AuthUser };
@@ -492,6 +503,9 @@ async function mapOrderFromDb(order: any, projectName: string) {
     }))),
     createdAt: order.createdAt.toISOString(),
     value: order.requestedValue ? decimalToNumber(order.requestedValue) : undefined,
+    priorityApproved: Boolean(order.priorityApproved),
+    priorityApprovedAt: order.priorityApprovedAt ? order.priorityApprovedAt.toISOString() : undefined,
+    priorityBatchId: order.priorityBatchId ? String(order.priorityBatchId) : undefined,
   };
 }
 
@@ -762,6 +776,313 @@ async function getScopedAuthUser(userId: number) {
     where: { id: userId },
     include: { assignedProjects: true, sector: true },
   });
+}
+
+const ORDER_PRIORITY_STATUS = {
+  OPEN: "ABERTO",
+  WAITING_APPROVAL: "AGUARDANDO_APROVACAO",
+  APPROVED: "APROVADO",
+  REJECTED: "RECUSADO",
+  CANCELLED: "CANCELADO",
+} as const;
+
+const ORDER_PRIORITY_TYPE = {
+  ADMINISTRATIVE: "DIRETORIA_ADMINISTRATIVA",
+  WORKS: "DIRETORIA_OBRAS",
+} as const;
+
+const ADMINISTRATIVE_BOARD = "DIRETORIA ADMINISTRATIVA";
+const WORKS_BOARD = "DIRETORIA DE OBRAS";
+
+function normalizeBoardName(value?: string | null) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function isAdministrativeBoardName(value?: string | null) {
+  return normalizeBoardName(value) === normalizeBoardName(ADMINISTRATIVE_BOARD);
+}
+
+function isWorksBoardName(value?: string | null) {
+  return normalizeBoardName(value) === normalizeBoardName(WORKS_BOARD);
+}
+
+function normalizePriorityOrderIds(values: unknown[] = []) {
+  return Array.from(new Set(
+    values
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0)
+  ));
+}
+
+async function getPriorityUserContext(authUser?: AuthUser) {
+  if (!authUser) return null;
+  const user = await getScopedAuthUser(Number(authUser.id));
+  if (!user || !user.isActive) return null;
+  const isSuperadmin = user.role === UserRole.SUPERADMIN;
+  const isAdministrativeBoard = isSuperadmin || isAdministrativeBoardName(user.sector?.name);
+  const isWorksBoard = isSuperadmin || isWorksBoardName(user.sector?.name);
+  return {
+    user,
+    isSuperadmin,
+    isAdministrativeBoard,
+    isWorksBoard,
+    canAccess: isAdministrativeBoard || isWorksBoard,
+    canCreateAdministrativeBatch: isAdministrativeBoard,
+    canCreateWorksBatch: isWorksBoard,
+    canSelectWorksBatch: isWorksBoard,
+    canApprove: isAdministrativeBoard,
+    canReject: isAdministrativeBoard,
+    canCancel: isAdministrativeBoard,
+  };
+}
+
+function ensurePriorityAccess(context: Awaited<ReturnType<typeof getPriorityUserContext>>, res: express.Response) {
+  if (!context?.canAccess) {
+    res.status(403).json({ error: "Forbidden" });
+    return false;
+  }
+  return true;
+}
+
+function formatOptionalDate(value?: Date | null) {
+  return value ? value.toISOString() : undefined;
+}
+
+async function serializePriorityOrder(order: any) {
+  return {
+    id: String(order.id),
+    orderCode: order.orderCode,
+    externalCode: order.externalCode || undefined,
+    projectId: String(order.projectId),
+    projectName: order.project?.name || "",
+    title: order.title,
+    type: order.orderType?.name || "",
+    description: order.description,
+    expectedDate: formatDateOnly(order.expectedDate),
+    status: order.status,
+    sectorStatus: order.sectorStatus || undefined,
+    currentSectorName: order.currentSector?.name || undefined,
+    requesterName: order.requester?.name || "",
+    value: order.requestedValue ? decimalToNumber(order.requestedValue) : 0,
+    priorityApproved: Boolean(order.priorityApproved),
+    priorityApprovedAt: formatOptionalDate(order.priorityApprovedAt),
+    priorityBatchId: order.priorityBatchId ? String(order.priorityBatchId) : undefined,
+  };
+}
+
+function canViewPriorityBatch(context: Awaited<ReturnType<typeof getPriorityUserContext>>, batch: any) {
+  if (!context) return false;
+  if (context.isAdministrativeBoard) return true;
+  if (context.isWorksBoard) return true;
+  return Number(batch.createdByUserId) === Number(context.user.id);
+}
+
+function canEditPrioritySelection(context: Awaited<ReturnType<typeof getPriorityUserContext>>, batch: any) {
+  if (!context || String(batch.status) !== ORDER_PRIORITY_STATUS.OPEN) return false;
+  if (String(batch.type) === ORDER_PRIORITY_TYPE.ADMINISTRATIVE) {
+    return context.isWorksBoard || context.isAdministrativeBoard;
+  }
+  return context.isWorksBoard && Number(batch.createdByUserId) === Number(context.user.id);
+}
+
+function canSubmitPriorityBatch(context: Awaited<ReturnType<typeof getPriorityUserContext>>, batch: any) {
+  return canEditPrioritySelection(context, batch);
+}
+
+function canCancelPriorityBatch(context: Awaited<ReturnType<typeof getPriorityUserContext>>, batch: any) {
+  if (!context) return false;
+  if (![ORDER_PRIORITY_STATUS.OPEN, ORDER_PRIORITY_STATUS.WAITING_APPROVAL].includes(String(batch.status) as any)) return false;
+  if (context.isAdministrativeBoard) return true;
+  return String(batch.status) === ORDER_PRIORITY_STATUS.OPEN && Number(batch.createdByUserId) === Number(context.user.id);
+}
+
+async function calculatePriorityBatchSelection(batchId: number, tx: any = prismaAny) {
+  const items = await tx.orderPriorityBatchItem.findMany({
+    where: { batchId },
+    select: { selectedValue: true }
+  });
+  return items.reduce((total: number, item: any) => total + decimalToNumber(item.selectedValue), 0);
+}
+
+async function serializePriorityBatch(batch: any, context: Awaited<ReturnType<typeof getPriorityUserContext>>, includeItems = false) {
+  const items = Array.isArray(batch.items) ? batch.items : [];
+  const selectedValue = items.length > 0
+    ? items.reduce((total: number, item: any) => total + decimalToNumber(item.selectedValue), 0)
+    : decimalToNumber(batch.selectedValue);
+  const availableValue = batch.availableValue == null ? null : decimalToNumber(batch.availableValue);
+  return {
+    id: String(batch.id),
+    type: batch.type,
+    status: batch.status,
+    originSector: batch.originSector,
+    targetSector: batch.targetSector,
+    availableValue,
+    selectedValue,
+    balanceValue: availableValue == null ? null : Math.max(availableValue - selectedValue, 0),
+    itemsCount: items.length,
+    note: batch.note || "",
+    rejectionReason: batch.rejectionReason || "",
+    createdByUserId: String(batch.createdByUserId),
+    createdByUserName: batch.createdBy?.name || "SISTEMA",
+    submittedByUserName: batch.submittedBy?.name || undefined,
+    submittedAt: formatOptionalDate(batch.submittedAt),
+    approvedByUserName: batch.approvedBy?.name || undefined,
+    approvedAt: formatOptionalDate(batch.approvedAt),
+    rejectedByUserName: batch.rejectedBy?.name || undefined,
+    rejectedAt: formatOptionalDate(batch.rejectedAt),
+    cancelledByUserName: batch.cancelledBy?.name || undefined,
+    cancelledAt: formatOptionalDate(batch.cancelledAt),
+    createdAt: batch.createdAt.toISOString(),
+    updatedAt: batch.updatedAt.toISOString(),
+    canSave: canEditPrioritySelection(context, batch),
+    canSubmit: canSubmitPriorityBatch(context, batch),
+    canApprove: Boolean(context?.canApprove && batch.status === ORDER_PRIORITY_STATUS.WAITING_APPROVAL),
+    canReject: Boolean(context?.canReject && batch.status === ORDER_PRIORITY_STATUS.WAITING_APPROVAL),
+    canCancel: canCancelPriorityBatch(context, batch),
+    items: includeItems
+      ? await Promise.all(items.map(async (item: any) => ({
+          id: String(item.id),
+          selectedValue: decimalToNumber(item.selectedValue),
+          selectedAt: item.selectedAt.toISOString(),
+          order: item.order ? await serializePriorityOrder(item.order) : null,
+        })))
+      : undefined,
+  };
+}
+
+const priorityBatchInclude = {
+  createdBy: true,
+  submittedBy: true,
+  approvedBy: true,
+  rejectedBy: true,
+  cancelledBy: true,
+  items: {
+    include: {
+      order: {
+        include: {
+          project: true,
+          orderType: true,
+          currentSector: true,
+          requester: true,
+        }
+      }
+    },
+    orderBy: { id: "asc" }
+  }
+} as const;
+
+async function findPriorityBatch(batchId: number) {
+  if (!Number.isFinite(batchId)) return null;
+  return prismaAny.orderPriorityBatch.findUnique({
+    where: { id: batchId },
+    include: priorityBatchInclude,
+  });
+}
+
+async function listEligiblePriorityOrders(batch: any, query: any = {}) {
+  const search = String(query?.search || "").trim();
+  const projectId = Number(query?.projectId);
+  const selectedOnly = String(query?.selectedOnly || "").toLowerCase() === "true";
+  const selectedIds = normalizePriorityOrderIds(
+    (batch.items || []).map((item: any) => item.orderId)
+  );
+
+  const where: any = selectedOnly
+    ? { id: { in: selectedIds.length > 0 ? selectedIds : [-1] } }
+    : {
+        status: { notIn: [OrderStatus.CONCLUIDO, OrderStatus.CANCELADO] },
+        requestedValue: { not: null },
+        OR: [
+          { priorityApproved: false },
+          ...(selectedIds.length > 0 ? [{ id: { in: selectedIds } }] : []),
+        ],
+      };
+
+  if (Number.isInteger(projectId) && projectId > 0) {
+    where.projectId = projectId;
+  }
+
+  if (search) {
+    where.AND = [
+      ...(where.AND || []),
+      {
+        OR: [
+          { orderCode: { contains: search } },
+          { externalCode: { contains: search } },
+          { title: { contains: search } },
+          { description: { contains: search } },
+          { project: { name: { contains: search } } },
+          { orderType: { name: { contains: search } } },
+        ]
+      }
+    ];
+  }
+
+  const orders = await prismaAny.order.findMany({
+    where,
+    include: {
+      project: true,
+      orderType: true,
+      currentSector: true,
+      requester: true,
+    },
+    orderBy: [{ expectedDate: "asc" }, { createdAt: "desc" }]
+  });
+
+  return orders.filter((order: any) => decimalToNumber(order.requestedValue) > 0);
+}
+
+async function replacePriorityBatchItems(batch: any, orderIds: number[], userId: number, tx: any) {
+  const orders = orderIds.length > 0
+    ? await tx.order.findMany({
+        where: {
+          id: { in: orderIds },
+          status: { notIn: [OrderStatus.CONCLUIDO, OrderStatus.CANCELADO] },
+          requestedValue: { not: null },
+          OR: [
+            { priorityApproved: false },
+            { priorityBatchId: batch.id },
+          ],
+        },
+        select: { id: true, requestedValue: true }
+      })
+    : [];
+
+  if (orders.length !== orderIds.length) {
+    const error = new Error("Um ou mais pedidos selecionados nao estao elegiveis para prioridade.") as Error & { status?: number };
+    error.status = 400;
+    throw error;
+  }
+
+  const selectedValue = orders.reduce((total: number, order: any) => total + decimalToNumber(order.requestedValue), 0);
+  const availableValue = batch.availableValue == null ? null : decimalToNumber(batch.availableValue);
+  if (String(batch.type) === ORDER_PRIORITY_TYPE.ADMINISTRATIVE && availableValue != null && selectedValue > availableValue) {
+    const error = new Error("O valor dos pedidos selecionados excede o valor disponivel do lote.") as Error & { status?: number };
+    error.status = 400;
+    throw error;
+  }
+
+  await tx.orderPriorityBatchItem.deleteMany({ where: { batchId: batch.id } });
+  if (orders.length > 0) {
+    await tx.orderPriorityBatchItem.createMany({
+      data: orders.map((order: any) => ({
+        batchId: batch.id,
+        orderId: order.id,
+        selectedValue: decimalToNumber(order.requestedValue),
+        selectedByUserId: userId,
+      }))
+    });
+  }
+  await tx.orderPriorityBatch.update({
+    where: { id: batch.id },
+    data: { selectedValue },
+  });
+  return selectedValue;
 }
 
 async function resolveOrderTypesByName(tx: any) {
@@ -1762,6 +2083,287 @@ app.put("/sectors/:id/statuses", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), a
 
   if (!savedSector) return res.status(404).json({ error: "Sector not found" });
   res.json(sanitizeSector(savedSector));
+});
+
+app.get("/order-priority-batches/context", requireAuth, async (req: AuthRequest, res) => {
+  const context = await getPriorityUserContext(req.authUser);
+  if (!ensurePriorityAccess(context, res)) return;
+
+  const projects = await prisma.project.findMany({
+    select: { id: true, code: true, name: true },
+    orderBy: { name: "asc" }
+  });
+
+  res.json({
+    permissions: {
+      canAccess: context!.canAccess,
+      canCreateAdministrativeBatch: context!.canCreateAdministrativeBatch,
+      canCreateWorksBatch: context!.canCreateWorksBatch,
+      canApprove: context!.canApprove,
+      canReject: context!.canReject,
+      canCancel: context!.canCancel,
+      isAdministrativeBoard: context!.isAdministrativeBoard,
+      isWorksBoard: context!.isWorksBoard,
+    },
+    boards: {
+      administrative: ADMINISTRATIVE_BOARD,
+      works: WORKS_BOARD,
+    },
+    projectOptions: projects.map((project) => ({
+      id: String(project.id),
+      code: project.code,
+      name: project.name,
+    })),
+  });
+});
+
+app.get("/order-priority-batches", requireAuth, async (req: AuthRequest, res) => {
+  const context = await getPriorityUserContext(req.authUser);
+  if (!ensurePriorityAccess(context, res)) return;
+  const status = String(req.query.status || "").trim().toUpperCase();
+  const where: any = {};
+  if (Object.values(ORDER_PRIORITY_STATUS).includes(status as any)) {
+    where.status = status;
+  }
+
+  const batches = await prismaAny.orderPriorityBatch.findMany({
+    where,
+    include: priorityBatchInclude,
+    orderBy: { createdAt: "desc" },
+  });
+
+  const visible = batches.filter((batch: any) => canViewPriorityBatch(context, batch));
+  res.json({
+    items: await Promise.all(visible.map((batch: any) => serializePriorityBatch(batch, context, false))),
+  });
+});
+
+app.post("/order-priority-batches", requireAuth, async (req: AuthRequest, res) => {
+  const parsed = orderPriorityBatchCreateSchema.safeParse(req.body);
+  if (!parsed.success || !req.authUser) return res.status(400).json({ error: "Invalid payload" });
+
+  const context = await getPriorityUserContext(req.authUser);
+  if (!ensurePriorityAccess(context, res)) return;
+
+  const type = parsed.data.type;
+  if (type === ORDER_PRIORITY_TYPE.ADMINISTRATIVE && !context!.canCreateAdministrativeBatch) {
+    return res.status(403).json({ error: "Apenas a Diretoria Administrativa pode abrir lote administrativo." });
+  }
+  if (type === ORDER_PRIORITY_TYPE.WORKS && !context!.canCreateWorksBatch) {
+    return res.status(403).json({ error: "Apenas a Diretoria de Obras pode abrir lote de solicitacao para prioridade." });
+  }
+
+  const parsedAvailableValue = Number(parsed.data.availableValue);
+  const availableValue = type === ORDER_PRIORITY_TYPE.ADMINISTRATIVE ? parsedAvailableValue : null;
+  if (type === ORDER_PRIORITY_TYPE.ADMINISTRATIVE && (!Number.isFinite(parsedAvailableValue) || parsedAvailableValue <= 0)) {
+    return res.status(400).json({ error: "Informe um valor disponivel valido para o lote." });
+  }
+
+  const batch = await prismaAny.orderPriorityBatch.create({
+    data: {
+      type,
+      status: ORDER_PRIORITY_STATUS.OPEN,
+      originSector: type === ORDER_PRIORITY_TYPE.ADMINISTRATIVE ? ADMINISTRATIVE_BOARD : WORKS_BOARD,
+      targetSector: type === ORDER_PRIORITY_TYPE.ADMINISTRATIVE ? WORKS_BOARD : ADMINISTRATIVE_BOARD,
+      availableValue,
+      selectedValue: 0,
+      note: toOptionalText(parsed.data.note),
+      createdByUserId: Number(req.authUser.id),
+    },
+    include: priorityBatchInclude,
+  });
+
+  res.status(201).json({ item: await serializePriorityBatch(batch, context, true) });
+});
+
+app.get("/order-priority-batches/:id", requireAuth, async (req: AuthRequest, res) => {
+  const context = await getPriorityUserContext(req.authUser);
+  if (!ensurePriorityAccess(context, res)) return;
+  const batch = await findPriorityBatch(Number(req.params.id));
+  if (!batch) return res.status(404).json({ error: "Lote de prioridade nao encontrado." });
+  if (!canViewPriorityBatch(context, batch)) return res.status(403).json({ error: "Forbidden" });
+
+  res.json({ item: await serializePriorityBatch(batch, context, true) });
+});
+
+app.get("/order-priority-batches/:id/available-orders", requireAuth, async (req: AuthRequest, res) => {
+  const context = await getPriorityUserContext(req.authUser);
+  if (!ensurePriorityAccess(context, res)) return;
+  const batch = await findPriorityBatch(Number(req.params.id));
+  if (!batch) return res.status(404).json({ error: "Lote de prioridade nao encontrado." });
+  if (!canViewPriorityBatch(context, batch)) return res.status(403).json({ error: "Forbidden" });
+
+  const orders = await listEligiblePriorityOrders(batch, req.query);
+  res.json({ items: await Promise.all(orders.map(serializePriorityOrder)) });
+});
+
+app.patch("/order-priority-batches/:id/selection", requireAuth, async (req: AuthRequest, res) => {
+  const parsed = orderPriorityBatchSelectionSchema.safeParse(req.body);
+  if (!parsed.success || !req.authUser) return res.status(400).json({ error: "Invalid payload" });
+  const context = await getPriorityUserContext(req.authUser);
+  if (!ensurePriorityAccess(context, res)) return;
+  const batch = await findPriorityBatch(Number(req.params.id));
+  if (!batch) return res.status(404).json({ error: "Lote de prioridade nao encontrado." });
+  if (!canEditPrioritySelection(context, batch)) return res.status(403).json({ error: "Forbidden" });
+
+  try {
+    await prisma.$transaction((tx: any) => replacePriorityBatchItems(
+      batch,
+      normalizePriorityOrderIds(parsed.data.orderIds || []),
+      Number(req.authUser!.id),
+      tx
+    ));
+    const saved = await findPriorityBatch(batch.id);
+    res.json({ item: await serializePriorityBatch(saved, context, true) });
+  } catch (error: any) {
+    res.status(error?.status || 500).json({ error: error?.message || "Erro ao salvar selecao do lote." });
+  }
+});
+
+app.post("/order-priority-batches/:id/submit", requireAuth, async (req: AuthRequest, res) => {
+  const context = await getPriorityUserContext(req.authUser);
+  if (!ensurePriorityAccess(context, res) || !req.authUser) return;
+  const batch = await findPriorityBatch(Number(req.params.id));
+  if (!batch) return res.status(404).json({ error: "Lote de prioridade nao encontrado." });
+  if (!canSubmitPriorityBatch(context, batch)) return res.status(403).json({ error: "Forbidden" });
+  if (!Array.isArray(batch.items) || batch.items.length === 0) {
+    return res.status(400).json({ error: "Selecione ao menos um pedido antes de enviar o lote." });
+  }
+
+  const selectedValue = await calculatePriorityBatchSelection(batch.id);
+  const availableValue = batch.availableValue == null ? null : decimalToNumber(batch.availableValue);
+  if (String(batch.type) === ORDER_PRIORITY_TYPE.ADMINISTRATIVE && availableValue != null && selectedValue > availableValue) {
+    return res.status(400).json({ error: "O valor dos pedidos selecionados excede o valor disponivel do lote." });
+  }
+
+  const saved = await prismaAny.orderPriorityBatch.update({
+    where: { id: batch.id },
+    data: {
+      status: ORDER_PRIORITY_STATUS.WAITING_APPROVAL,
+      selectedValue,
+      submittedByUserId: Number(req.authUser.id),
+      submittedAt: new Date(),
+    },
+    include: priorityBatchInclude,
+  });
+
+  res.json({ item: await serializePriorityBatch(saved, context, true) });
+});
+
+app.post("/order-priority-batches/:id/approve", requireAuth, async (req: AuthRequest, res) => {
+  const context = await getPriorityUserContext(req.authUser);
+  if (!ensurePriorityAccess(context, res) || !req.authUser) return;
+  if (!context!.canApprove) return res.status(403).json({ error: "Forbidden" });
+
+  const batch = await findPriorityBatch(Number(req.params.id));
+  if (!batch) return res.status(404).json({ error: "Lote de prioridade nao encontrado." });
+  if (batch.status !== ORDER_PRIORITY_STATUS.WAITING_APPROVAL) {
+    return res.status(400).json({ error: "Somente lotes aguardando aprovacao podem ser aprovados." });
+  }
+  if (!Array.isArray(batch.items) || batch.items.length === 0) {
+    return res.status(400).json({ error: "Nao ha pedidos selecionados neste lote." });
+  }
+
+  const selectedValue = batch.items.reduce((total: number, item: any) => total + decimalToNumber(item.selectedValue), 0);
+  const availableValue = batch.availableValue == null ? null : decimalToNumber(batch.availableValue);
+  if (String(batch.type) === ORDER_PRIORITY_TYPE.ADMINISTRATIVE && availableValue != null && selectedValue > availableValue) {
+    return res.status(400).json({ error: "O valor dos pedidos selecionados excede o valor disponivel do lote." });
+  }
+
+  const orderIds = batch.items.map((item: any) => item.orderId);
+  await prisma.$transaction(async (tx: any) => {
+    await tx.order.updateMany({
+      where: { id: { in: orderIds } },
+      data: {
+        priorityApproved: true,
+        priorityApprovedAt: new Date(),
+        priorityBatchId: batch.id,
+      }
+    });
+    await tx.orderPriorityBatch.update({
+      where: { id: batch.id },
+      data: {
+        status: ORDER_PRIORITY_STATUS.APPROVED,
+        selectedValue,
+        availableValue: batch.availableValue == null ? selectedValue : batch.availableValue,
+        approvedByUserId: Number(req.authUser!.id),
+        approvedAt: new Date(),
+      }
+    });
+    for (const orderId of orderIds) {
+      await tx.orderMessage.create({
+        data: {
+          orderId,
+          userId: Number(req.authUser!.id),
+          body: `Prioridade aprovada no lote #${batch.id}.`,
+          isSystem: true,
+        }
+      });
+    }
+  });
+
+  const saved = await findPriorityBatch(batch.id);
+  res.json({ item: await serializePriorityBatch(saved, context, true) });
+});
+
+app.post("/order-priority-batches/:id/reject", requireAuth, async (req: AuthRequest, res) => {
+  const parsed = orderPriorityBatchRejectSchema.safeParse(req.body);
+  if (!parsed.success || !req.authUser) return res.status(400).json({ error: "Invalid payload" });
+  const context = await getPriorityUserContext(req.authUser);
+  if (!ensurePriorityAccess(context, res)) return;
+  if (!context!.canReject) return res.status(403).json({ error: "Forbidden" });
+
+  const batch = await findPriorityBatch(Number(req.params.id));
+  if (!batch) return res.status(404).json({ error: "Lote de prioridade nao encontrado." });
+  if (batch.status !== ORDER_PRIORITY_STATUS.WAITING_APPROVAL) {
+    return res.status(400).json({ error: "Somente lotes aguardando aprovacao podem ser recusados." });
+  }
+
+  const saved = await prismaAny.orderPriorityBatch.update({
+    where: { id: batch.id },
+    data: {
+      status: ORDER_PRIORITY_STATUS.REJECTED,
+      rejectionReason: toOptionalText(parsed.data.reason) || "Recusado pela Diretoria Administrativa.",
+      rejectedByUserId: Number(req.authUser.id),
+      rejectedAt: new Date(),
+    },
+    include: priorityBatchInclude,
+  });
+
+  res.json({ item: await serializePriorityBatch(saved, context, true) });
+});
+
+app.post("/order-priority-batches/:id/cancel", requireAuth, async (req: AuthRequest, res) => {
+  const context = await getPriorityUserContext(req.authUser);
+  if (!ensurePriorityAccess(context, res) || !req.authUser) return;
+  const batch = await findPriorityBatch(Number(req.params.id));
+  if (!batch) return res.status(404).json({ error: "Lote de prioridade nao encontrado." });
+  if (!canCancelPriorityBatch(context, batch)) return res.status(403).json({ error: "Forbidden" });
+
+  const orderIds = (batch.items || []).map((item: any) => item.orderId);
+  await prisma.$transaction(async (tx: any) => {
+    if (orderIds.length > 0) {
+      await tx.order.updateMany({
+        where: { id: { in: orderIds }, priorityBatchId: batch.id },
+        data: {
+          priorityApproved: false,
+          priorityApprovedAt: null,
+          priorityBatchId: null,
+        }
+      });
+    }
+    await tx.orderPriorityBatch.update({
+      where: { id: batch.id },
+      data: {
+        status: ORDER_PRIORITY_STATUS.CANCELLED,
+        cancelledByUserId: Number(req.authUser!.id),
+        cancelledAt: new Date(),
+      }
+    });
+  });
+
+  const saved = await findPriorityBatch(batch.id);
+  res.json({ item: await serializePriorityBatch(saved, context, true) });
 });
 
 app.put("/users/:id", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req: AuthRequest, res) => {
