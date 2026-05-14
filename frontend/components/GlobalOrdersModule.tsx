@@ -14,6 +14,7 @@ interface GlobalOrdersModuleProps {
   onUpdateMemberOrderSectorStatus: (projectId: string, orderId: string, sectorStatus?: string) => Promise<Order>;
   onAddMemberOrderMessage: (projectId: string, orderId: string, message: Partial<OrderMessage>) => Promise<OrderMessage>;
   onDeleteMemberOrder: (projectId: string, orderId: string) => Promise<void>;
+  onRefreshProjects: () => Promise<void>;
   orderTypes: string[];
 }
 
@@ -260,7 +261,7 @@ const exportOrdersToExcel = async (orders: Order[]) => {
   XLSX.writeFile(workbook, `pedidos_selecionados_${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
 
-export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects, sectors, user, onUpdateProjects, onPersistProject, onPersistMemberOrder, onUpdateMemberOrderSectorStatus, onAddMemberOrderMessage, onDeleteMemberOrder, orderTypes }) => {
+export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects, sectors, user, onUpdateProjects, onPersistProject, onPersistMemberOrder, onUpdateMemberOrderSectorStatus, onAddMemberOrderMessage, onDeleteMemberOrder, onRefreshProjects, orderTypes }) => {
   const canManageAllOrders = canManageAssignedOrders(user.role);
   const canImportOrders = user.role === 'SUPERADMIN';
   const usesAssignedProjectScope = !canManageAllOrders && (!user.sectorName || isObraSectorName(user.sectorName));
@@ -556,6 +557,14 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setSelectedSectorStatus(selectedSectorStatusRef.current);
     setIsEditingSectorStatus(false);
     setIsSectorStatusModalOpen(false);
+  };
+
+  const closeOrderModal = () => {
+    setIsActionModalOpen(null);
+    setIsSectorStatusModalOpen(false);
+    void onRefreshProjects().catch((error) => {
+      console.error('Erro ao atualizar pedidos apos fechar modal:', error);
+    });
   };
   useEffect(() => {
     if (!isActionModalOpen) return;
@@ -914,7 +923,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       }
       setSelectedOrderIds((current) => current.filter((id) => id !== order.id));
       if (isActionModalOpen?.id === order.id) {
-        setIsActionModalOpen(null);
+        closeOrderModal();
       }
     } catch (error: any) {
       console.error('Erro ao excluir pedido:', error);
@@ -1563,7 +1572,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                 <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{isActionModalOpen.title}</h3>
                 <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Por {isActionModalOpen.requesterName} em {new Date(isActionModalOpen.createdAt).toLocaleString('pt-BR')}</p>
               </div>
-              <button onClick={() => setIsActionModalOpen(null)} className="text-slate-400 hover:text-slate-600 px-2"><i className="fas fa-times text-xl"></i></button>
+              <button onClick={closeOrderModal} className="text-slate-400 hover:text-slate-600 px-2"><i className="fas fa-times text-xl"></i></button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 bg-slate-100/60">
               <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-5">

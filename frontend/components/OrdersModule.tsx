@@ -12,6 +12,7 @@ interface OrdersModuleProps {
   onUpdateOrderSectorStatus: (projectId: string, orderId: string, sectorStatus?: string) => Promise<Order>;
   onAddOrderMessage: (projectId: string, orderId: string, message: Partial<OrderMessage>) => Promise<OrderMessage>;
   onDeleteOrder: (projectId: string, orderId: string) => Promise<void>;
+  onRefreshProjects: () => Promise<void>;
 }
 
 const formatMoney = (value?: number) => `R$ ${(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -114,7 +115,7 @@ const exportOrdersToExcel = async (projectName: string, orders: Order[]) => {
 
 const PROJECT_ORDERS_COLUMN_WIDTHS_KEY = 'csc_brape_project_orders_column_widths';
 
-export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, user, onUpdate, onPersistOrder, onUpdateOrderSectorStatus, onAddOrderMessage, onDeleteOrder }) => {
+export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, user, onUpdate, onPersistOrder, onUpdateOrderSectorStatus, onAddOrderMessage, onDeleteOrder, onRefreshProjects }) => {
   const canManageProjectOrders = user.role === 'SUPERADMIN' || (canManageAssignedOrders(user.role) && user.assignedProjectIds?.includes(project.id));
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     const defaults = {
@@ -416,6 +417,14 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     setIsEditingSectorStatus(false);
     setIsSectorStatusModalOpen(false);
   };
+
+  const closeOrderModal = () => {
+    setIsActionModalOpen(null);
+    setIsSectorStatusModalOpen(false);
+    void onRefreshProjects().catch((error) => {
+      console.error('Erro ao atualizar pedidos apos fechar modal:', error);
+    });
+  };
   useEffect(() => {
     if (!isActionModalOpen) return;
     const latestOrder = findLatestOrderSnapshot(isActionModalOpen);
@@ -591,7 +600,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
         await onDeleteOrder(project.id, order.id);
         setSelectedOrderIds((current) => current.filter((id) => id !== order.id));
         if (isActionModalOpen?.id === order.id) {
-          setIsActionModalOpen(null);
+          closeOrderModal();
         }
       } catch (error) {
         console.error('Erro ao excluir pedido:', error);
@@ -1109,7 +1118,7 @@ const renderListStatusBadge = (order: Order) => {
                 <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Por {isActionModalOpen.requesterName} em {new Date(isActionModalOpen.createdAt).toLocaleString('pt-BR')}</p>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <button onClick={() => setIsActionModalOpen(null)} className="text-slate-400 hover:text-slate-600 px-2"><i className="fas fa-times text-xl"></i></button>
+                <button onClick={closeOrderModal} className="text-slate-400 hover:text-slate-600 px-2"><i className="fas fa-times text-xl"></i></button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 bg-slate-100/60">

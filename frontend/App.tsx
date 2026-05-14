@@ -525,6 +525,13 @@ const App: React.FC = () => {
     });
   };
 
+  const refreshProjects = async () => {
+    const apiProjects = await dbService.getProjects();
+    const nextProjects = (apiProjects || []).map(normalizeProjectRecord);
+    setProjects(nextProjects);
+    localStorage.setItem('csc_brape_projects', JSON.stringify(nextProjects));
+  };
+
   const handleSaveSector = async (sector: Sector) => {
     const savedSector = normalizeSectorRecord(await dbService.upsertSector(sector));
     setSectors((currentSectors) => {
@@ -839,6 +846,7 @@ const App: React.FC = () => {
               onUpdateOrderSectorStatus={handleUpdateMemberOrderSectorStatus}
               onAddOrderMessage={handleAddMemberOrderMessage}
               onDeleteOrder={handleDeleteMemberOrder}
+              onRefreshProjects={refreshProjects}
               onBack={() => setNavigationState('PROJECT_LIST', null)}
             />
 
@@ -849,7 +857,7 @@ const App: React.FC = () => {
             <GlobalOrdersModule projects={orderVisibleProjects} sectors={sectors} user={user} onUpdateProjects={(updatedProjects) => {
               const updatedMap = new Map(updatedProjects.map((project) => [project.id, project]));
               setProjects((currentProjects) => currentProjects.map((project) => updatedMap.get(project.id) || project));
-            }} onPersistProject={handleSaveProject} onPersistMemberOrder={handleSyncMemberOrder} onUpdateMemberOrderSectorStatus={handleUpdateMemberOrderSectorStatus} onAddMemberOrderMessage={handleAddMemberOrderMessage} onDeleteMemberOrder={handleDeleteMemberOrder} orderTypes={orderTypes} />
+            }} onPersistProject={handleSaveProject} onPersistMemberOrder={handleSyncMemberOrder} onUpdateMemberOrderSectorStatus={handleUpdateMemberOrderSectorStatus} onAddMemberOrderMessage={handleAddMemberOrderMessage} onDeleteMemberOrder={handleDeleteMemberOrder} onRefreshProjects={refreshProjects} orderTypes={orderTypes} />
 
           )}
 

@@ -29,6 +29,11 @@
   - O campo `status` principal continua no modelo por compatibilidade, mas nao guia mais a operacao atual.
   - Files: `frontend/components/OrdersModule.tsx`, `frontend/components/GlobalOrdersModule.tsx`, `frontend/components/ProjectDetail.tsx`, `backend/src/index.ts`
 
+- Fix: recarrega projetos/pedidos ao fechar o modal de pedido.
+  - Ao fechar o modal na aba Pedidos ou na Central de Pedidos, a tela busca novamente `/projects` e atualiza os pedidos visiveis.
+  - Objetivo: status setorial alterado aparece na lista sem exigir refresh manual do navegador.
+  - Files: `frontend/App.tsx`, `frontend/components/ProjectDetail.tsx`, `frontend/components/OrdersModule.tsx`, `frontend/components/GlobalOrdersModule.tsx`
+
 ## 2026-04-17
 - Fix: preserve `sectorStatus` during order upserts when the payload does not include `sectorStatus`.
   - Why: the `PUT /projects/:projectId/orders/:orderId` flow can run after setting sector status and would wipe it (treated missing as `null`), causing "need to change twice".
