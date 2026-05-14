@@ -34,6 +34,12 @@
   - Objetivo: status setorial alterado aparece na lista sem exigir refresh manual do navegador.
   - Files: `frontend/App.tsx`, `frontend/components/ProjectDetail.tsx`, `frontend/components/OrdersModule.tsx`, `frontend/components/GlobalOrdersModule.tsx`
 
+- Change: custos executados passam a ser derivados exclusivamente de pedidos com status setorial `PAGO`.
+  - Nova fonte visual: `project.orders` filtrado por `sectorStatus === PAGO`; a tabela manual `costs` permanece no banco apenas como legado/auditoria.
+  - Tela Custos, dashboard/resumo, lista de obras e relatorios internos passam a usar pedidos pagos.
+  - Remove dos modais de pedido a opcao manual de vincular pedido ao custo da obra.
+  - Files: `frontend/utils/orderCosts.ts`, `frontend/components/CostModule.tsx`, `frontend/components/ConsolidationModule.tsx`, `frontend/components/ProjectDetail.tsx`, `frontend/components/ProjectList.tsx`, `frontend/components/OrdersModule.tsx`, `frontend/components/GlobalOrdersModule.tsx`
+
 ## 2026-04-17
 - Fix: preserve `sectorStatus` during order upserts when the payload does not include `sectorStatus`.
   - Why: the `PUT /projects/:projectId/orders/:orderId` flow can run after setting sector status and would wipe it (treated missing as `null`), causing "need to change twice".

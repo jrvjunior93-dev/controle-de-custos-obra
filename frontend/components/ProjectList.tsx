@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Project } from '../types';
+import { getPaidOrderExecutedTotal } from '../utils/orderCosts';
 
 interface ProjectListProps {
   projects: Project[];
@@ -64,7 +65,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({ projects, onSelect, on
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 rounded-none">
           {projects.map((project) => {
             const budgeted = project.budget.reduce((acc, item) => acc + item.budgetedValue, 0);
-            const executed = (project.costs || []).reduce((acc, item) => acc + item.totalValue, 0);
+            const executed = getPaidOrderExecutedTotal(project);
 
             return (
               <div key={project.id} className="bg-white rounded-none shadow-sm border border-slate-200 hover:shadow-2xl transition-all group flex flex-col">

@@ -2,6 +2,7 @@
 import React from 'react';
 import { Project } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
+import { buildPaidOrderCosts } from '../utils/orderCosts';
 
 interface ConsolidationModuleProps {
   project: Project;
@@ -15,8 +16,10 @@ export const ConsolidationModule: React.FC<ConsolidationModuleProps> = ({ projec
     }).format(val);
   };
 
+  const paidOrderCosts = buildPaidOrderCosts(project);
+
   const data = project.budget.map(item => {
-    const executed = project.costs
+    const executed = paidOrderCosts
       .filter(c => c.macroItemId === item.id)
       .reduce((sum, c) => sum + c.totalValue, 0);
     
@@ -29,7 +32,7 @@ export const ConsolidationModule: React.FC<ConsolidationModuleProps> = ({ projec
   });
 
   const totalOrçado = project.budget.reduce((a, b) => a + b.budgetedValue, 0);
-  const totalExecutado = project.costs.reduce((a, b) => a + b.totalValue, 0);
+  const totalExecutado = paidOrderCosts.reduce((a, b) => a + b.totalValue, 0);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 rounded-none">

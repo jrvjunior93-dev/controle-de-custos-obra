@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
-import { Attachment, ExecutedCost, Order, OrderMessage, Project, Sector, User, canManageAssignedOrders } from '../types';
+import { Attachment, Order, OrderMessage, Project, Sector, User, canManageAssignedOrders } from '../types';
 import { AttachmentViewerModal } from './AttachmentViewerModal';
 import { canPreviewAttachmentInline, resolveAttachmentForAccess, triggerAttachmentDownload } from '../utils/attachments';
 import { dbService } from '../apiClient';
@@ -25,18 +25,6 @@ const parseMoneyInput = (value: string) => {
   return digits ? Number(digits) / 100 : undefined;
 };
 
-const isLegacyLinkedOrderCost = (cost: ExecutedCost, order: Order) => {
-  const normalizeKey = (value: any) => String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
-  const sameOrderCode = String(cost.manualOrderCode || '').trim().toUpperCase() !== '' && String(cost.manualOrderCode || '').trim().toUpperCase() === String(order.orderCode || '').trim().toUpperCase();
-  const normalizedCostDescription = normalizeKey(cost.description);
-  const normalizedOrderDescription = normalizeKey(`[PEDIDO] ${String(order.title || '').trim()}`);
-  const sameDescription = normalizedCostDescription === normalizedOrderDescription;
-  const containsOrderCode = !!order.orderCode && normalizedCostDescription.includes(String(order.orderCode).trim().toUpperCase());
-  const sameMacro = String(cost.macroItemId || '') === String(order.macroItemId || '');
-  const sameValue = Math.abs(Number(cost.totalValue || 0) - Number(order.value || 0)) < 0.01;
-  const sameDetail = normalizeKey(cost.itemDetail) === normalizeKey(order.description);
-  return sameOrderCode || ((containsOrderCode || sameDescription) && sameMacro && sameValue && sameDetail);
-};
 const normalizeDateKey = (value?: string) => {
   if (!value) return '';
   const trimmed = value.trim();
@@ -303,8 +291,6 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const [isProjectFilterOpen, setIsProjectFilterOpen] = useState(false);
   const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
   const [isTypeFilterOpen, setIsTypeFilterOpen] = useState(false);
-  const [applyOrderCost, setApplyOrderCost] = useState(false);
-  const [hasSavedCostAssignment, setHasSavedCostAssignment] = useState(false);
   const [editableOrderValue, setEditableOrderValue] = useState<number>(0);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -405,46 +391,13 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     user.role === 'ADMIN' ||
     (!!user.sectorId && (order.currentSectorId === user.sectorId || (order.accessibleSectorIds || []).includes(user.sectorId)))
   );
-  const activeProjectForModal = isActionModalOpen ? projects.find((project) => project.id === isActionModalOpen.projectId) : null;
   const canEditMacroItem = (_order: Order) => canManageFinancialFields;
   const canEditOrderValueDirectly = (_order: Order) => canEditOrderValue;
-  const getLinkedOrderCost = (order: Order, project = activeProjectForModal) => (
-    (project?.costs || []).find((cost) => cost.originOrderId === order.id)
-    || (project?.costs || []).find((cost) => !cost.originOrderId && isLegacyLinkedOrderCost(cost, order))
-    || null
-  );
-  const stripLinkedOrderCosts = (costs: ExecutedCost[], order: Order) => (
-    costs.filter((cost) => cost.originOrderId !== order.id && !(!cost.originOrderId && isLegacyLinkedOrderCost(cost, order)))
-  );
+  const activeProjectForModal = isActionModalOpen ? projects.find((project) => project.id === isActionModalOpen.projectId) : null;
   const findLatestOrderSnapshot = (order: Order) => {
     const project = projects.find((item) => item.id === order.projectId);
     if (!project) return null;
     return (project.orders || []).find((item) => item.id === order.id || item.orderCode === order.orderCode) || null;
-  };
-  const buildOrderCostRecord = (order: Order, project: Project, existingCost?: ExecutedCost | null): ExecutedCost => {
-    const today = new Date().toISOString().split('T')[0];
-    const derivedAttachments = [
-      ...(existingCost?.attachments || []),
-      ...order.attachments,
-      ...(order.completionAttachment ? [order.completionAttachment] : []),
-    ].filter((attachment, index, list) => attachment && list.findIndex((item) => item.id === attachment.id) === index);
-    const value = Number(order.value || 0);
-
-    return {
-      id: existingCost?.id || crypto.randomUUID(),
-      macroItemId: order.macroItemId!,
-      manualOrderCode: order.orderCode,
-      description: `[PEDIDO] ${order.title}`,
-      itemDetail: order.description,
-      unit: existingCost?.unit || 'un',
-      quantity: 1,
-      unitValue: value,
-      totalValue: value,
-      date: existingCost?.date || today,
-      entryDate: existingCost?.entryDate || today,
-      attachments: derivedAttachments,
-      originOrderId: order.id,
-    };
   };
   const findSectorName = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.name;
   const getSectorStatuses = (sectorId?: string) => sectors.find((sector) => sector.id === sectorId)?.statuses || [];
@@ -548,9 +501,6 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     resetActionState();
     const currentValue = Number(order.value || 0);
     setEditableOrderValue(currentValue);
-    const linkedCostExists = !!getLinkedOrderCost(order, projects.find((project) => project.id === order.projectId));
-    setApplyOrderCost(linkedCostExists);
-    setHasSavedCostAssignment(linkedCostExists);
     setSelectedMacroItemId(order.macroItemId || '');
     setSelectedForwardSectorId(order.currentSectorId || '');
     selectedSectorStatusRef.current = order.sectorStatus || '';
@@ -580,9 +530,6 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setSelectedMacroItemId(latestOrder.macroItemId || '');
     setSelectedForwardSectorId(latestOrder.currentSectorId || '');
     setEditableOrderValue(Number(latestOrder.value || 0));
-    const linkedCostExists = !!getLinkedOrderCost(latestOrder, projects.find((project) => project.id === latestOrder.projectId));
-    setApplyOrderCost(linkedCostExists);
-    setHasSavedCostAssignment(linkedCostExists);
   }, [projects, isActionModalOpen]);
 
   const persistMemberOrder = async (projectId: string, order: Order) => onPersistMemberOrder(projectId, order);
@@ -964,44 +911,12 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
           const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
           replaceOrderInProjects(savedOrder);
           setIsActionModalOpen(savedOrder);
-          if (activeProjectForModal && getLinkedOrderCost(savedOrder, activeProjectForModal)) {
-            const existingCost = getLinkedOrderCost(savedOrder, activeProjectForModal);
-            const costsWithoutOrder = (activeProjectForModal.costs || []).filter((cost) => cost.originOrderId !== savedOrder.id);
-            await persistProjectState({
-              ...activeProjectForModal,
-              costs: [...costsWithoutOrder, buildOrderCostRecord(savedOrder, activeProjectForModal, existingCost)],
-            });
-          }
         } catch (error: any) {
           console.error('Erro ao atualizar valor do pedido:', error);
           onUpdateProjects(previousProjects);
           alert(error?.message || 'Não foi possível atualizar o valor do pedido.');
         }
       })();
-    }
-  };
-
-  const handleSaveCostAssignment = async () => {
-    if (!isActionModalOpen || !activeProjectForModal) return;
-    if (!canManageFinancialFields) return alert('Você não pode alterar a vinculação de custo deste pedido.');
-    if (applyOrderCost && !isActionModalOpen.macroItemId) return alert('Selecione um item macro antes de vincular o pedido ao custo.');
-
-    const existingCost = getLinkedOrderCost(isActionModalOpen, activeProjectForModal);
-    const costsWithoutOrder = stripLinkedOrderCosts(activeProjectForModal.costs || [], isActionModalOpen);
-    const nextCosts = applyOrderCost
-      ? [...costsWithoutOrder, buildOrderCostRecord(isActionModalOpen, activeProjectForModal, existingCost)]
-      : costsWithoutOrder;
-
-    try {
-      await persistProjectState({
-        ...activeProjectForModal,
-        costs: nextCosts,
-      });
-      setHasSavedCostAssignment(applyOrderCost);
-      alert(applyOrderCost ? 'Custo vinculado à obra com sucesso.' : 'Vinculação de custo removida com sucesso.');
-    } catch (error) {
-      console.error('Erro ao atualizar vínculo de custo do pedido:', error);
-      alert('Não foi possível salvar a vinculação do custo. Tente novamente.');
     }
   };
 
@@ -1732,35 +1647,6 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                     </div>
                   )}
                 </div>
-                {canManageFinancialFields && (
-                <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
-                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Atribuir Custo à Obra</h4>
-                  <div className="bg-slate-50 border border-slate-200 p-4 space-y-4">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={applyOrderCost}
-                        onChange={(event) => setApplyOrderCost(event.target.checked)}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-[10px] font-black uppercase text-slate-700">Vincular valor ao custo da obra</span>
-                    </label>
-                    {hasSavedCostAssignment && (
-                      <p className="text-[10px] font-black uppercase text-emerald-600">
-                        Pedido incluído no custo da obra
-                      </p>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => void handleSaveCostAssignment()}
-                      className="w-full bg-slate-900 text-white py-4 font-black uppercase text-[10px] shadow-xl"
-                      >
-                        Salvar Vinculação de Custo
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 {canCommentOnOrder(isActionModalOpen) && (
                   <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Enviar Comentarios</h4>

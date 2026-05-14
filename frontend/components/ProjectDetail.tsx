@@ -1,5 +1,6 @@
 ﻿import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { Order, OrderMessage, Project, Sector, User, isGlobalAdmin, isProjectAdmin } from '../types';
+import { buildPaidOrderCosts, isPaidOrder } from '../utils/orderCosts';
 
 interface ProjectDetailProps {
   project: Project;
@@ -89,9 +90,9 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, 
 
   const currentBudget = budgetDraft;
   const totalBudgeted = currentBudget.reduce((sum, item) => sum + item.budgetedValue, 0);
-  const paidCosts = project.costs || [];
+  const paidCosts = buildPaidOrderCosts(project);
   const pendingInstallments = (project.installments || []).filter((installment) => installment.status === 'PENDING');
-  const activeOrdersWithValue = (project.orders || []).filter((order) => (order.value || 0) > 0);
+  const activeOrdersWithValue = (project.orders || []).filter((order) => (order.value || 0) > 0 && !isPaidOrder(order));
   const totalExecuted = paidCosts.reduce((sum, item) => sum + item.totalValue, 0);
   const totalToPay = pendingInstallments.reduce((sum, installment) => sum + installment.value, 0);
   const totalRequested = activeOrdersWithValue.reduce((sum, order) => sum + Number(order.value || 0), 0);
@@ -275,7 +276,7 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, 
         <div className="no-print">
           {activeTab === 'RESUMO' && <ConsolidationModule project={project} />}
           {canAccessFullProjectTabs && activeTab === 'ORCAMENTO' && <BudgetModule budget={currentBudget} onDraftChange={setBudgetDraft} draftKey={budgetDraftStorageKey} onSave={(budget) => { setBudgetDraft(budget); onUpdate({ ...project, budget }); }} />}
-          {canAccessFullProjectTabs && activeTab === 'CUSTOS' && <CostModule project={project} onSave={(costs) => onUpdate({ ...project, costs })} canManageCosts={user.role === 'SUPERADMIN'} />}
+          {canAccessFullProjectTabs && activeTab === 'CUSTOS' && <CostModule project={project} />}
           {canAccessFullProjectTabs && activeTab === 'PARCELAMENTOS' && <InstallmentsModule project={project} onUpdate={onUpdate} />}
           {canAccessFullProjectTabs && activeTab === 'PEDIDOS' && <OrdersModule project={project} sectors={sectors} user={user} onUpdate={onUpdate} onPersistOrder={onPersistOrder} onUpdateOrderSectorStatus={onUpdateOrderSectorStatus} onAddOrderMessage={onAddOrderMessage} onDeleteOrder={onDeleteOrder} onRefreshProjects={onRefreshProjects} />}
           {activeTab === 'ARQUIVOS' && <AttachmentsModule project={project} onUpdate={onUpdate} isAdmin={canManageProject} />}
@@ -388,7 +389,7 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, 
                             <td className="px-4 py-3 text-slate-600">{new Date(order.createdAt).toLocaleDateString('pt-BR')}</td>
                             <td className="px-4 py-3 font-bold text-slate-700">{order.title}</td>
                             <td className="px-4 py-3 text-slate-600">{currentBudget.find((item) => item.id === order.macroItemId)?.description || 'Sem categoria'}</td>
-                            <td className="px-4 py-3 text-slate-600">{order.status.replace('_', ' ')}</td>
+                            <td className="px-4 py-3 text-slate-600">{order.sectorStatus || 'Sem status setorial'}</td>
                             <td className="px-4 py-3 text-right font-black text-slate-800">R$ {formatCurrency(Number(order.value || 0))}</td>
                           </tr>
                         ))}
