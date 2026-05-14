@@ -1,6 +1,12 @@
 # Handoff Log
 
 ## 2026-05-14
+- Fix: ajusta prioridade diretoria para nao trabalhar com pedidos ja pagos.
+  - Pedidos com status setorial `PAGO` deixam de aparecer na busca/lista de elegiveis, nao podem ser salvos na selecao e tambem sao bloqueados no envio/aprovacao do lote.
+  - Selecao na tela de prioridades agora e persistida automaticamente ao marcar/desmarcar o pedido, mantendo itens selecionados ao trocar filtro de obra mesmo sem acionar o botao salvar.
+  - Files: `backend/src/index.ts`, `frontend/components/OrderPriorityBatchesModule.tsx`
+  - Risk: lotes abertos que ja tenham item salvo e posteriormente marcado como `PAGO` precisam ter a selecao revisada antes de enviar/aprovar.
+
 - Feature: adiciona lotes de prioridade para pedidos, adaptando a ideia do Fluxy para o BRAPE.
   - Fluxo: `DIRETORIA ADMINISTRATIVA` abre lote com valor disponivel; `DIRETORIA DE OBRAS` abre lote sem valor; selecao pode ser salva; envio passa para `AGUARDANDO_APROVACAO`; aprovacao da administrativa marca pedidos como prioridade aprovada.
   - Backend: novos modelos/tabelas `lotes_prioridade_pedidos`, `lotes_prioridade_pedidos_itens` e campos de prioridade em `pedidos`; API `/order-priority-batches`.

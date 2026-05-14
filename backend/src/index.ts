@@ -373,6 +373,10 @@ function normalizeLegacyStatus(value: unknown): OrderStatus {
   return OrderStatus.PENDENTE;
 }
 
+function isPaidSectorStatus(value?: string | null) {
+  return String(value || "").trim().toUpperCase() === "PAGO";
+}
+
 async function allocateOrderNumber(tx: any, projectId: number) {
   await tx.$executeRaw`UPDATE obras SET ultimo_numero_pedido = LAST_INSERT_ID(ultimo_numero_pedido + 1) WHERE id = ${projectId}`;
   const rows = await tx.$queryRaw<any[]>`SELECT LAST_INSERT_ID() AS value`;
@@ -998,12 +1002,20 @@ async function listEligiblePriorityOrders(batch: any, query: any = {}) {
   );
 
   const where: any = selectedOnly
-    ? { id: { in: selectedIds.length > 0 ? selectedIds : [-1] } }
+    ? {
+        id: { in: selectedIds.length > 0 ? selectedIds : [-1] },
+        OR: [{ sectorStatus: null }, { sectorStatus: { not: "PAGO" } }],
+      }
     : {
         requestedValue: { not: null },
-        OR: [
-          { priorityApproved: false },
-          ...(selectedIds.length > 0 ? [{ id: { in: selectedIds } }] : []),
+        AND: [
+          { OR: [{ sectorStatus: null }, { sectorStatus: { not: "PAGO" } }] },
+          {
+            OR: [
+              { priorityApproved: false },
+              ...(selectedIds.length > 0 ? [{ id: { in: selectedIds } }] : []),
+            ],
+          },
         ],
       };
 
@@ -1038,7 +1050,7 @@ async function listEligiblePriorityOrders(batch: any, query: any = {}) {
     orderBy: [{ expectedDate: "asc" }, { createdAt: "desc" }]
   });
 
-  return orders.filter((order: any) => decimalToNumber(order.requestedValue) > 0);
+  return orders.filter((order: any) => decimalToNumber(order.requestedValue) > 0 && !isPaidSectorStatus(order.sectorStatus));
 }
 
 async function replacePriorityBatchItems(batch: any, orderIds: number[], userId: number, tx: any) {
@@ -1047,16 +1059,21 @@ async function replacePriorityBatchItems(batch: any, orderIds: number[], userId:
         where: {
           id: { in: orderIds },
           requestedValue: { not: null },
-          OR: [
-            { priorityApproved: false },
-            { priorityBatchId: batch.id },
+          AND: [
+            { OR: [{ sectorStatus: null }, { sectorStatus: { not: "PAGO" } }] },
+            {
+              OR: [
+                { priorityApproved: false },
+                { priorityBatchId: batch.id },
+              ],
+            },
           ],
         },
-        select: { id: true, requestedValue: true }
+        select: { id: true, requestedValue: true, sectorStatus: true }
       })
     : [];
 
-  if (orders.length !== orderIds.length) {
+  if (orders.length !== orderIds.length || orders.some((order: any) => isPaidSectorStatus(order.sectorStatus))) {
     const error = new Error("Um ou mais pedidos selecionados nao estao elegiveis para prioridade.") as Error & { status?: number };
     error.status = 400;
     throw error;
@@ -2224,6 +2241,9 @@ app.post("/order-priority-batches/:id/submit", requireAuth, async (req: AuthRequ
   if (!Array.isArray(batch.items) || batch.items.length === 0) {
     return res.status(400).json({ error: "Selecione ao menos um pedido antes de enviar o lote." });
   }
+  if (batch.items.some((item: any) => isPaidSectorStatus(item.order?.sectorStatus))) {
+    return res.status(400).json({ error: "Pedidos com status PAGO nao podem ser enviados para prioridade." });
+  }
 
   const selectedValue = await calculatePriorityBatchSelection(batch.id);
   const availableValue = batch.availableValue == null ? null : decimalToNumber(batch.availableValue);
@@ -2257,6 +2277,9 @@ app.post("/order-priority-batches/:id/approve", requireAuth, async (req: AuthReq
   }
   if (!Array.isArray(batch.items) || batch.items.length === 0) {
     return res.status(400).json({ error: "Nao ha pedidos selecionados neste lote." });
+  }
+  if (batch.items.some((item: any) => isPaidSectorStatus(item.order?.sectorStatus))) {
+    return res.status(400).json({ error: "Pedidos com status PAGO nao podem ser aprovados como prioridade." });
   }
 
   const selectedValue = batch.items.reduce((total: number, item: any) => total + decimalToNumber(item.selectedValue), 0);

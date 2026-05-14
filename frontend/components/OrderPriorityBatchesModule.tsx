@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { dbService } from '../apiClient';
 import { Order, OrderPriorityBatch, OrderPriorityBatchContext, OrderPriorityBatchStatus, OrderPriorityBatchType } from '../types';
 
@@ -56,6 +56,8 @@ export const OrderPriorityBatchesModule: React.FC = () => {
   const [localListFilter, setLocalListFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [operating, setOperating] = useState(false);
+  const [autoSavingSelection, setAutoSavingSelection] = useState(false);
+  const selectionSaveVersion = useRef(0);
   const [createForm, setCreateForm] = useState({
     type: 'DIRETORIA_ADMINISTRATIVA' as OrderPriorityBatchType,
     availableValue: '',
@@ -144,6 +146,8 @@ export const OrderPriorityBatchesModule: React.FC = () => {
   }
 
   async function openBatch(id: string) {
+    selectionSaveVersion.current += 1;
+    setAutoSavingSelection(false);
     setOperating(true);
     try {
       const data = await dbService.getOrderPriorityBatch(id);
@@ -184,26 +188,46 @@ export const OrderPriorityBatchesModule: React.FC = () => {
     setSelectedOnlyFilter(false);
   }
 
+  async function persistSelection(orderIds: string[], showSuccess = false) {
+    if (!currentBatch?.id) return;
+    const version = ++selectionSaveVersion.current;
+    setAutoSavingSelection(true);
+    try {
+      const data = await dbService.saveOrderPriorityBatchSelection(currentBatch.id, orderIds);
+      if (version !== selectionSaveVersion.current) return;
+      const batch = data?.item || null;
+      setCurrentBatch(batch);
+      const savedOrders = ordersFromBatch(batch);
+      setSelectedOrderIds(savedOrders.map((order) => order.id));
+      setAvailableOrders((current) => mergeOrders(current, savedOrders));
+      await loadBatches();
+      if (showSuccess) alert('Selecao salva. Voce pode navegar e voltar depois.');
+    } catch (error: any) {
+      alert(error?.message || 'Nao foi possivel salvar a selecao.');
+      if (version === selectionSaveVersion.current) {
+        const savedOrders = ordersFromBatch(currentBatch);
+        setSelectedOrderIds(savedOrders.map((order) => order.id));
+        setAvailableOrders((current) => mergeOrders(current, savedOrders));
+      }
+    } finally {
+      if (version === selectionSaveVersion.current) setAutoSavingSelection(false);
+    }
+  }
+
   function toggleOrder(orderId: string) {
-    setSelectedOrderIds((current) => (
-      current.includes(orderId) ? current.filter((id) => id !== orderId) : [...current, orderId]
-    ));
+    if (!currentBatch?.canSave) return;
+    const nextOrderIds = selectedOrderIds.includes(orderId)
+      ? selectedOrderIds.filter((id) => id !== orderId)
+      : [...selectedOrderIds, orderId];
+    setSelectedOrderIds(nextOrderIds);
+    void persistSelection(nextOrderIds);
   }
 
   async function saveSelection() {
     if (!currentBatch?.id) return;
     setOperating(true);
     try {
-      const data = await dbService.saveOrderPriorityBatchSelection(currentBatch.id, selectedOrderIds);
-      const batch = data?.item || null;
-      setCurrentBatch(batch);
-      const savedOrders = ordersFromBatch(batch);
-      setSelectedOrderIds(savedOrders.map((order) => order.id));
-      setAvailableOrders(mergeOrders(availableOrders, savedOrders));
-      await loadBatches();
-      alert('Selecao salva. Voce pode navegar e voltar depois.');
-    } catch (error: any) {
-      alert(error?.message || 'Nao foi possivel salvar a selecao.');
+      await persistSelection(selectedOrderIds, true);
     } finally {
       setOperating(false);
     }
@@ -426,8 +450,8 @@ export const OrderPriorityBatchesModule: React.FC = () => {
                     <button type="button" onClick={clearSearchFilters} className="bg-white border border-slate-300 text-slate-700 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Limpar</button>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {currentBatch.canSave && <button type="button" onClick={() => void saveSelection()} disabled={operating} className="bg-white border border-slate-300 text-slate-900 px-4 py-3 text-[10px] font-black uppercase tracking-widest disabled:opacity-50">Salvar selecao</button>}
-                    {currentBatch.canSubmit && <button type="button" onClick={() => void submitBatch()} disabled={operating} className="bg-slate-900 text-white px-4 py-3 text-[10px] font-black uppercase tracking-widest disabled:opacity-50">Enviar para aprovacao</button>}
+                    {currentBatch.canSave && <button type="button" onClick={() => void saveSelection()} disabled={operating || autoSavingSelection} className="bg-white border border-slate-300 text-slate-900 px-4 py-3 text-[10px] font-black uppercase tracking-widest disabled:opacity-50">{autoSavingSelection ? 'Salvando...' : 'Salvar selecao'}</button>}
+                    {currentBatch.canSubmit && <button type="button" onClick={() => void submitBatch()} disabled={operating || autoSavingSelection} className="bg-slate-900 text-white px-4 py-3 text-[10px] font-black uppercase tracking-widest disabled:opacity-50">Enviar para aprovacao</button>}
                   </div>
                 </div>
               )}
@@ -458,7 +482,7 @@ export const OrderPriorityBatchesModule: React.FC = () => {
                         <tr key={order.id} className={selected ? 'bg-blue-50' : 'hover:bg-slate-50'}>
                           {currentBatch.status === 'ABERTO' && (
                             <td className="px-4 py-4">
-                              <input type="checkbox" checked={selected} onChange={() => toggleOrder(order.id)} />
+                              <input type="checkbox" checked={selected} disabled={autoSavingSelection} onChange={() => toggleOrder(order.id)} />
                             </td>
                           )}
                           <td className="px-4 py-4">
