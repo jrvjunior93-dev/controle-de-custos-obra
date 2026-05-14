@@ -105,8 +105,9 @@ Fluxos:
 
 - a `DIRETORIA ADMINISTRATIVA` pode abrir lote para a `DIRETORIA DE OBRAS` informando `valor disponivel`
 - a `DIRETORIA DE OBRAS` pode abrir lote para a `DIRETORIA ADMINISTRATIVA` sem valor definido
-- a selecao de pedidos pode ser salva em lote aberto para permitir navegacao e retomada posterior
-- filtros de busca, obra e selecionados nao removem pedidos ja selecionados
+- a selecao de pedidos em lote aberto e salva automaticamente ao marcar/desmarcar, permitindo navegacao e retomada posterior
+- filtros de busca, obra e selecionados nao removem pedidos ja selecionados nem devem reordenar visualmente o pedido recem-marcado para outra posicao
+- pedidos com status setorial `PAGO` nao podem ser listados, salvos, enviados ou aprovados em lote de prioridade
 - lotes enviados entram em `AGUARDANDO_APROVACAO`
 - somente a `DIRETORIA ADMINISTRATIVA` aprova, recusa ou cancela lotes aguardando aprovacao
 - somente na aprovacao os pedidos recebem `prioridade_aprovada`

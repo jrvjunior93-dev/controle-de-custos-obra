@@ -38,8 +38,10 @@ const ordersFromBatch = (batch?: OrderPriorityBatch | null) => (
 
 const mergeOrders = (base: Order[], selected: Order[]) => {
   const map = new Map<string, Order>();
-  selected.forEach((order) => map.set(order.id, order));
   base.forEach((order) => map.set(order.id, order));
+  selected.forEach((order) => {
+    if (!map.has(order.id)) map.set(order.id, order);
+  });
   return Array.from(map.values());
 };
 
@@ -420,7 +422,7 @@ export const OrderPriorityBatchesModule: React.FC = () => {
                 </div>
                 <div className="bg-slate-50 border border-slate-200 p-4">
                   <p className="text-[9px] font-black uppercase text-slate-400">Selecionado</p>
-                  <p className="text-sm font-black text-slate-900 mt-1">{formatMoney(selectedValue || currentBatch.selectedValue)}</p>
+                  <p className="text-sm font-black text-slate-900 mt-1">{formatMoney(selectedValue)}</p>
                 </div>
                 <div className="bg-slate-50 border border-slate-200 p-4">
                   <p className="text-[9px] font-black uppercase text-slate-400">Pedidos</p>

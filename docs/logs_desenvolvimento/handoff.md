@@ -1,6 +1,13 @@
 # Handoff Log
 
 ## 2026-05-14
+- Fix: corrige selecao visual na lista filtrada de prioridade diretoria.
+  - A uniao entre pedidos filtrados e pedidos ja selecionados passa a preservar a ordem retornada pelo filtro, anexando selecionados ausentes apenas no final.
+  - Evita que um pedido recem-marcado salte para o topo da tabela e aparente selecionar outro pedido acima.
+  - Atualiza regra de negocio documentando autosave, preservacao de ordem visual e bloqueio de pedidos `PAGO`.
+  - Files: `frontend/components/OrderPriorityBatchesModule.tsx`, `docs/regras_negocio/pedidos.md`
+  - Risk: baixo; alteracao restrita a ordenacao local da lista exibida e ao texto documental.
+
 - Fix: ajusta prioridade diretoria para nao trabalhar com pedidos ja pagos.
   - Pedidos com status setorial `PAGO` deixam de aparecer na busca/lista de elegiveis, nao podem ser salvos na selecao e tambem sao bloqueados no envio/aprovacao do lote.
   - Selecao na tela de prioridades agora e persistida automaticamente ao marcar/desmarcar o pedido, mantendo itens selecionados ao trocar filtro de obra mesmo sem acionar o botao salvar.
