@@ -8,6 +8,11 @@
   - Files: `backend/prisma/schema.prisma`, `backend/prisma/migrations/20260514000100_order_priority_batches/migration.sql`, `backend/src/index.ts`, `frontend/App.tsx`, `frontend/apiClient.ts`, `frontend/types.ts`, `frontend/components/OrderPriorityBatchesModule.tsx`, `frontend/components/GlobalOrdersModule.tsx`, `frontend/components/OrdersModule.tsx`, `docs/regras_negocio/pedidos.md`
   - Risk: requer aplicar migration e garantir que os setores estejam cadastrados exatamente como `DIRETORIA ADMINISTRATIVA` e `DIRETORIA DE OBRAS`.
 
+- Adjustment: adiciona atalho `Prioridade financeiro` na Central de Pedidos para usuarios do setor `DIRETORIA DE OBRAS`.
+  - Fluxo: usuario seleciona pedidos, aciona o botao, o sistema cria lote `DIRETORIA_OBRAS`, salva a selecao e envia para aprovacao da `DIRETORIA ADMINISTRATIVA`.
+  - Visibilidade: membros do setor `FINANCEIRO` passam a enxergar pedidos com `prioridade_aprovada`, mesmo quando o pedido nao esta no setor atual deles.
+  - Files: `frontend/components/GlobalOrdersModule.tsx`, `backend/src/index.ts`
+
 ## 2026-04-17
 - Fix: preserve `sectorStatus` during order upserts when the payload does not include `sectorStatus`.
   - Why: the `PUT /projects/:projectId/orders/:orderId` flow can run after setting sector status and would wipe it (treated missing as `null`), causing "need to change twice".

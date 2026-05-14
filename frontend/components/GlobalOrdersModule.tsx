@@ -2,6 +2,7 @@
 import { Attachment, ExecutedCost, Order, OrderMessage, Project, Sector, User, canManageAssignedOrders } from '../types';
 import { AttachmentViewerModal } from './AttachmentViewerModal';
 import { canPreviewAttachmentInline, resolveAttachmentForAccess, triggerAttachmentDownload } from '../utils/attachments';
+import { dbService } from '../apiClient';
 
 interface GlobalOrdersModuleProps {
   projects: Project[];
@@ -66,6 +67,14 @@ const getOrderCodeSearchTokens = (order: Order) => {
 
 const isObraSectorName = (name?: string) => String(name || '').trim().toUpperCase() === 'OBRA';
 const isComprasSectorMember = (user: User) => user.role === 'MEMBRO' && String(user.sectorName || '').trim().toUpperCase() === 'COMPRAS';
+const normalizeSectorName = (name?: string) => String(name || '')
+  .trim()
+  .toUpperCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, ' ');
+const isWorksBoardSectorName = (name?: string) => normalizeSectorName(name) === 'DIRETORIA DE OBRAS';
+const isFinanceSectorName = (name?: string) => normalizeSectorName(name) === 'FINANCEIRO';
 
 const getEffectiveOrderStatusLabel = (order: Order) => order.sectorStatus || 'Sem status setorial';
 
@@ -255,6 +264,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const canManageAllOrders = canManageAssignedOrders(user.role);
   const canImportOrders = user.role === 'SUPERADMIN';
   const usesAssignedProjectScope = !canManageAllOrders && (!user.sectorName || isObraSectorName(user.sectorName));
+  const canRequestFinancialPriority = isWorksBoardSectorName(user.sectorName);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     const defaults = {
       select: 60,
@@ -324,6 +334,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
   const canUserSeeOrder = (order: Order) => {
     if (canManageAllOrders) return true;
     if (usesAssignedProjectScope) return true;
+    if (isFinanceSectorName(user.sectorName) && order.priorityApproved) return true;
     if (order.requesterId === user.id) return true;
     if (!user.sectorId) return false;
     return order.currentSectorId === user.sectorId || (order.accessibleSectorIds || []).includes(user.sectorId);
@@ -824,6 +835,33 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     setIsBulkActionModalOpen(true);
   };
 
+  const handleRequestFinancialPriority = async () => {
+    if (!canRequestFinancialPriority) return alert('Apenas a Diretoria de Obras pode solicitar prioridade financeira por esta tela.');
+    if (selectedOrdersCount < 1) return;
+
+    const invalidOrders = selectedOrders.filter((order) => !isOrderActive(order) || !Number(order.value || 0) || order.priorityApproved);
+    if (invalidOrders.length > 0) {
+      return alert('Remova da seleção pedidos concluídos, cancelados, sem valor ou já aprovados como prioridade.');
+    }
+
+    if (!confirm(`Criar lote de prioridade financeira com ${selectedOrdersCount} pedido(s) para aprovação da Diretoria Administrativa?`)) return;
+
+    try {
+      const created = await dbService.createOrderPriorityBatch({
+        type: 'DIRETORIA_OBRAS',
+        note: 'Solicitação de prioridade financeira criada pela Diretoria de Obras na central de pedidos.',
+      });
+      const batchId = created?.item?.id;
+      if (!batchId) throw new Error('Lote criado sem identificador.');
+      await dbService.saveOrderPriorityBatchSelection(batchId, selectedOrders.map((order) => order.id));
+      await dbService.submitOrderPriorityBatch(batchId);
+      clearSelectedOrders();
+      alert(`Lote #${batchId} enviado para aprovação da Diretoria Administrativa.`);
+    } catch (error: any) {
+      alert(error?.message || 'Não foi possível solicitar prioridade financeira.');
+    }
+  };
+
   const handleBulkForwardOrders = () => {
     if (!canManageAllOrders) return alert('Somente administradores podem encaminhar pedidos em massa.');
     if (selectedOrdersCount < 1) return;
@@ -1301,6 +1339,15 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
                   className="bg-white border border-slate-300 text-slate-900 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50"
                 >
                   Enviar Setor
+                </button>
+              )}
+              {canRequestFinancialPriority && (
+                <button
+                  type="button"
+                  onClick={() => void handleRequestFinancialPriority()}
+                  className="bg-emerald-600 border border-emerald-600 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-emerald-700"
+                >
+                  Prioridade financeiro
                 </button>
               )}
               <button

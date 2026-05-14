@@ -509,9 +509,14 @@ async function mapOrderFromDb(order: any, projectName: string) {
   };
 }
 
-function canUserAccessOrder(order: any, userId: number, role: UserRole, sectorId?: number | null) {
+function isFinanceSectorName(name?: string | null) {
+  return String(name || "").trim().toUpperCase() === "FINANCEIRO";
+}
+
+function canUserAccessOrder(order: any, userId: number, role: UserRole, sectorId?: number | null, sectorName?: string | null) {
   if (GLOBAL_ADMIN_ROLES.includes(role)) return true;
   if (role === UserRole.ADMIN || role === UserRole.ADMIN_OBRA) return true;
+  if (isFinanceSectorName(sectorName) && order.priorityApproved) return true;
   if (order.requesterUserId === userId || order.assignedUserId === userId) return true;
 
   const accessibleSectorIds = Array.from(new Set((order.sectorAccess || []).map((item: any) => item.sectorId)));
@@ -679,7 +684,7 @@ async function mapProjectFromDb(project: any, authUser?: any) {
   const scopedOrders = authUser
     ? (shouldUseAssignedProjectScope(authUser)
       ? (project.orders || [])
-      : (project.orders || []).filter((order: any) => canUserAccessOrder(order, authUser.id, authUser.role, authUser.sectorId)))
+      : (project.orders || []).filter((order: any) => canUserAccessOrder(order, authUser.id, authUser.role, authUser.sectorId, authUser.sector?.name)))
     : (project.orders || []);
 
   return {
@@ -1844,7 +1849,7 @@ app.post("/projects/:projectId/orders/:orderId/messages", requireAuth, async (re
       }
     });
     if (!order) return res.status(404).json({ error: "Order not found" });
-    if (!canUserAccessOrder(order, Number(req.authUser.id), req.authUser.role, actorUser.sectorId || undefined)) {
+    if (!canUserAccessOrder(order, Number(req.authUser.id), req.authUser.role, actorUser.sectorId || undefined, actorUser.sector?.name)) {
       return res.status(403).json({ error: "Forbidden" });
     }
     if (order.status === OrderStatus.CONCLUIDO || order.status === OrderStatus.CANCELADO) {
