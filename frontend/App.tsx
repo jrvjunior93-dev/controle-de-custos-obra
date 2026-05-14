@@ -627,12 +627,13 @@ const App: React.FC = () => {
 
   const handleUpdateMemberOrderSectorStatus = async (projectId: string, orderId: string, sectorStatus?: string) => {
     const savedOrder = await dbService.updateProjectOrderSectorStatus(projectId, orderId, sectorStatus);
-    const normalizedOrder = normalizeProjectRecord({
-      ...(projects.find((project) => project.id === projectId) || { id: projectId, code: '', name: '', location: '', startDate: '', notes: '', budget: [], costs: [], installments: [], orders: [] }),
-      orders: [savedOrder]
-    }).orders?.[0] || savedOrder;
+    let normalizedOrder = savedOrder;
     setProjects((currentProjects) => currentProjects.map((project) => {
       if (project.id !== projectId) return project;
+      normalizedOrder = normalizeProjectRecord({
+        ...project,
+        orders: [savedOrder]
+      }).orders?.[0] || savedOrder;
       return {
         ...project,
         orders: (project.orders || []).map((item) => item.id === orderId || item.id === normalizedOrder.id ? normalizedOrder : item),

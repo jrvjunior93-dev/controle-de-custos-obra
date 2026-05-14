@@ -1080,6 +1080,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     try {
       const savedOrder = await onUpdateMemberOrderSectorStatus(isActionModalOpen.projectId, isActionModalOpen.id, nextStatus || undefined);
       setIsActionModalOpen(savedOrder);
+      replaceOrderInProjects(savedOrder);
       selectedSectorStatusRef.current = savedOrder.sectorStatus || '';
       setSelectedSectorStatus(selectedSectorStatusRef.current);
       setIsEditingSectorStatus(false);

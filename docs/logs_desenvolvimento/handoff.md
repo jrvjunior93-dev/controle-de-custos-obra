@@ -18,6 +18,11 @@
   - Pedidos da obra: apropriacao, encaminhamento e reabertura passam a tratar erro de persistencia com alerta em vez de falha silenciosa.
   - Files: `frontend/components/GlobalOrdersModule.tsx`, `frontend/components/OrdersModule.tsx`
 
+- Fix: reforca sincronizacao visual apos alterar status setorial do pedido.
+  - App passa a normalizar/substituir o pedido salvo usando o estado atual de projetos, evitando usar snapshot antigo no primeiro PATCH.
+  - Central de Pedidos tambem substitui imediatamente o pedido local pelo retorno do endpoint de status setorial.
+  - Files: `frontend/App.tsx`, `frontend/components/GlobalOrdersModule.tsx`
+
 ## 2026-04-17
 - Fix: preserve `sectorStatus` during order upserts when the payload does not include `sectorStatus`.
   - Why: the `PUT /projects/:projectId/orders/:orderId` flow can run after setting sector status and would wipe it (treated missing as `null`), causing "need to change twice".
