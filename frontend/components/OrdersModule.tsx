@@ -735,9 +735,14 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       }]
     };
     void (async () => {
-      const savedOrder = await onPersistOrder(project.id, updatedOrder);
-      setIsActionModalOpen(savedOrder);
-      setIsEditingSectorStatus(false);
+      try {
+        const savedOrder = await onPersistOrder(project.id, updatedOrder);
+        setIsActionModalOpen(savedOrder);
+        setIsEditingSectorStatus(false);
+      } catch (error) {
+        console.error('Erro ao atualizar apropriação do pedido:', error);
+        alert('Não foi possível atualizar a apropriação do pedido. Tente novamente.');
+      }
     })();
   };
 
@@ -827,8 +832,13 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     };
 
     void (async () => {
-      const savedOrder = await onPersistOrder(project.id, updatedOrder);
-      setIsActionModalOpen(savedOrder);
+      try {
+        const savedOrder = await onPersistOrder(project.id, updatedOrder);
+        setIsActionModalOpen(savedOrder);
+      } catch (error) {
+        console.error('Erro ao encaminhar pedido:', error);
+        alert('Não foi possível encaminhar o pedido. Tente novamente.');
+      }
     })();
   };
 
@@ -850,16 +860,21 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
     };
 
     void (async () => {
-      const savedOrder = await onPersistOrder(project.id, updatedOrder);
-      const costsWithoutOrder = (project.costs || []).filter((cost) => cost.originOrderId !== updatedOrder.id);
-      if (costsWithoutOrder.length !== (project.costs || []).length) {
-        await onUpdate({
-          ...project,
-          costs: costsWithoutOrder,
-        });
+      try {
+        const savedOrder = await onPersistOrder(project.id, updatedOrder);
+        const costsWithoutOrder = (project.costs || []).filter((cost) => cost.originOrderId !== updatedOrder.id);
+        if (costsWithoutOrder.length !== (project.costs || []).length) {
+          await onUpdate({
+            ...project,
+            costs: costsWithoutOrder,
+          });
+        }
+        setIsActionModalOpen(savedOrder);
+        setApplyOrderCost(false);
+      } catch (error) {
+        console.error('Erro ao reabrir pedido:', error);
+        alert('Não foi possível reabrir o pedido. Tente novamente.');
       }
-      setIsActionModalOpen(savedOrder);
-      setApplyOrderCost(false);
     })();
   };
 

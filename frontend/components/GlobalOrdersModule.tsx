@@ -862,7 +862,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     }
   };
 
-  const handleBulkForwardOrders = () => {
+  const handleBulkForwardOrders = async () => {
     if (!canManageAllOrders) return alert('Somente administradores podem encaminhar pedidos em massa.');
     if (selectedOrdersCount < 1) return;
     if (!bulkForwardSectorId) return alert('Selecione o setor de destino.');
@@ -875,6 +875,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
     if (!confirm(`Encaminhar ${selectedOrdersCount} pedido(s) para o setor "${nextSectorName}"?`)) return;
 
+    const previousProjects = projects;
     const selectedIds = new Set(selectedOrderIds);
     const nextProjects = projects.map((project) => {
       let changed = false;
@@ -902,38 +903,47 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       return changed ? { ...project, orders: nextOrders } : project;
     });
 
-    onUpdateProjects(nextProjects);
-    nextProjects.forEach((project) => {
-      if ((project.orders || []).some((order) => selectedIds.has(order.id))) {
-        persistProjectState(project);
-      }
-    });
-
-    clearSelectedOrders();
+    try {
+      onUpdateProjects(nextProjects);
+      await Promise.all(nextProjects
+        .filter((project) => (project.orders || []).some((order) => selectedIds.has(order.id)))
+        .map((project) => persistProjectState(project)));
+      clearSelectedOrders();
+    } catch (error: any) {
+      console.error('Erro ao encaminhar pedidos em massa:', error);
+      onUpdateProjects(previousProjects);
+      alert(error?.message || 'Não foi possível encaminhar os pedidos selecionados.');
+    }
   };
 
-  const handleDeleteOrder = (order: Order) => {
+  const handleDeleteOrder = async (order: Order) => {
     if (!canDeleteOrderDirectly) return alert('Somente ADMIN CENTRAL e SUPERADMIN podem excluir pedidos.');
     if (!confirm('Excluir pedido permanentemente?')) return;
 
     const targetProject = projects.find((project) => project.id === order.projectId);
     if (!targetProject) return;
+    const previousProjects = projects;
 
     const nextProject = {
       ...targetProject,
       orders: (targetProject.orders || []).filter((item) => item.id !== order.id)
     };
 
-    onUpdateProjects(projects.map((project) => project.id === order.projectId ? nextProject : project));
-
-    if (canManageAllOrders) {
-      persistProjectState(nextProject);
-    } else {
-      void onDeleteMemberOrder(order.projectId, order.id);
-    }
-
-    if (isActionModalOpen?.id === order.id) {
-      setIsActionModalOpen(null);
+    try {
+      onUpdateProjects(projects.map((project) => project.id === order.projectId ? nextProject : project));
+      if (canManageAllOrders) {
+        await persistProjectState(nextProject);
+      } else {
+        await onDeleteMemberOrder(order.projectId, order.id);
+      }
+      setSelectedOrderIds((current) => current.filter((id) => id !== order.id));
+      if (isActionModalOpen?.id === order.id) {
+        setIsActionModalOpen(null);
+      }
+    } catch (error: any) {
+      console.error('Erro ao excluir pedido:', error);
+      onUpdateProjects(previousProjects);
+      alert(error?.message || 'Não foi possível excluir o pedido.');
     }
   };
 
@@ -942,6 +952,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     if (!canReopenOrder(isActionModalOpen)) return alert('Você não pode reabrir este pedido.');
     if (!confirm(`Reabrir o pedido "${isActionModalOpen.title}"?`)) return;
 
+    const previousProjects = projects;
     let updatedOrder: Order | null = null;
     const updatedProject = handleProjectMutation(isActionModalOpen.projectId, (project) => ({
       ...project,
@@ -965,12 +976,19 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
     if (updatedOrder) {
       void (async () => {
-        const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
-        if (updatedProject) {
-          await persistProjectState({ ...updatedProject, orders: (updatedProject.orders || []).map((item) => item.id === savedOrder.id ? savedOrder : item) });
+        try {
+          const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
+          replaceOrderInProjects(savedOrder);
+          if (updatedProject) {
+            await persistProjectState({ ...updatedProject, orders: (updatedProject.orders || []).map((item) => item.id === savedOrder.id ? savedOrder : item) });
+          }
+          setIsActionModalOpen(savedOrder);
+          setApplyOrderCost(false);
+        } catch (error: any) {
+          console.error('Erro ao reabrir pedido:', error);
+          onUpdateProjects(previousProjects);
+          alert(error?.message || 'Não foi possível reabrir o pedido.');
         }
-        setIsActionModalOpen(savedOrder);
-        setApplyOrderCost(false);
       })();
     }
   };
@@ -980,6 +998,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     if (!canEditOrderValueDirectly(isActionModalOpen)) return;
     if (!confirm(`Salvar o novo valor do pedido "${isActionModalOpen.title}"?`)) return;
 
+    const previousProjects = projects;
     let updatedOrder: Order | null = null;
     const updatedProject = handleProjectMutation(isActionModalOpen.projectId, (project) => ({
       ...project,
@@ -1002,15 +1021,22 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
     if (updatedOrder) {
       void (async () => {
-        const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
-        setIsActionModalOpen(savedOrder);
-        if (activeProjectForModal && getLinkedOrderCost(savedOrder, activeProjectForModal)) {
-          const existingCost = getLinkedOrderCost(savedOrder, activeProjectForModal);
-          const costsWithoutOrder = (activeProjectForModal.costs || []).filter((cost) => cost.originOrderId !== savedOrder.id);
-          await persistProjectState({
-            ...activeProjectForModal,
-            costs: [...costsWithoutOrder, buildOrderCostRecord(savedOrder, activeProjectForModal, existingCost)],
-          });
+        try {
+          const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
+          replaceOrderInProjects(savedOrder);
+          setIsActionModalOpen(savedOrder);
+          if (activeProjectForModal && getLinkedOrderCost(savedOrder, activeProjectForModal)) {
+            const existingCost = getLinkedOrderCost(savedOrder, activeProjectForModal);
+            const costsWithoutOrder = (activeProjectForModal.costs || []).filter((cost) => cost.originOrderId !== savedOrder.id);
+            await persistProjectState({
+              ...activeProjectForModal,
+              costs: [...costsWithoutOrder, buildOrderCostRecord(savedOrder, activeProjectForModal, existingCost)],
+            });
+          }
+        } catch (error: any) {
+          console.error('Erro ao atualizar valor do pedido:', error);
+          onUpdateProjects(previousProjects);
+          alert(error?.message || 'Não foi possível atualizar o valor do pedido.');
         }
       })();
     }
@@ -1071,6 +1097,17 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     const nextProject = mutate(targetProject);
     onUpdateProjects(projects.map((project) => project.id === projectId ? nextProject : project));
     return nextProject;
+  };
+
+  const replaceOrderInProjects = (savedOrder: Order) => {
+    onUpdateProjects(projects.map((project) => (
+      project.id === savedOrder.projectId
+        ? {
+            ...project,
+            orders: (project.orders || []).map((order) => order.id === savedOrder.id ? savedOrder : order),
+          }
+        : project
+    )));
   };
 
   const handleSendMessage = async () => {
@@ -1160,6 +1197,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     if (!selectedMacroItemId) return alert('Selecione um item macro para vincular ao pedido.');
     if (!confirm(`Vincular o item macro ao pedido "${isActionModalOpen.title}"?`)) return;
 
+    const previousProjects = projects;
     let updatedOrder: Order | null = null;
     const updatedProject = handleProjectMutation(isActionModalOpen.projectId, (project) => ({
       ...project,
@@ -1183,8 +1221,15 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
     if (updatedOrder) {
       void (async () => {
-        const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
-        setIsActionModalOpen(savedOrder);
+        try {
+          const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
+          replaceOrderInProjects(savedOrder);
+          setIsActionModalOpen(savedOrder);
+        } catch (error: any) {
+          console.error('Erro ao atualizar apropriação do pedido:', error);
+          onUpdateProjects(previousProjects);
+          alert(error?.message || 'Não foi possível atualizar a apropriação do pedido.');
+        }
       })();
     }
   };
@@ -1199,6 +1244,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
     const previousSectorName = isActionModalOpen.currentSectorName || 'SEM SETOR';
     if (!confirm(`Encaminhar o pedido "${isActionModalOpen.title}" para o setor "${nextSectorName}"?`)) return;
 
+    const previousProjects = projects;
     let updatedOrder: Order | null = null;
     const updatedProject = handleProjectMutation(isActionModalOpen.projectId, (project) => ({
       ...project,
@@ -1226,8 +1272,15 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
     if (updatedOrder) {
       void (async () => {
-        const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
-        setIsActionModalOpen(savedOrder);
+        try {
+          const savedOrder = await persistMemberOrder(isActionModalOpen.projectId, updatedOrder!);
+          replaceOrderInProjects(savedOrder);
+          setIsActionModalOpen(savedOrder);
+        } catch (error: any) {
+          console.error('Erro ao encaminhar pedido:', error);
+          onUpdateProjects(previousProjects);
+          alert(error?.message || 'Não foi possível encaminhar o pedido.');
+        }
       })();
     }
   };

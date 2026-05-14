@@ -13,6 +13,11 @@
   - Visibilidade: membros do setor `FINANCEIRO` passam a enxergar pedidos com `prioridade_aprovada`, mesmo quando o pedido nao esta no setor atual deles.
   - Files: `frontend/components/GlobalOrdersModule.tsx`, `backend/src/index.ts`
 
+- Audit/Fix: revisa botoes de acao de pedidos para evitar tela desatualizada apos falha ou retorno canonico da API.
+  - Central de Pedidos: encaminhamento em massa, exclusao, reabertura, valor, apropriacao e encaminhamento agora aguardam persistencia, substituem pelo pedido retornado pela API quando aplicavel e fazem rollback em erro.
+  - Pedidos da obra: apropriacao, encaminhamento e reabertura passam a tratar erro de persistencia com alerta em vez de falha silenciosa.
+  - Files: `frontend/components/GlobalOrdersModule.tsx`, `frontend/components/OrdersModule.tsx`
+
 ## 2026-04-17
 - Fix: preserve `sectorStatus` during order upserts when the payload does not include `sectorStatus`.
   - Why: the `PUT /projects/:projectId/orders/:orderId` flow can run after setting sector status and would wipe it (treated missing as `null`), causing "need to change twice".
