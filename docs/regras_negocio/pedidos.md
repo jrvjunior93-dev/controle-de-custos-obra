@@ -106,7 +106,7 @@ Fluxos:
 
 - a `DIRETORIA ADMINISTRATIVA` pode abrir lote para a `DIRETORIA DE OBRAS` informando `valor disponivel`
 - a `DIRETORIA DE OBRAS` pode abrir lote para a `DIRETORIA ADMINISTRATIVA` sem valor definido
-- usuarios do setor `FINANCEIRO` podem acessar a tela para acompanhar os lotes, sem permissao para selecionar, enviar, aprovar, recusar ou cancelar
+- usuarios do setor `FINANCEIRO` podem acessar a tela para acompanhar todos os lotes, independente de quem criou, sem permissao para selecionar, enviar, aprovar, recusar ou cancelar
 - o menu exibe um badge vermelho em `Prioridades` quando ha lotes criados, enviados, aprovados, recusados ou cancelados depois da ultima visualizacao do usuario
 - a selecao de pedidos em lote aberto e salva automaticamente ao marcar/desmarcar, permitindo navegacao e retomada posterior
 - filtros de busca, obra e selecionados nao removem pedidos ja selecionados nem devem reordenar visualmente o pedido recem-marcado para outra posicao

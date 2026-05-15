@@ -1,6 +1,11 @@
 # Handoff Log
 
 ## 2026-05-15
+- Fix: garante visibilidade completa de lotes para o setor financeiro.
+  - Usuarios do setor `FINANCEIRO` agora veem todos os lotes de prioridade, independente do criador, mantendo perfil somente leitura.
+  - Files: `backend/src/index.ts`, `docs/regras_negocio/pedidos.md`
+  - Risk: baixo; amplia apenas leitura para setor ja autorizado a acessar a tela.
+
 - Change: amplia acompanhamento de lotes de prioridade para o setor financeiro.
   - Usuarios do setor `FINANCEIRO` passam a acessar a tela `Prioridades`, com permissao de visualizacao dos lotes e sem acoes de selecao/aprovacao.
   - Menu passa a exibir badge vermelho em `Prioridades` contando lotes criados, enviados, aprovados, recusados ou cancelados desde a ultima visualizacao do usuario.

@@ -894,6 +894,7 @@ function canViewPriorityBatch(context: Awaited<ReturnType<typeof getPriorityUser
   if (!context) return false;
   if (context.isAdministrativeBoard) return true;
   if (context.isWorksBoard) return true;
+  if (context.isFinanceBoard) return true;
   return Number(batch.createdByUserId) === Number(context.user.id);
 }
 
