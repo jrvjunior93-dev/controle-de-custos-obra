@@ -50,6 +50,24 @@ const isBoardSectorName = (name?: string) => {
     .replace(/\s+/g, ' ');
   return normalized === 'DIRETORIA ADMINISTRATIVA' || normalized === 'DIRETORIA DE OBRAS';
 };
+const isFinanceSectorName = (name?: string) => String(name || '').trim().toUpperCase() === 'FINANCEIRO';
+const canAccessOrderPrioritiesForUser = (account?: User | null) => Boolean(
+  account && (account.role === 'SUPERADMIN' || isBoardSectorName(account.sectorName) || isFinanceSectorName(account.sectorName))
+);
+
+const priorityNotificationStorageKey = (userId?: string) => `csc_brape_priority_notifications_seen_${userId || 'anon'}`;
+const getPriorityBatchLifecycleTime = (batch: any) => Math.max(
+  ...[
+    batch?.createdAt,
+    batch?.submittedAt,
+    batch?.approvedAt,
+    batch?.rejectedAt,
+    batch?.cancelledAt,
+  ].map((value) => {
+    const timestamp = value ? new Date(value).getTime() : 0;
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  })
+);
 
 const normalizeProjectRecord = (project: Project): Project => ({
   ...project,
@@ -167,6 +185,7 @@ const App: React.FC = () => {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: '', currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [priorityNotificationCount, setPriorityNotificationCount] = useState(0);
 
   const persistNavigationState = (nextView: ViewState, nextProjectId: string | null) => {
     sessionStorage.setItem(NAVIGATION_KEY, JSON.stringify({
@@ -179,6 +198,50 @@ const App: React.FC = () => {
     setView(nextView);
     setSelectedProjectId(nextProjectId);
     persistNavigationState(nextView, nextProjectId);
+  };
+
+  const markPriorityNotificationsSeen = async () => {
+    if (!user) return;
+    try {
+      const data = await dbService.listOrderPriorityBatches();
+      const batches = Array.isArray(data?.items) ? data.items : [];
+      const latestLifecycleTime = batches.reduce((latest: number, batch: any) => Math.max(latest, getPriorityBatchLifecycleTime(batch)), 0);
+      localStorage.setItem(priorityNotificationStorageKey(user.id), String(latestLifecycleTime || Date.now()));
+      setPriorityNotificationCount(0);
+    } catch {
+      localStorage.setItem(priorityNotificationStorageKey(user.id), String(Date.now()));
+      setPriorityNotificationCount(0);
+    }
+  };
+
+  const openOrderPriorities = () => {
+    setNavigationState('ORDER_PRIORITIES', null);
+    void markPriorityNotificationsSeen();
+  };
+
+  const refreshPriorityNotificationCount = async () => {
+    if (!canAccessOrderPrioritiesForUser(user)) {
+      setPriorityNotificationCount(0);
+      return;
+    }
+
+    try {
+      const data = await dbService.listOrderPriorityBatches();
+      const batches = Array.isArray(data?.items) ? data.items : [];
+      const key = priorityNotificationStorageKey(user?.id);
+      const latestLifecycleTime = batches.reduce((latest: number, batch: any) => Math.max(latest, getPriorityBatchLifecycleTime(batch)), 0);
+      const storedSeenTime = Number(localStorage.getItem(key) || 0);
+
+      if (!storedSeenTime) {
+        localStorage.setItem(key, String(latestLifecycleTime || Date.now()));
+        setPriorityNotificationCount(0);
+        return;
+      }
+
+      setPriorityNotificationCount(batches.filter((batch: any) => getPriorityBatchLifecycleTime(batch) > storedSeenTime).length);
+    } catch {
+      setPriorityNotificationCount(0);
+    }
   };
 
   const markSessionActivity = () => {
@@ -198,6 +261,7 @@ const App: React.FC = () => {
     setSectors([]);
     setShowProfileMenu(false);
     setShowProfileModal(false);
+    setPriorityNotificationCount(0);
   };
 
   const forceLogout = (message?: string) => {
@@ -399,6 +463,28 @@ const App: React.FC = () => {
       activityEvents.forEach((eventName) => window.removeEventListener(eventName, resetInactivityTimeout));
     };
   }, [user]);
+
+  useEffect(() => {
+    if (!user || !canAccessOrderPrioritiesForUser(user)) {
+      setPriorityNotificationCount(0);
+      return undefined;
+    }
+
+    if (view === 'ORDER_PRIORITIES') {
+      void markPriorityNotificationsSeen();
+      const seenIntervalId = window.setInterval(() => {
+        void markPriorityNotificationsSeen();
+      }, 60000);
+      return () => window.clearInterval(seenIntervalId);
+    }
+
+    void refreshPriorityNotificationCount();
+    const intervalId = window.setInterval(() => {
+      void refreshPriorityNotificationCount();
+    }, 60000);
+
+    return () => window.clearInterval(intervalId);
+  }, [user, view]);
 
 
 
@@ -679,7 +765,7 @@ const App: React.FC = () => {
   const canAccessProvisioning = Boolean(user.canAccessProvisioning || user.role === 'SUPERADMIN');
   const canCreateProvisioning = Boolean(user.canCreateProvisioning || user.role === 'SUPERADMIN');
   const canViewProvisioningDashboard = Boolean(user.canViewProvisioningDashboard || user.role === 'SUPERADMIN');
-  const canAccessOrderPriorities = Boolean(user.role === 'SUPERADMIN' || isBoardSectorName(user.sectorName));
+  const canAccessOrderPriorities = canAccessOrderPrioritiesForUser(user);
   const usesAssignedProjectScope = !canManageGlobalData && (!user.sectorName || isObraSectorName(user.sectorName));
   const visibleProjects = canManageGlobalData
     ? projects
@@ -739,7 +825,14 @@ const App: React.FC = () => {
           <button onClick={() => setNavigationState('ORDERS_GLOBAL', null)} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'ORDERS_GLOBAL' ? 'text-blue-400' : ''}`}>Pedidos</button>
 
           {canAccessOrderPriorities && (
-            <button onClick={() => setNavigationState('ORDER_PRIORITIES', null)} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'ORDER_PRIORITIES' ? 'text-blue-400' : ''}`}>Prioridades</button>
+            <button onClick={openOrderPriorities} className={`relative hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'ORDER_PRIORITIES' ? 'text-blue-400' : ''}`}>
+              Prioridades
+              {priorityNotificationCount > 0 && view !== 'ORDER_PRIORITIES' && (
+                <span className="absolute -right-4 -top-3 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[9px] font-black leading-[18px] text-center shadow-lg">
+                  {priorityNotificationCount > 99 ? '99+' : priorityNotificationCount}
+                </span>
+              )}
+            </button>
           )}
 
           {canAccessProvisioning && (

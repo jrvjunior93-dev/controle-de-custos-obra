@@ -1,5 +1,12 @@
 # Handoff Log
 
+## 2026-05-15
+- Change: amplia acompanhamento de lotes de prioridade para o setor financeiro.
+  - Usuarios do setor `FINANCEIRO` passam a acessar a tela `Prioridades`, com permissao de visualizacao dos lotes e sem acoes de selecao/aprovacao.
+  - Menu passa a exibir badge vermelho em `Prioridades` contando lotes criados, enviados, aprovados, recusados ou cancelados desde a ultima visualizacao do usuario.
+  - Files: `backend/src/index.ts`, `frontend/App.tsx`, `frontend/types.ts`, `docs/regras_negocio/pedidos.md`
+  - Risk: baixo/medio; acesso novo e de leitura para financeiro, com polling leve de lotes visiveis no menu.
+
 ## 2026-05-14
 - Fix: corrige selecao visual na lista filtrada de prioridade diretoria.
   - A uniao entre pedidos filtrados e pedidos ja selecionados passa a preservar a ordem retornada pelo filtro, anexando selecionados ausentes apenas no final.

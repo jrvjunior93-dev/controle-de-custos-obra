@@ -260,6 +260,7 @@ export interface OrderPriorityBatchContext {
     canCancel: boolean;
     isAdministrativeBoard: boolean;
     isWorksBoard: boolean;
+    isFinanceBoard: boolean;
   };
   boards: {
     administrative: string;

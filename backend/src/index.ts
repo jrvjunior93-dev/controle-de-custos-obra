@@ -820,6 +820,10 @@ function isWorksBoardName(value?: string | null) {
   return normalizeBoardName(value) === normalizeBoardName(WORKS_BOARD);
 }
 
+function isFinanceBoardName(value?: string | null) {
+  return normalizeBoardName(value) === "FINANCEIRO";
+}
+
 function normalizePriorityOrderIds(values: unknown[] = []) {
   return Array.from(new Set(
     values
@@ -835,12 +839,14 @@ async function getPriorityUserContext(authUser?: AuthUser) {
   const isSuperadmin = user.role === UserRole.SUPERADMIN;
   const isAdministrativeBoard = isSuperadmin || isAdministrativeBoardName(user.sector?.name);
   const isWorksBoard = isSuperadmin || isWorksBoardName(user.sector?.name);
+  const isFinanceBoard = isSuperadmin || isFinanceBoardName(user.sector?.name);
   return {
     user,
     isSuperadmin,
     isAdministrativeBoard,
     isWorksBoard,
-    canAccess: isAdministrativeBoard || isWorksBoard,
+    isFinanceBoard,
+    canAccess: isAdministrativeBoard || isWorksBoard || isFinanceBoard,
     canCreateAdministrativeBatch: isAdministrativeBoard,
     canCreateWorksBatch: isWorksBoard,
     canSelectWorksBatch: isWorksBoard,
@@ -2116,6 +2122,7 @@ app.get("/order-priority-batches/context", requireAuth, async (req: AuthRequest,
       canCancel: context!.canCancel,
       isAdministrativeBoard: context!.isAdministrativeBoard,
       isWorksBoard: context!.isWorksBoard,
+      isFinanceBoard: context!.isFinanceBoard,
     },
     boards: {
       administrative: ADMINISTRATIVE_BOARD,
