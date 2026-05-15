@@ -901,7 +901,7 @@ function canViewPriorityBatch(context: Awaited<ReturnType<typeof getPriorityUser
 function canEditPrioritySelection(context: Awaited<ReturnType<typeof getPriorityUserContext>>, batch: any) {
   if (!context || String(batch.status) !== ORDER_PRIORITY_STATUS.OPEN) return false;
   if (String(batch.type) === ORDER_PRIORITY_TYPE.ADMINISTRATIVE) {
-    return context.isWorksBoard || context.isAdministrativeBoard;
+    return context.isWorksBoard;
   }
   return context.isWorksBoard && Number(batch.createdByUserId) === Number(context.user.id);
 }

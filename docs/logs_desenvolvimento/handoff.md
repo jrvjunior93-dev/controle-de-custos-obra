@@ -1,6 +1,12 @@
 # Handoff Log
 
 ## 2026-05-15
+- Fix: restringe alteracao da selecao de lotes de prioridade a Diretoria de Obras.
+  - Lotes abertos criados pela Diretoria Administrativa continuam visiveis para a Administrativa, mas a selecao/salvamento/envio dos pedidos fica somente com a Diretoria de Obras.
+  - A tela deixa de exibir checkboxes para perfis sem permissao de salvar selecao no lote.
+  - Files: `backend/src/index.ts`, `frontend/components/OrderPriorityBatchesModule.tsx`, `docs/regras_negocio/pedidos.md`
+  - Risk: baixo; endurece permissao conforme regra de responsabilidade.
+
 - Fix: garante visibilidade completa de lotes para o setor financeiro.
   - Usuarios do setor `FINANCEIRO` agora veem todos os lotes de prioridade, independente do criador, mantendo perfil somente leitura.
   - Files: `backend/src/index.ts`, `docs/regras_negocio/pedidos.md`

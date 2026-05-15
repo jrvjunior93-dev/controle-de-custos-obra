@@ -469,7 +469,7 @@ export const OrderPriorityBatchesModule: React.FC = () => {
                 <table className="w-full min-w-[980px] text-left">
                   <thead className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-widest">
                     <tr>
-                      {currentBatch.status === 'ABERTO' && <th className="px-4 py-4 w-12"></th>}
+                      {currentBatch.status === 'ABERTO' && currentBatch.canSave && <th className="px-4 py-4 w-12"></th>}
                       <th className="px-4 py-4">Pedido</th>
                       <th className="px-4 py-4">Obra</th>
                       <th className="px-4 py-4">Data desejada</th>
@@ -482,7 +482,7 @@ export const OrderPriorityBatchesModule: React.FC = () => {
                       const selected = selectedOrderIds.includes(order.id);
                       return (
                         <tr key={order.id} className={selected ? 'bg-blue-50' : 'hover:bg-slate-50'}>
-                          {currentBatch.status === 'ABERTO' && (
+                          {currentBatch.status === 'ABERTO' && currentBatch.canSave && (
                             <td className="px-4 py-4">
                               <input type="checkbox" checked={selected} disabled={autoSavingSelection} onChange={() => toggleOrder(order.id)} />
                             </td>
@@ -504,7 +504,7 @@ export const OrderPriorityBatchesModule: React.FC = () => {
                     })}
                     {visibleOrders.length === 0 && (
                       <tr>
-                        <td colSpan={currentBatch.status === 'ABERTO' ? 6 : 5} className="p-12 text-center text-[10px] font-black uppercase tracking-widest text-slate-300">
+                        <td colSpan={currentBatch.status === 'ABERTO' && currentBatch.canSave ? 6 : 5} className="p-12 text-center text-[10px] font-black uppercase tracking-widest text-slate-300">
                           Nenhum pedido encontrado.
                         </td>
                       </tr>
