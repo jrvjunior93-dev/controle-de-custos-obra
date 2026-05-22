@@ -1061,6 +1061,7 @@ async function listEligiblePriorityOrders(batch: any, query: any = {}) {
 }
 
 async function replacePriorityBatchItems(batch: any, orderIds: number[], userId: number, tx: any) {
+  const existingItemOrderIds = new Set((batch.items || []).map((item: any) => Number(item.orderId)));
   const orders = orderIds.length > 0
     ? await tx.order.findMany({
         where: {
@@ -1081,13 +1082,16 @@ async function replacePriorityBatchItems(batch: any, orderIds: number[], userId:
     throw error;
   }
 
-  if (orders.some((order: any) => isPaidSectorStatus(order.sectorStatus))) {
-    const error = new Error("Pedidos com status PAGO devem ser removidos da selecao antes de salvar o lote.") as Error & { status?: number };
+  const paidNewOrders = orders.filter((order: any) => isPaidSectorStatus(order.sectorStatus) && !existingItemOrderIds.has(Number(order.id)));
+  if (paidNewOrders.length > 0) {
+    const error = new Error("Pedidos com status PAGO nao podem ser adicionados ao lote de prioridade.") as Error & { status?: number };
     error.status = 400;
     throw error;
   }
 
-  const selectedValue = orders.reduce((total: number, order: any) => total + decimalToNumber(order.requestedValue), 0);
+  const eligibleOrders = orders.filter((order: any) => !isPaidSectorStatus(order.sectorStatus));
+
+  const selectedValue = eligibleOrders.reduce((total: number, order: any) => total + decimalToNumber(order.requestedValue), 0);
   const availableValue = batch.availableValue == null ? null : decimalToNumber(batch.availableValue);
   if (String(batch.type) === ORDER_PRIORITY_TYPE.ADMINISTRATIVE && availableValue != null && selectedValue > availableValue) {
     const error = new Error("O valor dos pedidos selecionados excede o valor disponivel do lote.") as Error & { status?: number };
@@ -1096,9 +1100,9 @@ async function replacePriorityBatchItems(batch: any, orderIds: number[], userId:
   }
 
   await tx.orderPriorityBatchItem.deleteMany({ where: { batchId: batch.id } });
-  if (orders.length > 0) {
+  if (eligibleOrders.length > 0) {
     await tx.orderPriorityBatchItem.createMany({
-      data: orders.map((order: any) => ({
+      data: eligibleOrders.map((order: any) => ({
         batchId: batch.id,
         orderId: order.id,
         selectedValue: decimalToNumber(order.requestedValue),

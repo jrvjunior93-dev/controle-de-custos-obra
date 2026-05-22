@@ -1,6 +1,12 @@
 # Handoff Log
 
 ## 2026-05-22
+- Fix: remove automaticamente pedido pago ja salvo em lote aberto.
+  - Salvamento de selecao agora descarta pedidos que ja estavam no lote e viraram `PAGO`, permitindo corrigir o valor financeiro sem erro de elegibilidade.
+  - Continua bloqueado adicionar pedido novo com status `PAGO` ao lote.
+  - Files: `backend/src/index.ts`, `docs/regras_negocio/pedidos.md`
+  - Risk: baixo; ajusta somente a transicao de remocao de item pago ja existente.
+
 - Fix: permite remover pedido pago de lote aberto de prioridade.
   - Backend passa a validar o novo payload de selecao, permitindo salvar quando o pedido que virou `PAGO` foi removido, mas bloqueando caso ele ainda esteja sendo mantido.
   - Tela destaca pedidos selecionados com status `PAGO` e orienta remover da selecao.
