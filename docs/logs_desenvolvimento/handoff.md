@@ -1,6 +1,18 @@
 # Handoff Log
 
+## 2026-05-22
+- Fix: permite remover pedido pago de lote aberto de prioridade.
+  - Backend passa a validar o novo payload de selecao, permitindo salvar quando o pedido que virou `PAGO` foi removido, mas bloqueando caso ele ainda esteja sendo mantido.
+  - Tela destaca pedidos selecionados com status `PAGO` e orienta remover da selecao.
+  - Files: `backend/src/index.ts`, `frontend/components/OrderPriorityBatchesModule.tsx`, `docs/regras_negocio/pedidos.md`
+  - Risk: baixo; mantem bloqueio contra pedidos pagos em lote e destrava a remocao.
+
 ## 2026-05-15
+- Fix: corrige botao limpar filtros em prioridades.
+  - Ao limpar busca/obra/selecionados, a tela agora recarrega os pedidos disponiveis sem filtros, preservando selecionados ja salvos.
+  - Files: `frontend/components/OrderPriorityBatchesModule.tsx`
+  - Risk: baixo; altera apenas comportamento do botao `Limpar`.
+
 - Fix: restringe alteracao da selecao de lotes de prioridade a Diretoria de Obras.
   - Lotes abertos criados pela Diretoria Administrativa continuam visiveis para a Administrativa, mas a selecao/salvamento/envio dos pedidos fica somente com a Diretoria de Obras.
   - A tela deixa de exibir checkboxes para perfis sem permissao de salvar selecao no lote.

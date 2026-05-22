@@ -184,10 +184,13 @@ export const OrderPriorityBatchesModule: React.FC = () => {
     setAvailableOrders(mergeOrders(Array.isArray(data?.items) ? data.items : [], selectedOrdersInBatch));
   }
 
-  function clearSearchFilters() {
+  async function clearSearchFilters() {
     setSearchFilter('');
     setProjectFilter('');
     setSelectedOnlyFilter(false);
+    if (!currentBatch?.id) return;
+    const data = await dbService.getOrderPriorityBatchAvailableOrders(currentBatch.id);
+    setAvailableOrders(mergeOrders(Array.isArray(data?.items) ? data.items : [], selectedOrdersInBatch));
   }
 
   async function persistSelection(orderIds: string[], showSuccess = false) {
@@ -449,7 +452,7 @@ export const OrderPriorityBatchesModule: React.FC = () => {
                       <span className="text-[9px] font-black uppercase text-slate-600">Selecionados</span>
                     </label>
                     <button type="button" onClick={() => void searchAvailableOrders()} className="bg-white border border-slate-300 text-slate-700 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Filtrar</button>
-                    <button type="button" onClick={clearSearchFilters} className="bg-white border border-slate-300 text-slate-700 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Limpar</button>
+                    <button type="button" onClick={() => void clearSearchFilters()} className="bg-white border border-slate-300 text-slate-700 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Limpar</button>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {currentBatch.canSave && <button type="button" onClick={() => void saveSelection()} disabled={operating || autoSavingSelection} className="bg-white border border-slate-300 text-slate-900 px-4 py-3 text-[10px] font-black uppercase tracking-widest disabled:opacity-50">{autoSavingSelection ? 'Salvando...' : 'Salvar selecao'}</button>}
@@ -480,8 +483,9 @@ export const OrderPriorityBatchesModule: React.FC = () => {
                   <tbody className="divide-y divide-slate-100">
                     {visibleOrders.map((order) => {
                       const selected = selectedOrderIds.includes(order.id);
+                      const selectedPaid = selected && normalizeText(order.sectorStatus) === 'pago';
                       return (
-                        <tr key={order.id} className={selected ? 'bg-blue-50' : 'hover:bg-slate-50'}>
+                        <tr key={order.id} className={selectedPaid ? 'bg-rose-50' : selected ? 'bg-blue-50' : 'hover:bg-slate-50'}>
                           {currentBatch.status === 'ABERTO' && currentBatch.canSave && (
                             <td className="px-4 py-4">
                               <input type="checkbox" checked={selected} disabled={autoSavingSelection} onChange={() => toggleOrder(order.id)} />
@@ -496,7 +500,7 @@ export const OrderPriorityBatchesModule: React.FC = () => {
                           <td className="px-4 py-4 text-right text-[10px] font-black text-slate-900">{formatMoney(order.value)}</td>
                           <td className="px-4 py-4">
                             <span className="border border-slate-200 bg-white px-2 py-1 text-[8px] font-black uppercase text-slate-600">
-                              {order.priorityApproved ? 'Prioridade aprovada' : (order.sectorStatus || order.status)}
+                              {selectedPaid ? 'PAGO - remova da selecao' : order.priorityApproved ? 'Prioridade aprovada' : (order.sectorStatus || order.status)}
                             </span>
                           </td>
                         </tr>

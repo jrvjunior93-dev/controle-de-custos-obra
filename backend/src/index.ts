@@ -1066,22 +1066,23 @@ async function replacePriorityBatchItems(batch: any, orderIds: number[], userId:
         where: {
           id: { in: orderIds },
           requestedValue: { not: null },
-          AND: [
-            { OR: [{ sectorStatus: null }, { sectorStatus: { not: "PAGO" } }] },
-            {
-              OR: [
-                { priorityApproved: false },
-                { priorityBatchId: batch.id },
-              ],
-            },
+          OR: [
+            { priorityApproved: false },
+            { priorityBatchId: batch.id },
           ],
         },
         select: { id: true, requestedValue: true, sectorStatus: true }
       })
     : [];
 
-  if (orders.length !== orderIds.length || orders.some((order: any) => isPaidSectorStatus(order.sectorStatus))) {
+  if (orders.length !== orderIds.length) {
     const error = new Error("Um ou mais pedidos selecionados nao estao elegiveis para prioridade.") as Error & { status?: number };
+    error.status = 400;
+    throw error;
+  }
+
+  if (orders.some((order: any) => isPaidSectorStatus(order.sectorStatus))) {
+    const error = new Error("Pedidos com status PAGO devem ser removidos da selecao antes de salvar o lote.") as Error & { status?: number };
     error.status = 400;
     throw error;
   }

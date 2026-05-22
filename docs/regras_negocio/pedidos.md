@@ -113,6 +113,7 @@ Fluxos:
 - a selecao de pedidos em lote aberto e salva automaticamente ao marcar/desmarcar, permitindo navegacao e retomada posterior
 - filtros de busca, obra e selecionados nao removem pedidos ja selecionados nem devem reordenar visualmente o pedido recem-marcado para outra posicao
 - pedidos com status setorial `PAGO` nao podem ser listados, salvos, enviados ou aprovados em lote de prioridade
+- se um pedido ja selecionado virar `PAGO` enquanto o lote ainda esta aberto, ele permanece visivel no lote apenas para ser removido da selecao
 - lotes enviados entram em `AGUARDANDO_APROVACAO`
 - somente a `DIRETORIA ADMINISTRATIVA` aprova, recusa ou cancela lotes aguardando aprovacao
 - somente na aprovacao os pedidos recebem `prioridade_aprovada`
