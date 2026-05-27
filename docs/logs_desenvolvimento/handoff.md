@@ -1,5 +1,12 @@
 # Handoff Log
 
+## 2026-05-27
+- Fix: forca download de anexos S3 a partir dos detalhes do pedido.
+  - Frontend passa a pedir resolucao de anexo em modo download no helper central `triggerAttachmentDownload`.
+  - Backend assina URLs S3 de download com `ResponseContentDisposition: attachment`, preservando visualizacao normal sem esse modo.
+  - Files: `backend/src/index.ts`, `backend/src/storage.ts`, `frontend/apiClient.ts`, `frontend/utils/attachments.ts`
+  - Risk: baixo; fluxo de visualizacao continua usando URL assinada sem disposition de download.
+
 ## 2026-05-22
 - Fix: remove automaticamente pedido pago ja salvo em lote aberto.
   - Salvamento de selecao agora descarta pedidos que ja estavam no lote e viraram `PAGO`, permitindo corrigir o valor financeiro sem erro de elegibilidade.

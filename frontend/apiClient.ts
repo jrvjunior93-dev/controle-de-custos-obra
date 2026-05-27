@@ -289,10 +289,10 @@ export const dbService = {
     });
   },
 
-  async resolveAttachmentData(attachment: any) {
+  async resolveAttachmentData(attachment: any, options?: { download?: boolean }) {
     return request<{ data: string }>("/attachments/resolve", {
       method: "POST",
-      body: JSON.stringify({ attachment })
+      body: JSON.stringify({ attachment, download: Boolean(options?.download) })
     });
   },
 

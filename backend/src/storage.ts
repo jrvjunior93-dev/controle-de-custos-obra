@@ -124,9 +124,11 @@ export async function persistAttachment(payload: PersistableAttachmentPayload) {
 export async function resolveAttachmentData(attachment: {
   data?: string | null;
   mimeType: string;
+  fileName?: string | null;
   storageProvider?: string | null;
   storageBucket?: string | null;
   storageKey?: string | null;
+  download?: boolean;
 }) {
   if (
     attachment.storageProvider === "S3" &&
@@ -140,6 +142,9 @@ export async function resolveAttachmentData(attachment: {
         Bucket: attachment.storageBucket || storageBucket,
         Key: attachment.storageKey,
         ResponseContentType: attachment.mimeType || "application/octet-stream",
+        ...(attachment.download
+          ? { ResponseContentDisposition: `attachment; filename="${String(attachment.fileName || "arquivo").replace(/["\r\n]/g, "_")}"` }
+          : {}),
       }),
       { expiresIn: Number.isFinite(signedUrlExpiresIn) ? signedUrlExpiresIn : 3600 }
     );

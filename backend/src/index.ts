@@ -54,12 +54,15 @@ const resolveAttachmentSchema = z.object({
   attachment: z.object({
     id: z.union([z.string(), z.number()]).optional(),
     data: z.string().optional(),
+    name: z.string().optional(),
+    originalName: z.string().optional(),
     type: z.string().optional(),
     mimeType: z.string().optional(),
     storageProvider: z.string().optional(),
     storageBucket: z.string().optional(),
     storageKey: z.string().optional(),
-  })
+  }),
+  download: z.boolean().optional(),
 });
 const provisioningStatuses = ["RASCUNHO", "PREVISTO", "EM_ANALISE", "APROVADO", "CANCELADO", "REALIZADO"] as const;
 type ProvisioningStatusValue = typeof provisioningStatuses[number];
@@ -3134,6 +3137,7 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
   if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
 
   const { attachment } = parsed.data;
+  const shouldDownload = Boolean(parsed.data.download);
   const attachmentId = Number(attachment.id);
   const requestedStorageProvider = String(attachment.storageProvider || "").toUpperCase() || null;
   const requestedStorageBucket = String(attachment.storageBucket || process.env.AWS_S3_BUCKET || "");
@@ -3141,9 +3145,11 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
   let resolvedSource = {
     data: attachment.data,
     mimeType: String(attachment.type || attachment.mimeType || "application/octet-stream"),
+    fileName: attachment.originalName || attachment.name,
     storageProvider: attachment.storageProvider,
     storageBucket: attachment.storageBucket,
     storageKey: attachment.storageKey,
+    download: shouldDownload,
   };
 
   const matchesRequestedStorage = (record: {
@@ -3173,9 +3179,11 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
       resolvedSource = {
         data: orderAttachment.data || "",
         mimeType: orderAttachment.mimeType,
+        fileName: orderAttachment.originalName || orderAttachment.name,
         storageProvider: orderAttachment.storageProvider || undefined,
         storageBucket: orderAttachment.storageBucket || undefined,
         storageKey: orderAttachment.storageKey || undefined,
+        download: shouldDownload,
       };
     } else {
       const orderMessageAttachment = await prisma.orderMessageAttachment.findUnique({
@@ -3191,9 +3199,11 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
         resolvedSource = {
           data: orderMessageAttachment.data || "",
           mimeType: orderMessageAttachment.mimeType,
+          fileName: orderMessageAttachment.originalName || orderMessageAttachment.name,
           storageProvider: orderMessageAttachment.storageProvider || undefined,
           storageBucket: orderMessageAttachment.storageBucket || undefined,
           storageKey: orderMessageAttachment.storageKey || undefined,
+          download: shouldDownload,
         };
       } else {
         const costAttachment = await prisma.costAttachment.findUnique({
@@ -3209,9 +3219,11 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
           resolvedSource = {
             data: costAttachment.data || "",
             mimeType: costAttachment.mimeType,
+            fileName: costAttachment.originalName || costAttachment.name,
             storageProvider: costAttachment.storageProvider || undefined,
             storageBucket: costAttachment.storageBucket || undefined,
             storageKey: costAttachment.storageKey || undefined,
+            download: shouldDownload,
           };
         } else {
           const provisioningAttachment = await prismaAny.provisioningAttachment.findUnique({
@@ -3227,9 +3239,11 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
             resolvedSource = {
               data: provisioningAttachment.data || "",
               mimeType: provisioningAttachment.mimeType,
+              fileName: provisioningAttachment.originalName || provisioningAttachment.name,
               storageProvider: provisioningAttachment.storageProvider || undefined,
               storageBucket: provisioningAttachment.storageBucket || undefined,
               storageKey: provisioningAttachment.storageKey || undefined,
+              download: shouldDownload,
             };
           } else {
             const installmentAttachment = await prisma.installmentAttachment.findUnique({
@@ -3245,9 +3259,11 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
               resolvedSource = {
                 data: installmentAttachment.data || "",
                 mimeType: installmentAttachment.mimeType,
+                fileName: installmentAttachment.originalName || installmentAttachment.name,
                 storageProvider: installmentAttachment.storageProvider || undefined,
                 storageBucket: installmentAttachment.storageBucket || undefined,
                 storageKey: installmentAttachment.storageKey || undefined,
+                download: shouldDownload,
               };
             }
           }
