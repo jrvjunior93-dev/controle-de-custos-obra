@@ -92,6 +92,12 @@ export const dbService = {
     });
   },
 
+  async getOrderMessageNotifications(since: string) {
+    const params = new URLSearchParams();
+    if (since) params.set("since", since);
+    return request<{ count: number; latestAt?: string | null }>(`/order-message-notifications${params.toString() ? `?${params.toString()}` : ""}`);
+  },
+
   async updateProjectOrderSectorStatus(projectId: string, orderId: string, sectorStatus?: string) {
     return request<any>(`/projects/${projectId}/orders/${orderId}/sector-status`, {
       method: "PATCH",
@@ -147,6 +153,15 @@ export const dbService = {
     } catch (e) {
       console.error("Erro ao buscar usuarios do backend:", e);
       return null;
+    }
+  },
+
+  async getMentionableUsers() {
+    try {
+      return await request<any[]>("/users/mentionable");
+    } catch (e) {
+      console.error("Erro ao buscar usuarios para mencao:", e);
+      return [];
     }
   },
 

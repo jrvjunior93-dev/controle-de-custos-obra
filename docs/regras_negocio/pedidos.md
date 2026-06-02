@@ -73,6 +73,21 @@ O tratamento do pedido ocorre por:
 
 - comentários livres
 - anexos nas mensagens
+- menções a usuários do sistema dentro do comentário
+
+Notificações:
+
+- quando um usuario comenta em um pedido, os demais usuarios que conseguem acessar o pedido veem um badge vermelho no menu `Pedidos`
+- comentarios feitos pelo proprio usuario e mensagens automaticas do sistema nao entram no contador
+- usuarios do setor `FINANCEIRO` tambem recebem a notificacao quando o pedido estiver visivel para eles, incluindo pedidos com prioridade aprovada
+- ao abrir a tela `Pedidos` ou os detalhes de uma obra/pedido, as notificacoes de comentario sao marcadas como vistas
+
+Menções:
+
+- o botão `Mencionar` no comentário lista usuários ativos do sistema
+- ao enviar comentário com usuário mencionado, o sistema registra acesso direto daquele usuário ao pedido
+- usuários mencionados passam a conseguir abrir o pedido e interagir por comentários/anexos, mesmo se não estivessem no setor ou na obra original
+- o acesso por menção é restrito ao pedido mencionado; não libera todos os pedidos da obra
 
 ## Vínculo com custo da obra
 

@@ -114,6 +114,7 @@ export interface OrderMessage {
   text: string;
   date: string;
   attachments?: Attachment[];
+  mentionedUserIds?: string[];
 }
 
 export interface Order {

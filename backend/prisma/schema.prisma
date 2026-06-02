@@ -82,6 +82,8 @@ model User {
   assignedProjects  UserProject[]
   ordersRequested   Order[]        @relation("RequesterOrders")
   ordersResponsible Order[]        @relation("ResponsibleOrders")
+  orderUserAccesses OrderUserAccess[] @relation("OrderUserAccessUser")
+  orderAccessesGranted OrderUserAccess[] @relation("OrderUserAccessGrantedBy")
   orderMessages     OrderMessage[]
   provisioningCreated ProvisioningRecord[] @relation("ProvisioningCreatedBy")
   provisioningUpdated ProvisioningRecord[] @relation("ProvisioningUpdatedBy")
@@ -331,6 +333,7 @@ model Order {
   attachments        OrderAttachment[]
   messages           OrderMessage[]
   sectorAccess       OrderSectorAccess[]
+  userAccess         OrderUserAccess[]
   priorityApproved   Boolean       @default(false) @map("prioridade_aprovada")
   priorityApprovedAt DateTime?     @map("prioridade_aprovada_em")
   priorityBatchId    Int?          @map("prioridade_lote_id")
@@ -447,11 +450,29 @@ model OrderMessage {
   order       Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
   user        User?                  @relation(fields: [userId], references: [id])
   attachments OrderMessageAttachment[]
+  userAccessGrants OrderUserAccess[]
 
   @@index([orderId])
   @@index([userId])
 
   @@map("pedidos_mensagens")
+}
+
+model OrderUserAccess {
+  orderId        Int       @map("pedido_id")
+  userId         Int       @map("usuario_id")
+  grantedByUserId Int?     @map("concedido_por_usuario_id")
+  messageId      Int?      @map("mensagem_id")
+  grantedAt      DateTime  @default(now()) @map("concedido_em")
+  order          Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user           User      @relation("OrderUserAccessUser", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy      User?     @relation("OrderUserAccessGrantedBy", fields: [grantedByUserId], references: [id], onDelete: SetNull)
+  message        OrderMessage? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@id([orderId, userId])
+  @@index([userId])
+  @@index([messageId])
+  @@map("pedidos_usuarios_acesso")
 }
 
 model OrderMessageAttachment {

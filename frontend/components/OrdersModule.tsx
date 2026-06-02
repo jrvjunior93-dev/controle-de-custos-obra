@@ -6,6 +6,7 @@ import { canPreviewAttachmentInline, resolveAttachmentForAccess, triggerAttachme
 interface OrdersModuleProps {
   project: Project;
   sectors: Sector[];
+  mentionableUsers: User[];
   user: User;
   onUpdate: (project: Project) => Promise<void> | void;
   onPersistOrder: (projectId: string, order: Order) => Promise<Order>;
@@ -98,7 +99,7 @@ const exportOrdersToExcel = async (projectName: string, orders: Order[]) => {
 
 const PROJECT_ORDERS_COLUMN_WIDTHS_KEY = 'csc_brape_project_orders_column_widths';
 
-export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, user, onUpdate, onPersistOrder, onUpdateOrderSectorStatus, onAddOrderMessage, onDeleteOrder, onRefreshProjects }) => {
+export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, mentionableUsers, user, onUpdate, onPersistOrder, onUpdateOrderSectorStatus, onAddOrderMessage, onDeleteOrder, onRefreshProjects }) => {
   const canManageProjectOrders = user.role === 'SUPERADMIN' || (canManageAssignedOrders(user.role) && user.assignedProjectIds?.includes(project.id));
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     const defaults = {
@@ -138,6 +139,8 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const [isTypeFilterOpen, setIsTypeFilterOpen] = useState(false);
   const [messageText, setMessageText] = useState('');
   const [messageAttachments, setMessageAttachments] = useState<Attachment[]>([]);
+  const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
+  const [mentionPickerOpen, setMentionPickerOpen] = useState(false);
   const [editableOrderValue, setEditableOrderValue] = useState(0);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const [selectedMacroItemId, setSelectedMacroItemId] = useState('');
@@ -349,6 +352,8 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
   const resetActionState = () => {
     setMessageText('');
     setMessageAttachments([]);
+    setMentionedUserIds([]);
+    setMentionPickerOpen(false);
     setEditableOrderValue(0);
   };
 
@@ -426,6 +431,19 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
 
   const removeMessageAttachment = (attachmentId: string) => {
     setMessageAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
+  };
+
+  const mentionableOptions = mentionableUsers.filter((item) => item.id !== user.id);
+  const selectedMentionUsers = mentionableUsers.filter((item) => mentionedUserIds.includes(item.id));
+  const addMentionedUser = (mentionedUser: User) => {
+    if (mentionedUser.id === user.id) return;
+    setMentionedUserIds((current) => current.includes(mentionedUser.id) ? current : [...current, mentionedUser.id]);
+    const token = `@${mentionedUser.name}`;
+    setMessageText((current) => current.includes(token) ? current : `${current}${current.trim() ? ' ' : ''}${token} `);
+    setMentionPickerOpen(false);
+  };
+  const removeMentionedUser = (userId: string) => {
+    setMentionedUserIds((current) => current.filter((id) => id !== userId));
   };
 
   const renderAttachmentList = (attachments: Attachment[], onRemove: (attachmentId: string) => void, emptyLabel: string) => (
@@ -565,7 +583,8 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
         userName: user.name,
         text: messageText.trim() || 'Arquivos enviados.',
         date: new Date().toISOString(),
-        attachments: messageAttachments.length > 0 ? messageAttachments : undefined
+        attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
+        mentionedUserIds,
       });
       const savedOrder = {
         ...order,
@@ -579,6 +598,8 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, us
       const sentOnlyAttachments = !messageText.trim() && messageAttachments.length > 0;
       setMessageText('');
       setMessageAttachments([]);
+      setMentionedUserIds([]);
+      setMentionPickerOpen(false);
       alert(sentOnlyAttachments ? 'Arquivo enviado com sucesso.' : 'Comentario enviado com sucesso.');
     } catch (error: any) {
       console.error('Erro ao salvar interação do pedido:', error);
@@ -1187,6 +1208,31 @@ const renderListStatusBadge = (order: Order) => {
                   {canCommentOnOrder(isActionModalOpen) && (
                   <div className="bg-white border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Enviar Comentarios</h4>
+                    <div className="relative">
+                      <button type="button" onClick={() => setMentionPickerOpen((current) => !current)} className="bg-white border border-slate-300 text-slate-700 px-3 py-2 text-[9px] font-black uppercase tracking-widest">
+                        <i className="fas fa-at mr-2"></i>Mencionar
+                      </button>
+                      {mentionPickerOpen && (
+                        <div className="absolute left-0 top-full mt-2 w-full max-w-sm max-h-64 overflow-y-auto bg-white border border-slate-200 shadow-2xl z-[160]">
+                          {mentionableOptions.map((mentionUser) => (
+                            <button key={mentionUser.id} type="button" onClick={() => addMentionedUser(mentionUser)} className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b border-slate-100">
+                              <p className="text-[10px] font-black uppercase text-slate-800">{mentionUser.name}</p>
+                              <p className="text-[8px] font-bold uppercase text-slate-400">{mentionUser.sectorName || mentionUser.role}</p>
+                            </button>
+                          ))}
+                          {mentionableOptions.length === 0 && <p className="p-4 text-[10px] font-black uppercase text-slate-400">Nenhum usuario disponivel.</p>}
+                        </div>
+                      )}
+                    </div>
+                    {selectedMentionUsers.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {selectedMentionUsers.map((mentionUser) => (
+                          <button key={mentionUser.id} type="button" onClick={() => removeMentionedUser(mentionUser.id)} className="bg-blue-50 border border-blue-200 text-blue-700 px-3 py-2 text-[9px] font-black uppercase">
+                            @{mentionUser.name} <i className="fas fa-times ml-2"></i>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <textarea className="w-full bg-white border border-slate-200 p-4 font-bold text-xs" rows={4} placeholder="Escreva um comentario..." value={messageText} onChange={(e) => setMessageText(e.target.value)} />
                     <button onClick={() => handleSendMessage(isActionModalOpen)} className="w-full bg-purple-600 text-white py-4 font-black uppercase text-[10px] shadow-xl">Enviar Comentario</button>
                   </div>

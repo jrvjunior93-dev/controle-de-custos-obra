@@ -56,6 +56,7 @@ const canAccessOrderPrioritiesForUser = (account?: User | null) => Boolean(
 );
 
 const priorityNotificationStorageKey = (userId?: string) => `csc_brape_priority_notifications_seen_${userId || 'anon'}`;
+const orderMessageNotificationStorageKey = (userId?: string) => `csc_brape_order_messages_seen_${userId || 'anon'}`;
 const getPriorityBatchLifecycleTime = (batch: any) => Math.max(
   ...[
     batch?.createdAt,
@@ -160,6 +161,7 @@ const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
 
   const [users, setUsers] = useState<User[]>([]);
+  const [mentionableUsers, setMentionableUsers] = useState<User[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
 
   const [orderTypes, setOrderTypes] = useState<string[]>([
@@ -186,6 +188,7 @@ const App: React.FC = () => {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: '', currentPassword: '', newPassword: '', confirmPassword: '' });
   const [priorityNotificationCount, setPriorityNotificationCount] = useState(0);
+  const [orderMessageNotificationCount, setOrderMessageNotificationCount] = useState(0);
 
   const persistNavigationState = (nextView: ViewState, nextProjectId: string | null) => {
     sessionStorage.setItem(NAVIGATION_KEY, JSON.stringify({
@@ -219,6 +222,17 @@ const App: React.FC = () => {
     void markPriorityNotificationsSeen();
   };
 
+  const markOrderMessageNotificationsSeen = () => {
+    if (!user) return;
+    localStorage.setItem(orderMessageNotificationStorageKey(user.id), new Date().toISOString());
+    setOrderMessageNotificationCount(0);
+  };
+
+  const openGlobalOrders = () => {
+    setNavigationState('ORDERS_GLOBAL', null);
+    markOrderMessageNotificationsSeen();
+  };
+
   const refreshPriorityNotificationCount = async () => {
     if (!canAccessOrderPrioritiesForUser(user)) {
       setPriorityNotificationCount(0);
@@ -244,6 +258,28 @@ const App: React.FC = () => {
     }
   };
 
+  const refreshOrderMessageNotificationCount = async () => {
+    if (!user) {
+      setOrderMessageNotificationCount(0);
+      return;
+    }
+
+    try {
+      const key = orderMessageNotificationStorageKey(user.id);
+      const storedSeenAt = localStorage.getItem(key);
+      if (!storedSeenAt) {
+        localStorage.setItem(key, new Date().toISOString());
+        setOrderMessageNotificationCount(0);
+        return;
+      }
+
+      const data = await dbService.getOrderMessageNotifications(storedSeenAt);
+      setOrderMessageNotificationCount(Number(data?.count || 0));
+    } catch {
+      setOrderMessageNotificationCount(0);
+    }
+  };
+
   const markSessionActivity = () => {
     sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
   };
@@ -258,10 +294,12 @@ const App: React.FC = () => {
     setSelectedProjectId(null);
     setProjects([]);
     setUsers([]);
+    setMentionableUsers([]);
     setSectors([]);
     setShowProfileMenu(false);
     setShowProfileModal(false);
     setPriorityNotificationCount(0);
+    setOrderMessageNotificationCount(0);
   };
 
   const forceLogout = (message?: string) => {
@@ -291,11 +329,13 @@ const App: React.FC = () => {
 
       const apiOrderTypes = await dbService.getOrderTypes();
       const apiSectors = await dbService.getSectors();
+      const apiMentionableUsers = await dbService.getMentionableUsers();
 
       const apiUsers = canManageGlobalData ? await dbService.getUsers() : null;
 
       const nextProjects = (apiProjects || []).map(normalizeProjectRecord);
       const nextUsers = canManageGlobalData ? (apiUsers || []).map(normalizeUserRecord) : [];
+      const nextMentionableUsers = (apiMentionableUsers || []).map(normalizeUserRecord);
       const nextSectors = (apiSectors || []).map(normalizeSectorRecord);
       const nextOrderTypes = apiOrderTypes && apiOrderTypes.length > 0 ? apiOrderTypes : [
         'COMPRA DE MATERIAL',
@@ -306,6 +346,7 @@ const App: React.FC = () => {
 
       setProjects(nextProjects);
       setUsers(nextUsers);
+      setMentionableUsers(nextMentionableUsers);
       setSectors(nextSectors);
       setOrderTypes(nextOrderTypes);
 
@@ -335,6 +376,7 @@ const App: React.FC = () => {
         'LOCACAO DE EQUIPAMENTOS',
         'OUTROS'
       ]);
+      setMentionableUsers([]);
 
       if (canManageGlobalData) {
         const savedUsers = localStorage.getItem('csc_brape_users');
@@ -481,6 +523,28 @@ const App: React.FC = () => {
     void refreshPriorityNotificationCount();
     const intervalId = window.setInterval(() => {
       void refreshPriorityNotificationCount();
+    }, 60000);
+
+    return () => window.clearInterval(intervalId);
+  }, [user, view]);
+
+  useEffect(() => {
+    if (!user) {
+      setOrderMessageNotificationCount(0);
+      return undefined;
+    }
+
+    if (view === 'ORDERS_GLOBAL' || view === 'PROJECT_DETAIL') {
+      markOrderMessageNotificationsSeen();
+      const seenIntervalId = window.setInterval(() => {
+        markOrderMessageNotificationsSeen();
+      }, 60000);
+      return () => window.clearInterval(seenIntervalId);
+    }
+
+    void refreshOrderMessageNotificationCount();
+    const intervalId = window.setInterval(() => {
+      void refreshOrderMessageNotificationCount();
     }, 60000);
 
     return () => window.clearInterval(intervalId);
@@ -822,7 +886,14 @@ const App: React.FC = () => {
 
           )}
 
-          <button onClick={() => setNavigationState('ORDERS_GLOBAL', null)} className={`hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'ORDERS_GLOBAL' ? 'text-blue-400' : ''}`}>Pedidos</button>
+          <button onClick={openGlobalOrders} className={`relative hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'ORDERS_GLOBAL' ? 'text-blue-400' : ''}`}>
+            Pedidos
+            {orderMessageNotificationCount > 0 && view !== 'ORDERS_GLOBAL' && view !== 'PROJECT_DETAIL' && (
+              <span className="absolute -right-4 -top-3 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[9px] font-black leading-[18px] text-center shadow-lg">
+                {orderMessageNotificationCount > 99 ? '99+' : orderMessageNotificationCount}
+              </span>
+            )}
+          </button>
 
           {canAccessOrderPriorities && (
             <button onClick={openOrderPriorities} className={`relative hover:text-blue-400 transition-colors uppercase text-[10px] font-black tracking-widest ${view === 'ORDER_PRIORITIES' ? 'text-blue-400' : ''}`}>
@@ -932,6 +1003,7 @@ const App: React.FC = () => {
             <ProjectDetail
               project={visibleProjects.find((p) => p.id === selectedProjectId)!}
               sectors={sectors}
+              mentionableUsers={mentionableUsers}
               user={user}
               onUpdate={handleSaveProject}
               onUpdateProjectCode={handleUpdateProjectCode}
@@ -947,7 +1019,7 @@ const App: React.FC = () => {
 
           {view === 'ORDERS_GLOBAL' && (
 
-            <GlobalOrdersModule projects={orderVisibleProjects} sectors={sectors} user={user} onUpdateProjects={(updatedProjects) => {
+            <GlobalOrdersModule projects={orderVisibleProjects} sectors={sectors} mentionableUsers={mentionableUsers} user={user} onUpdateProjects={(updatedProjects) => {
               const updatedMap = new Map(updatedProjects.map((project) => [project.id, project]));
               setProjects((currentProjects) => currentProjects.map((project) => updatedMap.get(project.id) || project));
             }} onPersistProject={handleSaveProject} onPersistMemberOrder={handleSyncMemberOrder} onUpdateMemberOrderSectorStatus={handleUpdateMemberOrderSectorStatus} onAddMemberOrderMessage={handleAddMemberOrderMessage} onDeleteMemberOrder={handleDeleteMemberOrder} onRefreshProjects={refreshProjects} orderTypes={orderTypes} />

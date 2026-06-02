@@ -5,6 +5,7 @@ import { buildPaidOrderCosts, isPaidOrder } from '../utils/orderCosts';
 interface ProjectDetailProps {
   project: Project;
   sectors: Sector[];
+  mentionableUsers: User[];
   user: User;
   onUpdate: (p: Project) => Promise<void> | void;
   onUpdateProjectCode: (projectId: string, code: string) => Promise<void>;
@@ -33,7 +34,7 @@ const TabFallback: React.FC = () => (
   </div>
 );
 
-export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, user, onUpdate, onUpdateProjectCode, onPersistOrder, onUpdateOrderSectorStatus, onAddOrderMessage, onDeleteOrder, onRefreshProjects, onBack }) => {
+export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, mentionableUsers, user, onUpdate, onUpdateProjectCode, onPersistOrder, onUpdateOrderSectorStatus, onAddOrderMessage, onDeleteOrder, onRefreshProjects, onBack }) => {
   const [activeTab, setActiveTab] = useState<Tab>('RESUMO');
   const [reportMode, setReportMode] = useState<ReportMode>('CUSTO');
   const [exportStatus, setExportStatus] = useState<ExportStatus>('IDLE');
@@ -278,7 +279,7 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, sectors, 
           {canAccessFullProjectTabs && activeTab === 'ORCAMENTO' && <BudgetModule budget={currentBudget} onDraftChange={setBudgetDraft} draftKey={budgetDraftStorageKey} onSave={(budget) => { setBudgetDraft(budget); onUpdate({ ...project, budget }); }} />}
           {canAccessFullProjectTabs && activeTab === 'CUSTOS' && <CostModule project={project} />}
           {canAccessFullProjectTabs && activeTab === 'PARCELAMENTOS' && <InstallmentsModule project={project} onUpdate={onUpdate} />}
-          {canAccessFullProjectTabs && activeTab === 'PEDIDOS' && <OrdersModule project={project} sectors={sectors} user={user} onUpdate={onUpdate} onPersistOrder={onPersistOrder} onUpdateOrderSectorStatus={onUpdateOrderSectorStatus} onAddOrderMessage={onAddOrderMessage} onDeleteOrder={onDeleteOrder} onRefreshProjects={onRefreshProjects} />}
+          {canAccessFullProjectTabs && activeTab === 'PEDIDOS' && <OrdersModule project={project} sectors={sectors} mentionableUsers={mentionableUsers} user={user} onUpdate={onUpdate} onPersistOrder={onPersistOrder} onUpdateOrderSectorStatus={onUpdateOrderSectorStatus} onAddOrderMessage={onAddOrderMessage} onDeleteOrder={onDeleteOrder} onRefreshProjects={onRefreshProjects} />}
           {activeTab === 'ARQUIVOS' && <AttachmentsModule project={project} onUpdate={onUpdate} isAdmin={canManageProject} />}
         </div>
 

@@ -108,6 +108,7 @@ const orderMessageSchema = z.object({
   message: z.object({
     text: z.string().trim().min(1),
     attachments: z.array(z.any()).optional(),
+    mentionedUserIds: z.array(z.union([z.string(), z.number()])).optional(),
   })
 });
 const orderSectorStatusSchema = z.object({
@@ -150,6 +151,7 @@ const projectInclude = {
       orderType: true,
       currentSector: true,
       sectorAccess: { include: { sector: true } },
+      userAccess: true,
       requester: true,
       responsible: true,
       attachments: { select: attachmentSummarySelect },
@@ -525,6 +527,7 @@ function canUserAccessOrder(order: any, userId: number, role: UserRole, sectorId
   if (role === UserRole.ADMIN || role === UserRole.ADMIN_OBRA) return true;
   if (isFinanceSectorName(sectorName) && order.priorityApproved) return true;
   if (order.requesterUserId === userId || order.assignedUserId === userId) return true;
+  if ((order.userAccess || []).some((item: any) => Number(item.userId) === Number(userId))) return true;
 
   const accessibleSectorIds = Array.from(new Set((order.sectorAccess || []).map((item: any) => item.sectorId)));
   if (!order.currentSectorId && accessibleSectorIds.length === 0) return true;
@@ -685,12 +688,16 @@ async function mapProvisioningFromDb(record: any) {
   };
 }
 
-async function mapProjectFromDb(project: any, authUser?: any) {
+async function mapProjectFromDb(project: any, authUser?: any, assignedProjectIds?: number[]) {
   // Users scoped by assigned projects (OBRA sector or no sector) should see all orders
-  // within projects they can access. Other sectors keep the sector-based visibility rule.
+  // within projects they are assigned to. Mention-only projects keep order-level visibility.
+  const isAssignedProject = assignedProjectIds?.includes(Number(project.id)) || false;
+  const isMentionOnlyProject = Boolean(authUser && shouldUseAssignedProjectScope(authUser) && !isAssignedProject);
   const scopedOrders = authUser
     ? (shouldUseAssignedProjectScope(authUser)
-      ? (project.orders || [])
+      ? (isAssignedProject
+        ? (project.orders || [])
+        : (project.orders || []).filter((order: any) => canUserAccessOrder(order, authUser.id, authUser.role, authUser.sectorId, authUser.sector?.name)))
       : (project.orders || []).filter((order: any) => canUserAccessOrder(order, authUser.id, authUser.role, authUser.sectorId, authUser.sector?.name)))
     : (project.orders || []);
 
@@ -701,12 +708,12 @@ async function mapProjectFromDb(project: any, authUser?: any) {
     location: project.location,
     startDate: formatDateOnly(project.startDate),
     notes: project.notes || "",
-    budget: (project.budget || []).map((item: any) => ({
+    budget: (isMentionOnlyProject ? [] : (project.budget || [])).map((item: any) => ({
       id: String(item.id),
       description: item.description,
       budgetedValue: decimalToNumber(item.budgetedValue),
     })),
-    costs: await Promise.all((project.costs || []).map(async (cost: any) => ({
+    costs: await Promise.all((isMentionOnlyProject ? [] : (project.costs || [])).map(async (cost: any) => ({
       id: String(cost.id),
       macroItemId: String(cost.macroItemId),
       originOrderId: cost.originOrderId ? String(cost.originOrderId) : undefined,
@@ -722,7 +729,7 @@ async function mapProjectFromDb(project: any, authUser?: any) {
       entryDate: formatDateOnly(cost.recordedAt),
       attachments: await Promise.all((cost.attachments || []).map(mapAttachment)),
     }))),
-    installments: await Promise.all((project.installments || []).map(async (installment: any) => {
+    installments: await Promise.all((isMentionOnlyProject ? [] : (project.installments || [])).map(async (installment: any) => {
       const attachment = (installment.attachments || []).find((item: any) => item.kind === AttachmentKind.ATTACHMENT);
       const paymentProof = (installment.attachments || []).find((item: any) => item.kind === AttachmentKind.PAYMENT_PROOF);
       return {
@@ -771,6 +778,14 @@ function requireRole(roles: UserRole[]) {
 async function getUserProjectScope(userId: number) {
   const rows = await prisma.userProject.findMany({ where: { userId }, select: { projectId: true } });
   return rows.map((row) => row.projectId);
+}
+
+async function getUserMentionProjectScope(userId: number) {
+  const rows = await prisma.orderUserAccess.findMany({
+    where: { userId },
+    select: { order: { select: { projectId: true } } }
+  });
+  return Array.from(new Set(rows.map((row) => row.order.projectId)));
 }
 
 async function canAccessProject(user: AuthUser | undefined, projectId: number) {
@@ -1335,6 +1350,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
           messages: { include: { attachments: true } },
           currentSector: true,
           sectorAccess: true,
+          userAccess: true,
         }
       })
     : null;
@@ -1619,6 +1635,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       orderType: true,
       currentSector: true,
       sectorAccess: { include: { sector: true } },
+      userAccess: true,
       requester: true,
       responsible: true,
       attachments: true,
@@ -1777,12 +1794,15 @@ app.get("/projects", requireAuth, async (req: AuthRequest, res) => {
   const scopedUser = await getScopedAuthUser(Number(authUser.id));
   if (!scopedUser || !scopedUser.isActive) return res.status(401).json({ error: "Unauthorized" });
 
+  const assignedProjectIds = await getUserProjectScope(Number(authUser.id));
+  const mentionProjectIds = await getUserMentionProjectScope(Number(authUser.id));
+  const scopedProjectIds = Array.from(new Set([...assignedProjectIds, ...mentionProjectIds]));
   const where = GLOBAL_ADMIN_ROLES.includes(authUser.role) || !shouldUseAssignedProjectScope(scopedUser)
     ? undefined
-    : { id: { in: await getUserProjectScope(Number(authUser.id)) } };
+    : { id: { in: scopedProjectIds } };
 
   const projects = await prisma.project.findMany({ where, include: projectInclude, orderBy: { updatedAt: "desc" } });
-  res.json(await Promise.all(projects.map((project) => mapProjectFromDb(project, scopedUser))));
+  res.json(await Promise.all(projects.map((project) => mapProjectFromDb(project, scopedUser, assignedProjectIds))));
 });
 
 // Update project code without re-writing the whole project graph (safe in production).
@@ -1857,7 +1877,7 @@ app.post("/projects/:projectId/orders/:orderId/messages", requireAuth, async (re
   if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
   const projectId = Number(req.params.projectId);
   const orderId = Number(req.params.orderId);
-  if (!Number.isFinite(projectId) || !Number.isFinite(orderId) || !(await canAccessProject(req.authUser, projectId))) {
+  if (!Number.isFinite(projectId) || !Number.isFinite(orderId)) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
@@ -1875,6 +1895,7 @@ app.post("/projects/:projectId/orders/:orderId/messages", requireAuth, async (re
       where: { id: orderId, projectId },
       include: {
         sectorAccess: true,
+        userAccess: true,
         messages: { include: { attachments: true, user: true } },
       }
     });
@@ -1882,6 +1903,13 @@ app.post("/projects/:projectId/orders/:orderId/messages", requireAuth, async (re
     if (!canUserAccessOrder(order, Number(req.authUser.id), req.authUser.role, actorUser.sectorId || undefined, actorUser.sector?.name)) {
       return res.status(403).json({ error: "Forbidden" });
     }
+    const mentionedUserIds = Array.from(new Set((parsed.data.message.mentionedUserIds || [])
+      .map((value: unknown) => Number(value))
+      .filter((value: number) => Number.isInteger(value) && value > 0 && value !== Number(req.authUser!.id))));
+    const validMentionedUsers = mentionedUserIds.length > 0
+      ? await prisma.user.findMany({ where: { id: { in: mentionedUserIds }, isActive: true }, select: { id: true, name: true } })
+      : [];
+
     const createdMessage = await prisma.orderMessage.create({
       data: {
         orderId: order.id,
@@ -1899,6 +1927,18 @@ app.post("/projects/:projectId/orders/:orderId/messages", requireAuth, async (re
       }
     });
 
+    if (validMentionedUsers.length > 0) {
+      await prisma.orderUserAccess.createMany({
+        data: validMentionedUsers.map((mentionedUser) => ({
+          orderId: order.id,
+          userId: mentionedUser.id,
+          grantedByUserId: Number(req.authUser!.id),
+          messageId: createdMessage.id,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
     res.json({
       id: String(createdMessage.id),
       userId: createdMessage.userId ? String(createdMessage.userId) : SYSTEM_USER_ID,
@@ -1910,6 +1950,64 @@ app.post("/projects/:projectId/orders/:orderId/messages", requireAuth, async (re
   } catch (error: any) {
     res.status(error?.status || 500).json({ error: error?.message || "Unable to save order message" });
   }
+});
+
+app.get("/order-message-notifications", requireAuth, async (req: AuthRequest, res) => {
+  if (!req.authUser) return res.status(401).json({ error: "Unauthorized" });
+
+  const sinceTimestamp = Date.parse(String(req.query.since || ""));
+  const since = Number.isFinite(sinceTimestamp) && sinceTimestamp > 0 ? new Date(sinceTimestamp) : null;
+  if (!since) return res.json({ count: 0, latestAt: null });
+
+  const actorUser = await prisma.user.findUnique({
+    where: { id: Number(req.authUser.id) },
+    include: { sector: true }
+  });
+  if (!actorUser || !actorUser.isActive) return res.status(401).json({ error: "Unauthorized" });
+
+  const orders = await prisma.order.findMany({
+    where: {
+      messages: {
+        some: {
+          createdAt: { gt: since },
+          isSystem: false,
+          OR: [
+            { userId: null },
+            { userId: { not: Number(req.authUser.id) } },
+          ],
+        }
+      }
+    },
+    include: {
+      sectorAccess: true,
+      userAccess: true,
+      messages: {
+        where: {
+          createdAt: { gt: since },
+          isSystem: false,
+          OR: [
+            { userId: null },
+            { userId: { not: Number(req.authUser.id) } },
+          ],
+        },
+        select: { createdAt: true },
+      }
+    }
+  });
+
+  let count = 0;
+  let latestAt: Date | null = null;
+  for (const order of orders) {
+    if (!canUserAccessOrder(order, Number(req.authUser.id), req.authUser.role, actorUser.sectorId || undefined, actorUser.sector?.name)) {
+      continue;
+    }
+    count += order.messages.length;
+    for (const message of order.messages) {
+      if (!latestAt || message.createdAt > latestAt) latestAt = message.createdAt;
+    }
+  }
+
+  res.json({ count, latestAt: latestAt ? latestAt.toISOString() : null });
 });
 
 app.patch("/projects/:projectId/orders/:orderId/sector-status", requireAuth, async (req: AuthRequest, res) => {
@@ -1936,6 +2034,7 @@ app.patch("/projects/:projectId/orders/:orderId/sector-status", requireAuth, asy
         orderType: true,
         currentSector: true,
         sectorAccess: { include: { sector: true } },
+        userAccess: true,
         requester: true,
         responsible: true,
         attachments: true,
@@ -1988,6 +2087,7 @@ app.patch("/projects/:projectId/orders/:orderId/sector-status", requireAuth, asy
         orderType: true,
         currentSector: true,
         sectorAccess: { include: { sector: true } },
+        userAccess: true,
         requester: true,
         responsible: true,
         attachments: true,
@@ -2047,6 +2147,15 @@ app.post("/projects/bulk", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (
 
 app.get("/users", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (_req, res) => {
   const users = await prisma.user.findMany({ include: { assignedProjects: true, sector: true }, orderBy: { name: "asc" } });
+  res.json(users.map(sanitizeUser));
+});
+
+app.get("/users/mentionable", requireAuth, async (_req, res) => {
+  const users = await prisma.user.findMany({
+    where: { isActive: true },
+    include: { assignedProjects: true, sector: true },
+    orderBy: { name: "asc" }
+  });
   res.json(users.map(sanitizeUser));
 });
 
@@ -3165,16 +3274,22 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
     );
   };
 
+  const actorUser = await prisma.user.findUnique({
+    where: { id: Number(req.authUser.id) },
+    include: { sector: true }
+  });
+  if (!actorUser || !actorUser.isActive) return res.status(401).json({ error: "Unauthorized" });
+
   if (Number.isFinite(attachmentId) && attachmentId > 0) {
     const orderAttachment = await prisma.orderAttachment.findUnique({
       where: { id: attachmentId },
-      include: { order: { select: { projectId: true } } }
+      include: { order: { include: { sectorAccess: true, userAccess: true } } }
     });
 
     if (
       orderAttachment &&
       matchesRequestedStorage(orderAttachment) &&
-      await canAccessProject(req.authUser, orderAttachment.order.projectId)
+      canUserAccessOrder(orderAttachment.order, Number(req.authUser.id), req.authUser.role, actorUser.sectorId || undefined, actorUser.sector?.name)
     ) {
       resolvedSource = {
         data: orderAttachment.data || "",
@@ -3188,13 +3303,13 @@ app.post("/attachments/resolve", requireAuth, async (req: AuthRequest, res) => {
     } else {
       const orderMessageAttachment = await prisma.orderMessageAttachment.findUnique({
         where: { id: attachmentId },
-        include: { message: { include: { order: { select: { projectId: true } } } } }
+        include: { message: { include: { order: { include: { sectorAccess: true, userAccess: true } } } } }
       });
 
       if (
         orderMessageAttachment &&
         matchesRequestedStorage(orderMessageAttachment) &&
-        await canAccessProject(req.authUser, orderMessageAttachment.message.order.projectId)
+        canUserAccessOrder(orderMessageAttachment.message.order, Number(req.authUser.id), req.authUser.role, actorUser.sectorId || undefined, actorUser.sector?.name)
       ) {
         resolvedSource = {
           data: orderMessageAttachment.data || "",

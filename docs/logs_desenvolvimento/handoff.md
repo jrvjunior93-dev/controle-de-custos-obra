@@ -1,5 +1,20 @@
 # Handoff Log
 
+## 2026-06-02
+- Feature: adiciona mencao de usuarios em comentarios de pedidos.
+  - Comentarios agora podem enviar usuarios mencionados, gravando acesso direto do usuario ao pedido mencionado.
+  - Usuarios mencionados passam a visualizar o pedido e interagir nele, sem ganhar acesso aos demais pedidos da obra.
+  - Frontend adiciona botao `Mencionar` nas telas de pedidos da obra e Central de Pedidos, listando usuarios ativos.
+  - Files: `backend/prisma/schema.prisma`, `backend/prisma/migrations/20260602000100_order_user_mentions_access/migration.sql`, `backend/src/index.ts`, `frontend/App.tsx`, `frontend/apiClient.ts`, `frontend/components/OrdersModule.tsx`, `frontend/components/GlobalOrdersModule.tsx`, `frontend/components/ProjectDetail.tsx`, `frontend/types.ts`, `docs/regras_negocio/pedidos.md`
+  - Risk: medio; cria tabela nova de acesso por pedido e depende de migration em producao.
+
+- Feature: adiciona badge de novos comentarios em pedidos.
+  - Backend expõe contagem de comentarios novos em pedidos acessiveis ao usuario, ignorando comentarios do proprio usuario e mensagens do sistema.
+  - Frontend mostra badge vermelho no menu `Pedidos` e marca como visto ao abrir Pedidos ou detalhes de obra/pedido.
+  - Financeiro recebe notificacoes para pedidos que consegue acessar, incluindo pedidos com prioridade aprovada.
+  - Files: `backend/src/index.ts`, `frontend/App.tsx`, `frontend/apiClient.ts`, `docs/regras_negocio/pedidos.md`
+  - Risk: medio; notificacao usa marcador local por usuario e polling leve, sem criar tabela nova.
+
 ## 2026-05-27
 - Fix: forca download de anexos S3 a partir dos detalhes do pedido.
   - Frontend passa a pedir resolucao de anexo em modo download no helper central `triggerAttachmentDownload`.
