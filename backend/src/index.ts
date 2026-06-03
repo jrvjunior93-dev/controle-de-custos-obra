@@ -766,7 +766,7 @@ async function requireAuth(req: AuthRequest, res: express.Response, next: expres
       select: { id: true, role: true, isActive: true }
     });
     if (!activeUser || !activeUser.isActive) {
-      return res.status(401).json({ error: "Usuario desativado. Solicite reativacao ao administrador." });
+      return res.status(401).json({ error: "ERRO AO FAZER LOGIN" });
     }
     req.authUser = { id: String(activeUser.id), role: activeUser.role };
     return next();
@@ -2785,7 +2785,7 @@ app.post("/auth/login", async (req, res) => {
 
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
   if (!user.isActive) {
-    return res.status(403).json({ error: "Usuario desativado. Solicite reativacao ao administrador." });
+    return res.status(403).json({ error: "ERRO AO FAZER LOGIN" });
   }
   const validPassword = await bcrypt.compare(parsed.data.password, user.passwordHash);
   if (!validPassword) return res.status(401).json({ error: "Invalid credentials" });

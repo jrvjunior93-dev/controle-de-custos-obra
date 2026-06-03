@@ -1,6 +1,11 @@
 # Handoff Log
 
 ## 2026-06-03
+- Adjustment: padroniza mensagem de bloqueio de usuario desativado.
+  - Login e token de usuario desativado agora retornam `ERRO AO FAZER LOGIN`.
+  - Files: `backend/src/index.ts`
+  - Risk: baixo; altera apenas texto de erro retornado pela autenticacao.
+
 - Feature: adiciona ativacao/desativacao real de usuarios pelo SUPERADMIN.
   - Backend passa a bloquear login e qualquer requisicao autenticada de usuario `isActive = false`, com mensagem especifica no login.
   - Tela de usuarios exibe badge `Ativo/Desativado` e botao para o SUPERADMIN alternar status de usuarios nao protegidos.
