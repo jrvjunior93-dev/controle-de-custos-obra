@@ -32,6 +32,7 @@ const normalizeUserRecord = (account: User): User => ({
   ...account,
   name: normalizePtText(account.name),
   email: String(account.email || '').trim().toLowerCase(),
+  isActive: account.isActive !== false,
 });
 
 const normalizeSectorRecord = (sector: Sector): Sector => ({
@@ -666,6 +667,15 @@ const App: React.FC = () => {
     });
   };
 
+  const handleToggleUserActive = async (account: User, isActive: boolean) => {
+    const savedUser = normalizeUserRecord(await dbService.updateUserActive(account.id, isActive));
+    setUsers((currentUsers) => {
+      const nextUsers = currentUsers.map((item) => item.id === savedUser.id ? savedUser : item);
+      localStorage.setItem('csc_brape_users', JSON.stringify(nextUsers));
+      return nextUsers;
+    });
+  };
+
   const handleUpdateProjectCode = async (projectId: string, code: string) => {
     const savedProject = normalizeProjectRecord(await dbService.updateProjectCode(projectId, code));
     setProjects((currentProjects) => {
@@ -1052,7 +1062,7 @@ const App: React.FC = () => {
 
           {view === 'USERS_MANAGEMENT' && canManageGlobalData && (
 
-            <UsersManagement users={users} projects={projects} sectors={sectors} currentUser={user} onSaveUser={handleSaveUser} onSaveSector={handleSaveSector} onDeleteUser={handleDeleteUser} onImportFullBackup={initData} />
+            <UsersManagement users={users} projects={projects} sectors={sectors} currentUser={user} onSaveUser={handleSaveUser} onSaveSector={handleSaveSector} onDeleteUser={handleDeleteUser} onToggleUserActive={handleToggleUserActive} onImportFullBackup={initData} />
 
           )}
 

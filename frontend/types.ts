@@ -168,6 +168,7 @@ export interface User {
   canCreateProvisioning?: boolean;
   canApproveProvisioning?: boolean;
   canViewProvisioningDashboard?: boolean;
+  isActive?: boolean;
   assignedProjectIds: string[];
 }
 

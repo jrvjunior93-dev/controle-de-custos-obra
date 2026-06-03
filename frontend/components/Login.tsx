@@ -23,8 +23,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin, isLoading }) => {
     try {
       const { token, user } = await dbService.login(normalizedEmail, normalizedPassword);
       onLogin(user, token);
-    } catch {
-      setError('Credenciais inválidas. Verifique e-mail e senha.');
+    } catch (error: any) {
+      setError(error?.message || 'Credenciais inválidas. Verifique e-mail e senha.');
     }
   };
 

@@ -146,6 +146,13 @@ export const dbService = {
     });
   },
 
+  async updateUserActive(userId: string, isActive: boolean) {
+    return request<any>(`/users/${userId}/active`, {
+      method: "PATCH",
+      body: JSON.stringify({ isActive })
+    });
+  },
+
   async getUsers() {
     try {
       const data = await request<any[]>("/users");

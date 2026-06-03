@@ -1,5 +1,13 @@
 # Handoff Log
 
+## 2026-06-03
+- Feature: adiciona ativacao/desativacao real de usuarios pelo SUPERADMIN.
+  - Backend passa a bloquear login e qualquer requisicao autenticada de usuario `isActive = false`, com mensagem especifica no login.
+  - Tela de usuarios exibe badge `Ativo/Desativado` e botao para o SUPERADMIN alternar status de usuarios nao protegidos.
+  - Edicao normal de usuario preserva o status ativo/inativo, evitando reativacao acidental.
+  - Files: `backend/src/index.ts`, `frontend/App.tsx`, `frontend/apiClient.ts`, `frontend/components/Login.tsx`, `frontend/components/UsersManagement.tsx`, `frontend/types.ts`
+  - Risk: medio; altera middleware de autenticacao e bloqueia tokens existentes de usuarios desativados.
+
 ## 2026-06-02
 - Feature: adiciona mencao de usuarios em comentarios de pedidos.
   - Comentarios agora podem enviar usuarios mencionados, gravando acesso direto do usuario ao pedido mencionado.

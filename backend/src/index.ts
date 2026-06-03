@@ -420,6 +420,7 @@ function sanitizeUser(user: any) {
     canCreateProvisioning: Boolean(user.canCreateProvisioning),
     canApproveProvisioning: Boolean(user.canApproveProvisioning),
     canViewProvisioningDashboard: Boolean(user.canViewProvisioningDashboard),
+    isActive: user.isActive !== false,
     assignedProjectIds: (user.assignedProjects || []).map((item: any) => String(item.projectId))
   };
 }
@@ -752,14 +753,22 @@ async function mapProjectFromDb(project: any, authUser?: any, assignedProjectIds
   };
 }
 
-function requireAuth(req: AuthRequest, res: express.Response, next: express.NextFunction) {
+async function requireAuth(req: AuthRequest, res: express.Response, next: express.NextFunction) {
   const authHeader = req.headers.authorization || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
 
   if (!token) return res.status(401).json({ error: "Unauthorized" });
 
   try {
-    req.authUser = jwt.verify(token, jwtSecret) as AuthUser;
+    const tokenUser = jwt.verify(token, jwtSecret) as AuthUser;
+    const activeUser = await prisma.user.findUnique({
+      where: { id: Number(tokenUser.id) },
+      select: { id: true, role: true, isActive: true }
+    });
+    if (!activeUser || !activeUser.isActive) {
+      return res.status(401).json({ error: "Usuario desativado. Solicite reativacao ao administrador." });
+    }
+    req.authUser = { id: String(activeUser.id), role: activeUser.role };
     return next();
   } catch {
     return res.status(401).json({ error: "Invalid token" });
@@ -1738,7 +1747,7 @@ async function upsertUserRecord(tx: any, userId: number | null, userPayload: any
           canCreateProvisioning,
           canApproveProvisioning,
           canViewProvisioningDashboard,
-          isActive: true,
+          isActive: existingUser.isActive,
           passwordHash,
         }
       })
@@ -2534,6 +2543,31 @@ app.delete("/users/:id", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (re
   res.json({ ok: true });
 });
 
+app.patch("/users/:id/active", requireAuth, requireRole([UserRole.SUPERADMIN]), async (req: AuthRequest, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isFinite(userId)) return res.status(400).json({ error: "Invalid user id" });
+  if (userId === Number(req.authUser?.id)) {
+    return res.status(400).json({ error: "Nao e permitido desativar o proprio usuario." });
+  }
+
+  const parsed = z.object({ isActive: z.boolean() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return res.status(404).json({ error: "User not found" });
+  if (user.role === UserRole.SUPERADMIN && parsed.data.isActive === false) {
+    return res.status(400).json({ error: "Nao e permitido desativar usuario SUPERADMIN." });
+  }
+
+  const savedUser = await prisma.user.update({
+    where: { id: userId },
+    data: { isActive: parsed.data.isActive },
+    include: { assignedProjects: true, sector: true }
+  });
+
+  res.json(sanitizeUser(savedUser));
+});
+
 app.post("/users/bulk", requireAuth, requireRole(GLOBAL_ADMIN_ROLES), async (req: AuthRequest, res) => {
   const parsed = bulkUsersSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
@@ -2745,11 +2779,14 @@ app.post("/auth/login", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
 
   const user = await prisma.user.findFirst({
-    where: { email: parsed.data.email.toLowerCase(), isActive: true },
+    where: { email: parsed.data.email.toLowerCase() },
     include: { assignedProjects: true, sector: true }
   });
 
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
+  if (!user.isActive) {
+    return res.status(403).json({ error: "Usuario desativado. Solicite reativacao ao administrador." });
+  }
   const validPassword = await bcrypt.compare(parsed.data.password, user.passwordHash);
   if (!validPassword) return res.status(401).json({ error: "Invalid credentials" });
 

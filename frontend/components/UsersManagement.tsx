@@ -9,6 +9,7 @@ interface UsersManagementProps {
   onSaveUser: (user: User) => Promise<void>;
   onSaveSector: (sector: Sector) => Promise<void>;
   onDeleteUser: (user: User) => Promise<void>;
+  onToggleUserActive: (user: User, isActive: boolean) => Promise<void>;
   onImportFullBackup?: (data: any) => void;
 }
 
@@ -26,7 +27,7 @@ const roleRank: Record<UserRole, number> = {
   SUPERADMIN: 4,
 };
 
-export const UsersManagement: React.FC<UsersManagementProps> = ({ users, projects, sectors, currentUser, onSaveUser, onSaveSector, onDeleteUser }) => {
+export const UsersManagement: React.FC<UsersManagementProps> = ({ users, projects, sectors, currentUser, onSaveUser, onSaveSector, onDeleteUser, onToggleUserActive }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [newSectorName, setNewSectorName] = useState('');
@@ -171,6 +172,23 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
     }
   };
 
+  const toggleUserActive = async (targetUser: User) => {
+    if (currentUser.role !== 'SUPERADMIN') return alert('Somente o SUPERADMIN pode ativar ou desativar usuarios.');
+    if (targetUser.id === currentUser.id) return alert('Nao e permitido desativar o proprio usuario.');
+    if (targetUser.role === 'SUPERADMIN' && targetUser.isActive !== false) return alert('Usuario SUPERADMIN nao pode ser desativado.');
+
+    const nextIsActive = targetUser.isActive === false;
+    const actionLabel = nextIsActive ? 'ativar' : 'desativar';
+    if (!confirm(`Confirmar ${actionLabel} o usuario "${targetUser.name}"?`)) return;
+
+    try {
+      await onToggleUserActive(targetUser, nextIsActive);
+    } catch (error: any) {
+      console.error(error);
+      alert(error?.message || `Nao foi possivel ${actionLabel} o usuario.`);
+    }
+  };
+
   return (
     <div className="p-10 max-w-6xl mx-auto space-y-10">
       <div className="flex justify-between items-end border-b border-slate-200 pb-8">
@@ -229,11 +247,18 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
             {users.map((u) => {
               const userIsProtected = isProtectedUser(u);
               const canEditUser = !userIsProtected || canManageSuperadmin;
+              const isUserActive = u.isActive !== false;
+              const canToggleUserActive = currentUser.role === 'SUPERADMIN' && u.id !== currentUser.id && !(u.role === 'SUPERADMIN' && isUserActive);
 
               return (
-                <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                <tr key={u.id} className={`${isUserActive ? 'hover:bg-slate-50' : 'bg-rose-50/40 hover:bg-rose-50'} transition-colors`}>
                   <td className="px-6 py-5">
-                    <div className="font-black text-slate-900 uppercase text-xs">{u.name}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className={`font-black uppercase text-xs ${isUserActive ? 'text-slate-900' : 'text-slate-400 line-through'}`}>{u.name}</div>
+                      <span className={`text-[8px] font-black px-2 py-1 uppercase border ${isUserActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-600 text-white border-rose-600'}`}>
+                        {isUserActive ? 'Ativo' : 'Desativado'}
+                      </span>
+                    </div>
                     <div className="text-[10px] text-slate-400 font-bold uppercase">{u.email}</div>
                   </td>
                   <td className="px-6 py-5">
@@ -252,6 +277,15 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ users, project
                   </td>
                   <td className="px-6 py-5 text-right">
                     <div className="flex justify-end gap-2">
+                      {canToggleUserActive && (
+                        <button
+                          onClick={() => { void toggleUserActive(u); }}
+                          className={`p-3 transition-all ${isUserActive ? 'bg-slate-100 text-rose-600 hover:bg-rose-600 hover:text-white' : 'bg-slate-100 text-emerald-600 hover:bg-emerald-600 hover:text-white'}`}
+                          title={isUserActive ? 'Desativar usuario' : 'Ativar usuario'}
+                        >
+                          <i className={`fas ${isUserActive ? 'fa-user-slash' : 'fa-user-check'}`}></i>
+                        </button>
+                      )}
                       {canEditUser && (
                         <button onClick={() => handleOpenEdit(u)} className="p-3 bg-slate-100 text-blue-600 hover:bg-blue-600 hover:text-white transition-all">
                           <i className="fas fa-user-edit"></i>
