@@ -1,6 +1,20 @@
 # Handoff Log
 
+## 2026-06-16
+- Fix: preserva vinculos de lotes de prioridade ao atualizar pedidos.
+  - Corrige perda de itens de lote causada por fluxos que apagavam e recriavam pedidos durante atualizacao de obra ou pedido.
+  - Recriacoes passam a preservar o id do pedido, campos de prioridade e linhas de `lotes_prioridade_pedidos_itens`.
+  - Exclusao manual de pedido vinculado a lote de prioridade passa a ser bloqueada.
+  - Files: `backend/src/index.ts`, `frontend/components/OrderPriorityBatchesModule.tsx`
+  - Risk: medio; altera fluxo de persistencia de pedidos para preservar relacoes historicas de prioridade.
+
 ## 2026-06-03
+- Feature: adiciona filtro de pedidos com prioridade aprovada e detalhe no lote.
+  - Central de Pedidos e Pedidos da Obra passam a ter a opcao `Prioridade aprovada` no filtro de status, filtrando somente pedidos marcados com prioridade aprovada.
+  - Pedidos listados dentro de lote de prioridade agora podem ser clicados para abrir detalhes, inclusive em lote aprovado.
+  - Files: `frontend/components/OrdersModule.tsx`, `frontend/components/GlobalOrdersModule.tsx`, `frontend/components/OrderPriorityBatchesModule.tsx`
+  - Risk: baixo; altera filtros locais e adiciona modal de leitura no lote.
+
 - Adjustment: padroniza mensagem de bloqueio de usuario desativado.
   - Login e token de usuario desativado agora retornam `ERRO AO FAZER LOGIN`.
   - Files: `backend/src/index.ts`

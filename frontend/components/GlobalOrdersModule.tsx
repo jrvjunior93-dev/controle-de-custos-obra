@@ -66,6 +66,7 @@ const normalizeSectorName = (name?: string) => String(name || '')
 const isWorksBoardSectorName = (name?: string) => normalizeSectorName(name) === 'DIRETORIA DE OBRAS';
 const isFinanceSectorName = (name?: string) => normalizeSectorName(name) === 'FINANCEIRO';
 
+const PRIORITY_APPROVED_FILTER_VALUE = '__PRIORIDADE_APROVADA__';
 const getEffectiveOrderStatusLabel = (order: Order) => order.sectorStatus || 'Sem status setorial';
 
 const renderListStatusBadge = (order: Order) => {
@@ -347,7 +348,10 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
       || getOrderCodeSearchTokens(order).some((token) => token.includes(searchTerm))
       || order.title.toLowerCase().includes(searchTerm)
       || (order.description || '').toLowerCase().includes(searchTerm);
-    const matchStatus = filterStatus.length === 0 || filterStatus.includes(getEffectiveOrderStatusLabel(order));
+    const effectiveStatus = getEffectiveOrderStatusLabel(order);
+    const matchStatus = filterStatus.length === 0 || filterStatus.some((status) => (
+      status === PRIORITY_APPROVED_FILTER_VALUE ? Boolean(order.priorityApproved) : status === effectiveStatus
+    ));
     const matchProject = filterProject.length === 0 || filterProject.includes(order.projectId);
     const matchType = filterType.length === 0 || filterType.includes(order.type);
     const matchMinValue = minValue == null || normalizedValue >= minValue;
@@ -705,6 +709,7 @@ export const GlobalOrdersModule: React.FC<GlobalOrdersModuleProps> = ({ projects
 
   const projectFilterItems = assignedProjects.map((project) => ({ value: project.id, label: project.name }));
   const statusFilterItems = [
+    { value: PRIORITY_APPROVED_FILTER_VALUE, label: 'Prioridade aprovada' },
     { value: 'Sem status setorial', label: 'Sem status setorial' },
     ...Array.from(new Set(sectors.flatMap((sector) => sector.statuses || []).filter(Boolean))).map((status) => ({
       value: status,

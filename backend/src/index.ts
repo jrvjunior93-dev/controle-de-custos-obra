@@ -954,7 +954,7 @@ async function calculatePriorityBatchSelection(batchId: number, tx: any = prisma
 
 async function serializePriorityBatch(batch: any, context: Awaited<ReturnType<typeof getPriorityUserContext>>, includeItems = false) {
   const items = Array.isArray(batch.items) ? batch.items : [];
-  const selectedValue = items.length > 0
+  const selectedValue = Array.isArray(batch.items)
     ? items.reduce((total: number, item: any) => total + decimalToNumber(item.selectedValue), 0)
     : decimalToNumber(batch.selectedValue);
   const availableValue = batch.availableValue == null ? null : decimalToNumber(batch.availableValue);
@@ -1180,6 +1180,22 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
     ? await tx.project.update({ where: { id: existingProjectId }, data: baseData })
     : await tx.project.create({ data: baseData });
 
+  const preservedPriorityByOrderId = new Map<number, any>();
+  if (existingProjectId) {
+    const priorityLinkedOrders = await tx.order.findMany({
+      where: { projectId: project.id },
+      include: { priorityBatchItems: true },
+    });
+    for (const order of priorityLinkedOrders) {
+      preservedPriorityByOrderId.set(Number(order.id), {
+        priorityApproved: order.priorityApproved,
+        priorityApprovedAt: order.priorityApprovedAt,
+        priorityBatchId: order.priorityBatchId,
+        priorityBatchItems: order.priorityBatchItems || [],
+      });
+    }
+  }
+
   await tx.order.deleteMany({ where: { projectId: project.id } });
   await tx.installment.deleteMany({ where: { projectId: project.id } });
   await tx.cost.deleteMany({ where: { projectId: project.id } });
@@ -1263,53 +1279,74 @@ async function upsertProjectGraph(tx: any, projectPayload: any, existingProjectI
       ...(currentSectorId ? [currentSectorId] : []),
     ])).filter((value) => sectorMap.has(value));
 
-    await tx.order.create({
-      data: {
-        projectId: project.id,
-        orderTypeId: orderType.id,
-        macroItemId: macro?.id || null,
-        requesterUserId: requester.id,
-        assignedUserId: responsible?.id || null,
-        currentSectorId: currentSectorId && sectorMap.has(currentSectorId) ? currentSectorId : null,
-        orderCode,
-        externalCode: toOptionalText(order.externalCode),
-        title: String(order.title || "").trim(),
-        description: String(order.description || "").trim(),
-        expectedDate: parseDateOnly(order.expectedDate),
-        status: Object.values(OrderStatus).includes(order.status) ? order.status : OrderStatus.PENDENTE,
-        sectorStatus: normalizedSectorStatus,
-        completionNote: toOptionalText(order.completionNote),
-        cancellationReason: toOptionalText(order.cancellationReason),
-        requestedValue: order.value ?? null,
-        createdAt: parseDateTime(order.createdAt),
-        attachments: {
-          create: [
-            ...(await toAttachments(order.attachments, AttachmentKind.REQUEST)),
-            ...(order.completionAttachment ? [await toAttachment(order.completionAttachment, AttachmentKind.COMPLETION)] : [])
-          ]
-        },
-        sectorAccess: {
-          create: accessibleSectorIds.map((sectorId) => ({
-            sectorId,
-            grantedAt: new Date(),
-          }))
-        },
-        messages: {
-          create: await Promise.all((order.messages || []).map(async (message: any) => {
-            const messageUserId = message.userId && message.userId !== SYSTEM_USER_ID ? Number(message.userId) : null;
-            return {
-              userId: messageUserId || null,
-              body: String(message.text || "").trim(),
-              isSystem: !messageUserId,
-              createdAt: parseDateTime(message.date),
-              attachments: {
-                create: await toAttachments(message.attachments, AttachmentKind.MESSAGE)
-              }
-            };
-          }))
-        }
+    const requestedOrderId = Number(order.id);
+    const preservedPriority = Number.isInteger(requestedOrderId) ? preservedPriorityByOrderId.get(requestedOrderId) : null;
+    const orderCreateData: any = {
+      projectId: project.id,
+      orderTypeId: orderType.id,
+      macroItemId: macro?.id || null,
+      requesterUserId: requester.id,
+      assignedUserId: responsible?.id || null,
+      currentSectorId: currentSectorId && sectorMap.has(currentSectorId) ? currentSectorId : null,
+      orderCode,
+      externalCode: toOptionalText(order.externalCode),
+      title: String(order.title || "").trim(),
+      description: String(order.description || "").trim(),
+      expectedDate: parseDateOnly(order.expectedDate),
+      status: Object.values(OrderStatus).includes(order.status) ? order.status : OrderStatus.PENDENTE,
+      sectorStatus: normalizedSectorStatus,
+      completionNote: toOptionalText(order.completionNote),
+      cancellationReason: toOptionalText(order.cancellationReason),
+      requestedValue: order.value ?? null,
+      createdAt: parseDateTime(order.createdAt),
+      priorityApproved: preservedPriority?.priorityApproved || Boolean(order.priorityApproved),
+      priorityApprovedAt: preservedPriority?.priorityApprovedAt || (order.priorityApprovedAt ? parseDateTime(order.priorityApprovedAt) : null),
+      priorityBatchId: preservedPriority?.priorityBatchId || (order.priorityBatchId ? Number(order.priorityBatchId) : null),
+      attachments: {
+        create: [
+          ...(await toAttachments(order.attachments, AttachmentKind.REQUEST)),
+          ...(order.completionAttachment ? [await toAttachment(order.completionAttachment, AttachmentKind.COMPLETION)] : [])
+        ]
+      },
+      sectorAccess: {
+        create: accessibleSectorIds.map((sectorId) => ({
+          sectorId,
+          grantedAt: new Date(),
+        }))
+      },
+      messages: {
+        create: await Promise.all((order.messages || []).map(async (message: any) => {
+          const messageUserId = message.userId && message.userId !== SYSTEM_USER_ID ? Number(message.userId) : null;
+          return {
+            userId: messageUserId || null,
+            body: String(message.text || "").trim(),
+            isSystem: !messageUserId,
+            createdAt: parseDateTime(message.date),
+            attachments: {
+              create: await toAttachments(message.attachments, AttachmentKind.MESSAGE)
+            }
+          };
+        }))
       }
-    });
+    };
+    if (preservedPriority && Number.isInteger(requestedOrderId) && requestedOrderId > 0) {
+      orderCreateData.id = requestedOrderId;
+    }
+
+    const createdOrder = await tx.order.create({ data: orderCreateData });
+    const preservedItems = preservedPriority?.priorityBatchItems || [];
+    if (preservedItems.length > 0) {
+      await tx.orderPriorityBatchItem.createMany({
+        data: preservedItems.map((item: any) => ({
+          batchId: item.batchId,
+          orderId: createdOrder.id,
+          selectedValue: decimalToNumber(item.selectedValue),
+          selectedByUserId: item.selectedByUserId,
+          selectedAt: item.selectedAt,
+        })),
+        skipDuplicates: true,
+      });
+    }
   }
 
   for (const cost of projectPayload.costs || []) {
@@ -1360,6 +1397,7 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
           currentSector: true,
           sectorAccess: true,
           userAccess: true,
+          priorityBatchItems: true,
         }
       })
     : null;
@@ -1590,56 +1628,71 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
     }
   }
 
+  const preservedPriority = existingOrder
+    ? {
+        priorityApproved: existingOrder.priorityApproved,
+        priorityApprovedAt: existingOrder.priorityApprovedAt,
+        priorityBatchId: existingOrder.priorityBatchId,
+        priorityBatchItems: existingOrder.priorityBatchItems || [],
+      }
+    : null;
+
   if (existingOrder) {
     await tx.order.delete({ where: { id: existingOrder.id } });
   }
 
   const responsibleId = orderPayload.responsibleId ? Number(orderPayload.responsibleId) : null;
-  const created = await tx.order.create({
-    data: {
-      projectId,
-      orderTypeId: orderType.id,
-      macroItemId: macro?.id || null,
-      currentSectorId: requestedSectorId || null,
-      requesterUserId: requester.id,
-      assignedUserId: responsibleId || null,
-      orderCode: existingOrder?.orderCode || `${project.code}-${await allocateOrderNumber(tx, projectId)}`,
-      externalCode: toOptionalText(orderPayload.externalCode),
-      title: String(orderPayload.title || '').trim(),
-      description: String(orderPayload.description || '').trim(),
-      expectedDate: parseDateOnly(orderPayload.expectedDate),
-      status: Object.values(OrderStatus).includes(orderPayload.status) ? orderPayload.status : OrderStatus.PENDENTE,
-      sectorStatus: nextSectorStatus,
-      completionNote: toOptionalText(orderPayload.completionNote),
-      cancellationReason: toOptionalText(orderPayload.cancellationReason),
-      requestedValue: orderPayload.value ?? null,
-      createdAt: parseDateTime(orderPayload.createdAt),
-      attachments: {
-        create: [
-          ...(await toAttachments(requestAttachmentsPayload, AttachmentKind.REQUEST)),
-          ...(completionAttachmentPayload ? [await toAttachment(completionAttachmentPayload, AttachmentKind.COMPLETION)] : [])
-        ]
-      },
-      sectorAccess: {
-        create: validSectors.map((sector: any) => ({
-          sectorId: sector.id,
-        }))
-      },
-      messages: {
-        create: await Promise.all((orderPayload.messages || []).map(async (message: any) => {
-          const messageUserId = message.userId && message.userId !== SYSTEM_USER_ID ? Number(message.userId) : null;
-          return {
-            userId: messageUserId || null,
-            body: String(message.text || '').trim(),
-            isSystem: !messageUserId,
-            createdAt: parseDateTime(message.date),
-            attachments: {
-              create: await toAttachments(message.attachments, AttachmentKind.MESSAGE)
-            }
-          };
-        }))
-      }
+  const orderCreateData: any = {
+    projectId,
+    orderTypeId: orderType.id,
+    macroItemId: macro?.id || null,
+    currentSectorId: requestedSectorId || null,
+    requesterUserId: requester.id,
+    assignedUserId: responsibleId || null,
+    orderCode: existingOrder?.orderCode || `${project.code}-${await allocateOrderNumber(tx, projectId)}`,
+    externalCode: toOptionalText(orderPayload.externalCode),
+    title: String(orderPayload.title || '').trim(),
+    description: String(orderPayload.description || '').trim(),
+    expectedDate: parseDateOnly(orderPayload.expectedDate),
+    status: Object.values(OrderStatus).includes(orderPayload.status) ? orderPayload.status : OrderStatus.PENDENTE,
+    sectorStatus: nextSectorStatus,
+    completionNote: toOptionalText(orderPayload.completionNote),
+    cancellationReason: toOptionalText(orderPayload.cancellationReason),
+    requestedValue: orderPayload.value ?? null,
+    createdAt: parseDateTime(orderPayload.createdAt),
+    priorityApproved: preservedPriority?.priorityApproved || Boolean(orderPayload.priorityApproved),
+    priorityApprovedAt: preservedPriority?.priorityApprovedAt || (orderPayload.priorityApprovedAt ? parseDateTime(orderPayload.priorityApprovedAt) : null),
+    priorityBatchId: preservedPriority?.priorityBatchId || (orderPayload.priorityBatchId ? Number(orderPayload.priorityBatchId) : null),
+    attachments: {
+      create: [
+        ...(await toAttachments(requestAttachmentsPayload, AttachmentKind.REQUEST)),
+        ...(completionAttachmentPayload ? [await toAttachment(completionAttachmentPayload, AttachmentKind.COMPLETION)] : [])
+      ]
     },
+    sectorAccess: {
+      create: validSectors.map((sector: any) => ({
+        sectorId: sector.id,
+      }))
+    },
+    messages: {
+      create: await Promise.all((orderPayload.messages || []).map(async (message: any) => {
+        const messageUserId = message.userId && message.userId !== SYSTEM_USER_ID ? Number(message.userId) : null;
+        return {
+          userId: messageUserId || null,
+          body: String(message.text || '').trim(),
+          isSystem: !messageUserId,
+          createdAt: parseDateTime(message.date),
+          attachments: {
+            create: await toAttachments(message.attachments, AttachmentKind.MESSAGE)
+          }
+        };
+      }))
+    }
+  };
+  if (existingOrder) orderCreateData.id = existingOrder.id;
+
+  const created = await tx.order.create({
+    data: orderCreateData,
     include: {
       orderType: true,
       currentSector: true,
@@ -1651,6 +1704,19 @@ async function upsertScopedOrder(tx: any, projectId: number, orderPayload: any, 
       messages: { include: { user: true, attachments: true } }
     }
   });
+  const preservedItems = preservedPriority?.priorityBatchItems || [];
+  if (preservedItems.length > 0) {
+    await tx.orderPriorityBatchItem.createMany({
+      data: preservedItems.map((item: any) => ({
+        batchId: item.batchId,
+        orderId: created.id,
+        selectedValue: decimalToNumber(item.selectedValue),
+        selectedByUserId: item.selectedByUserId,
+        selectedAt: item.selectedAt,
+      })),
+      skipDuplicates: true,
+    });
+  }
 
   return mapOrderFromDb(created, project.name);
 }
@@ -2121,12 +2187,15 @@ app.delete("/projects/:projectId/orders/:orderId", requireAuth, async (req: Auth
 
   const order = await prisma.order.findFirst({
     where: { id: orderId, projectId },
-    include: { attachments: true, messages: { include: { attachments: true } } }
+    include: { attachments: true, messages: { include: { attachments: true } }, priorityBatchItems: true }
   });
   if (!order) return res.status(404).json({ error: "Order not found" });
   const canDeleteOrder = req.authUser.role === UserRole.SUPERADMIN || req.authUser.role === UserRole.ADMIN;
   if (!canDeleteOrder) {
     return res.status(403).json({ error: "Forbidden" });
+  }
+  if (order.priorityBatchId || (order.priorityBatchItems || []).length > 0) {
+    return res.status(400).json({ error: "Pedido vinculado a lote de prioridade nao pode ser excluido." });
   }
 
   await prisma.order.delete({ where: { id: orderId } });

@@ -64,6 +64,7 @@ const matchesDesiredDateRange = (expectedDate?: string, startDate?: string, endD
   return true;
 };
 
+const PRIORITY_APPROVED_FILTER_VALUE = '__PRIORIDADE_APROVADA__';
 const getEffectiveOrderStatusLabel = (order: Order) => order.sectorStatus || 'Sem status setorial';
 
 const renderPriorityBadge = (order: Order) => (
@@ -226,7 +227,9 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, me
       || (order.description || '').toLowerCase().includes(searchTerm)
       || (order.orderCode || '').toLowerCase().includes(searchTerm)
       || (order.externalCode || '').toLowerCase().includes(searchTerm);
-    const matchStatus = filterStatus.length === 0 || filterStatus.includes(effectiveStatus);
+    const matchStatus = filterStatus.length === 0 || filterStatus.some((status) => (
+      status === PRIORITY_APPROVED_FILTER_VALUE ? Boolean(order.priorityApproved) : status === effectiveStatus
+    ));
     const matchType = filterType.length === 0 || filterType.includes(order.type);
     const matchMinValue = minValue == null || normalizedValue >= minValue;
     const matchMaxValue = maxValue == null || normalizedValue <= maxValue;
@@ -254,6 +257,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ project, sectors, me
   };
 
   const statusFilterItems = [
+    { value: PRIORITY_APPROVED_FILTER_VALUE, label: 'Prioridade aprovada' },
     { value: 'Sem status setorial', label: 'Sem status setorial' },
     ...Array.from(new Set(sectors.flatMap((sector) => sector.statuses || []).filter(Boolean))).map((status) => ({
       value: status,

@@ -49,6 +49,7 @@ export const OrderPriorityBatchesModule: React.FC = () => {
   const [context, setContext] = useState<OrderPriorityBatchContext | null>(null);
   const [batches, setBatches] = useState<OrderPriorityBatch[]>([]);
   const [currentBatch, setCurrentBatch] = useState<OrderPriorityBatch | null>(null);
+  const [detailsOrder, setDetailsOrder] = useState<Order | null>(null);
   const [availableOrders, setAvailableOrders] = useState<Order[]>([]);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState('');
@@ -150,6 +151,7 @@ export const OrderPriorityBatchesModule: React.FC = () => {
   async function openBatch(id: string) {
     selectionSaveVersion.current += 1;
     setAutoSavingSelection(false);
+    setDetailsOrder(null);
     setOperating(true);
     try {
       const data = await dbService.getOrderPriorityBatch(id);
@@ -226,6 +228,10 @@ export const OrderPriorityBatchesModule: React.FC = () => {
       : [...selectedOrderIds, orderId];
     setSelectedOrderIds(nextOrderIds);
     void persistSelection(nextOrderIds);
+  }
+
+  function openOrderDetails(order: Order) {
+    setDetailsOrder(order);
   }
 
   async function saveSelection() {
@@ -425,7 +431,7 @@ export const OrderPriorityBatchesModule: React.FC = () => {
                 </div>
                 <div className="bg-slate-50 border border-slate-200 p-4">
                   <p className="text-[9px] font-black uppercase text-slate-400">Selecionado</p>
-                  <p className="text-sm font-black text-slate-900 mt-1">{formatMoney(selectedValue)}</p>
+                  <p className="text-sm font-black text-slate-900 mt-1">{formatMoney(selectedOrders.length > 0 ? selectedValue : currentBatch.selectedValue)}</p>
                 </div>
                 <div className="bg-slate-50 border border-slate-200 p-4">
                   <p className="text-[9px] font-black uppercase text-slate-400">Pedidos</p>
@@ -485,15 +491,21 @@ export const OrderPriorityBatchesModule: React.FC = () => {
                       const selected = selectedOrderIds.includes(order.id);
                       const selectedPaid = selected && normalizeText(order.sectorStatus) === 'pago';
                       return (
-                        <tr key={order.id} className={selectedPaid ? 'bg-rose-50' : selected ? 'bg-blue-50' : 'hover:bg-slate-50'}>
+                        <tr
+                          key={order.id}
+                          onClick={() => openOrderDetails(order)}
+                          className={`${selectedPaid ? 'bg-rose-50' : selected ? 'bg-blue-50' : 'hover:bg-slate-50'} cursor-pointer`}
+                          title="Abrir detalhes do pedido"
+                        >
                           {currentBatch.status === 'ABERTO' && currentBatch.canSave && (
-                            <td className="px-4 py-4">
+                            <td className="px-4 py-4" onClick={(event) => event.stopPropagation()}>
                               <input type="checkbox" checked={selected} disabled={autoSavingSelection} onChange={() => toggleOrder(order.id)} />
                             </td>
                           )}
                           <td className="px-4 py-4">
                             <p className="text-xs font-black uppercase text-slate-900">{order.orderCode || `#${order.id}`}</p>
                             <p className="text-[10px] font-bold text-slate-500 uppercase mt-1">{order.title}</p>
+                            <p className="text-[8px] font-black uppercase text-blue-500 mt-2">Clique para abrir detalhes</p>
                           </td>
                           <td className="px-4 py-4 text-[10px] font-black uppercase text-slate-700">{order.projectName}</td>
                           <td className="px-4 py-4 text-[10px] font-bold text-slate-500">{formatDate(order.expectedDate)}</td>
@@ -520,6 +532,97 @@ export const OrderPriorityBatchesModule: React.FC = () => {
           )}
         </section>
       </div>
+
+      {detailsOrder && (
+        <div className="fixed inset-0 bg-slate-900/85 backdrop-blur-sm flex items-center justify-center z-[150] p-4 sm:p-6">
+          <div className="bg-white w-full max-w-4xl max-h-[92vh] overflow-y-auto border border-slate-200 shadow-2xl">
+            <div className="bg-slate-900 text-white p-5 sm:p-7 flex items-start justify-between gap-4">
+              <div>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <span className="border border-slate-700 bg-slate-800 px-2 py-1 text-[8px] font-black uppercase">
+                    {detailsOrder.orderCode || `#${detailsOrder.id}`}
+                  </span>
+                  {detailsOrder.priorityApproved && (
+                    <span className="border border-emerald-400 bg-emerald-500/15 text-emerald-200 px-2 py-1 text-[8px] font-black uppercase">
+                      Prioridade aprovada
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight">{detailsOrder.title}</h3>
+                <p className="text-[10px] font-bold uppercase text-slate-400 mt-1">
+                  {detailsOrder.projectName} | solicitado por {detailsOrder.requesterName}
+                </p>
+              </div>
+              <button type="button" onClick={() => setDetailsOrder(null)} className="text-slate-400 hover:text-white px-2">
+                <i className="fas fa-times text-xl"></i>
+              </button>
+            </div>
+
+            <div className="p-5 sm:p-7 space-y-5">
+              <p className="text-sm font-bold text-slate-700 leading-relaxed bg-slate-50 border border-slate-200 p-4">
+                {detailsOrder.description || 'Sem descricao informada.'}
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="bg-slate-50 border border-slate-200 p-4">
+                  <p className="text-[9px] font-black uppercase text-slate-400">Valor</p>
+                  <p className="text-xs font-black text-slate-900 mt-1">{formatMoney(detailsOrder.value)}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 p-4">
+                  <p className="text-[9px] font-black uppercase text-slate-400">Status setorial</p>
+                  <p className="text-xs font-black text-slate-900 uppercase mt-1">{detailsOrder.sectorStatus || detailsOrder.status}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 p-4">
+                  <p className="text-[9px] font-black uppercase text-slate-400">Setor atual</p>
+                  <p className="text-xs font-black text-slate-900 uppercase mt-1">{detailsOrder.currentSectorName || 'Sem setor'}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 p-4">
+                  <p className="text-[9px] font-black uppercase text-slate-400">Data desejada</p>
+                  <p className="text-xs font-black text-slate-900 mt-1">{formatDate(detailsOrder.expectedDate)}</p>
+                </div>
+              </div>
+
+              {detailsOrder.attachments?.length > 0 && (
+                <div className="border border-slate-200 p-4 space-y-2">
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Anexos do pedido</h4>
+                  {detailsOrder.attachments.map((attachment) => (
+                    <div key={attachment.id} className="bg-slate-50 border border-slate-100 px-3 py-2 text-[10px] font-bold uppercase text-slate-700">
+                      {attachment.originalName || attachment.name}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="border border-slate-200 p-4 space-y-3">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Historico e comentarios</h4>
+                {(detailsOrder.messages || []).length === 0 && (
+                  <p className="text-[10px] font-black uppercase text-slate-300">Nenhum comentario registrado.</p>
+                )}
+                {[...(detailsOrder.messages || [])]
+                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                  .map((message) => (
+                    <div key={message.id} className="bg-slate-50 border border-slate-100 p-3">
+                      <div className="flex flex-wrap justify-between gap-2">
+                        <p className="text-[10px] font-black uppercase text-slate-700">{message.userName || 'Sistema'}</p>
+                        <p className="text-[9px] font-bold uppercase text-slate-400">{formatDate(message.date)}</p>
+                      </div>
+                      <p className="text-xs font-bold text-slate-600 mt-2 whitespace-pre-wrap">{message.text}</p>
+                      {message.attachments && message.attachments.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {message.attachments.map((attachment) => (
+                            <span key={attachment.id} className="border border-slate-200 bg-white px-2 py-1 text-[8px] font-black uppercase text-slate-500">
+                              {attachment.originalName || attachment.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
